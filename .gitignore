@@ -1,0 +1,46 @@
+# local/private agent state
+.agents/
+.codex/
+
+# dependencies
+node_modules/
+
+# local env files
+.env
+.env.*
+!.env.example
+
+# private server compose files
+docker-compose.staging.yml
+docker-compose.production.yml
+
+# generated/build output
+.next/
+out/
+dist/
+build/
+coverage/
+generated/prisma/
+next-env.d.ts
+*.tsbuildinfo
+
+# debug/log output
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# local database files
+prisma/db.sqlite
+prisma/db.sqlite-journal
+db.sqlite
+
+# local browser/session state
+scraper/facebook/.facebook-profile/
+
+# editor/system files
+.DS_Store
+*.pem
+.vercel/
+.idea/

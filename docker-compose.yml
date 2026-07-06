@@ -1,0 +1,42 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-recon_dev}
+      POSTGRES_USER: ${POSTGRES_USER:-recon}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-recon_dev_password}
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-recon} -d ${POSTGRES_DB:-recon_dev}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  web:
+    build:
+      context: .
+      target: dev
+    command: sh -c "npx prisma generate && npm run dev"
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-recon}:${POSTGRES_PASSWORD:-recon_dev_password}@postgres:5432/${POSTGRES_DB:-recon_dev}
+    ports:
+      - "3000:3000"
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - /app/.next
+      - /app/generated
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres-data:
