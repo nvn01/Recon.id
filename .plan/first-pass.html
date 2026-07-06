@@ -376,10 +376,14 @@ Backend API / query layer
 
     <h3>Phase 1: database</h3>
     <ul class="checklist">
-      <li>Prisma schema for <code>listings</code> and <code>listing_images</code> only.</li>
-      <li>Uniqueness constraint for <code>source_url</code>.</li>
-      <li>Indexes for platform, status, last seen date, and price.</li>
-      <li>No database-backed scraper config, source target table, scrape-run table, or connector-health table in v1.</li>
+      <li>Done: replace the T3 starter <code>Post</code> model before any real migration or <code>db:push</code>; do not treat the scaffold schema as RECON data storage.</li>
+      <li>Done: Prisma schema for <code>listings</code> and <code>listing_images</code> only.</li>
+      <li>Done: uniqueness constraint for <code>source_url</code>.</li>
+      <li>Done: indexes for platform, status, last seen date, and price.</li>
+      <li>Done: no database-backed scraper config, source target table, scrape-run table, or connector-health table in v1.</li>
+      <li>Done: local PostgreSQL migration and DB smoke check for insert, image relation, readback, and <code>source_url</code> uniqueness.</li>
+      <li>Done: Phase 1 closeout audit for env handling, Docker context, database access, public API surface, and eval items; known Next/PostCSS audit advisory tracked separately.</li>
+      <li>Done: add root <code>AGENTS.override.md</code> handoff with Phase 1 decisions, issues faced, verification log, and next-agent cautions.</li>
     </ul>
 
     <h3>Phase 2: scraper core</h3>

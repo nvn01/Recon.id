@@ -1,6 +1,7 @@
 # local/private agent state
 .agents/
 .codex/
+.codex-runtime/
 
 # dependencies
 node_modules/

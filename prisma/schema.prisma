@@ -1,21 +1,65 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
 generator client {
-    provider = "prisma-client-js"
-    output   = "../generated/prisma"
+  provider = "prisma-client-js"
+  output   = "../generated/prisma"
 }
 
 datasource db {
-    provider = "postgresql"
-    url      = env("DATABASE_URL")
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
-model Post {
-    id        Int      @id @default(autoincrement())
-    name      String
-    createdAt DateTime @default(now())
-    updatedAt DateTime @updatedAt
+enum ListingPlatform {
+  REDDIT    @map("reddit")
+  INSTAGRAM @map("instagram")
+  FACEBOOK  @map("facebook")
 
-    @@index([name])
+  @@map("listing_platform")
+}
+
+enum ListingStatus {
+  AVAILABLE @map("available")
+  SOLD      @map("sold")
+  UNKNOWN   @map("unknown")
+
+  @@map("listing_status")
+}
+
+model Listing {
+  id            String          @id @default(cuid())
+  platform      ListingPlatform
+  sourceUrl     String          @unique @map("source_url")
+  externalId    String?         @map("external_id")
+  title         String
+  description   String
+  price         Int?
+  locationText  String?         @map("location_text")
+  conditionText String?         @map("condition_text")
+  sellerName    String?         @map("seller_name")
+  status        ListingStatus   @default(UNKNOWN)
+  postedAt      DateTime?       @map("posted_at")
+  firstSeenAt   DateTime        @default(now()) @map("first_seen_at")
+  lastSeenAt    DateTime        @default(now()) @map("last_seen_at")
+  createdAt     DateTime        @default(now()) @map("created_at")
+  updatedAt     DateTime        @default(now()) @updatedAt @map("updated_at")
+  images        ListingImage[]
+
+  @@index([platform])
+  @@index([status])
+  @@index([lastSeenAt])
+  @@index([price])
+  @@map("listings")
+}
+
+model ListingImage {
+  id        String   @id @default(cuid())
+  listingId String   @map("listing_id")
+  sourceUrl String   @map("source_url")
+  position  Int
+  altText   String?  @map("alt_text")
+  createdAt DateTime @default(now()) @map("created_at")
+  listing   Listing  @relation(fields: [listingId], references: [id], onDelete: Cascade)
+
+  @@unique([listingId, position])
+  @@index([listingId])
+  @@map("listing_images")
 }

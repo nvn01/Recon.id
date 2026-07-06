@@ -6,7 +6,9 @@
   "scripts": {
     "build": "next build",
     "check": "npm run lint && tsc --noEmit",
-    "db:generate": "prisma migrate dev",
+    "db:generate": "prisma generate",
+    "db:smoke": "node scripts/db-smoke.mjs",
+    "db:migrate:dev": "prisma migrate dev",
     "db:migrate": "prisma migrate deploy",
     "db:push": "prisma db push",
     "db:studio": "prisma studio",
