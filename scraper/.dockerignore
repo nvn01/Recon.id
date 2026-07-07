@@ -1,0 +1,7 @@
+.logs
+.state
+__pycache__
+*.pyc
+.ruff_cache
+facebook/.facebook-profile
+facebook/.facebook-profile*

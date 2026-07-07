@@ -5,6 +5,8 @@
 
 # dependencies
 node_modules/
+__pycache__/
+*.pyc
 
 # local env files
 .env

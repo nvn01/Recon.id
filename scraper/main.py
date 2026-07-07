@@ -1,7 +1,7 @@
 """RECON scraper orchestrator.
 
-Runs selected platform connectors and validates their output against the shared
-listing contract. This file intentionally does not write to PostgreSQL.
+Runs selected platform connectors, validates their output against the shared
+listing contract, and optionally writes valid listings to PostgreSQL.
 """
 
 from __future__ import annotations
@@ -22,9 +22,12 @@ from scraper.instagram.instagram import run_accounts
 from scraper.reddit.nvidia_parser import NvidiaParserError
 from scraper.shared.config import DEFAULT_CONFIG_PATH, float_value, int_value, load_config, string_list, table
 from scraper.shared.listing_contract import validate_listings
+from scraper.storage.postgres import StorageError, require_database_url, safe_database_url, upsert_listings
+from scraper.storage.run_log import write_run_log
 
 
 SCRAPER_DIR = Path(__file__).resolve().parent
+DEFAULT_RUN_LOG_FILE = SCRAPER_DIR / ".logs" / "scraper_runs.jsonl"
 
 
 def main() -> int:
@@ -42,12 +45,14 @@ def main() -> int:
         all_listings.extend(result.get("listings", []))
 
     finished_at = now_iso()
+    storage = write_storage(args, all_listings)
     output = {
-        "ok": all(result["ok"] for result in results),
+        "ok": all(result["ok"] for result in results) and storage["ok"],
         "startedAt": started_at,
         "finishedAt": finished_at,
         "durationMs": elapsed_ms(started_at, finished_at),
-        "databaseWrite": False,
+        "databaseWrite": bool(args.write_db),
+        "storage": storage,
         "selectedConnectors": selected,
         "summary": {
             "connectors": len(results),
@@ -58,12 +63,13 @@ def main() -> int:
         "connectors": results,
     }
 
+    write_orchestrator_log(args, output)
     print_json(output, args.format)
     return 0 if output["ok"] else 1
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Run RECON scraper connectors without database writes.")
+    parser = argparse.ArgumentParser(description="Run RECON scraper connectors and optionally write valid listings to PostgreSQL.")
     parser.add_argument("--config", default=str(DEFAULT_CONFIG_PATH), help="Path to scraper source TOML config.")
     parser.add_argument("--reddit", action="store_true", help="Run Reddit connector.")
     parser.add_argument("--instagram", action="store_true", help="Run Instagram connector.")
@@ -71,12 +77,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--all", action="store_true", help="Run every enabled connector. This is the default if no connector flag is given.")
     parser.add_argument("--limit", type=int, default=None, help="Override per-source listing limit.")
     parser.add_argument("--format", choices=("json", "jsonl"), default="json", help="Output format.")
+    parser.add_argument("--write-db", action="store_true", help="Upsert validated listings into PostgreSQL.")
+    parser.add_argument("--database-url", default=None, help="Database URL override. Prefer SCRAPER_DATABASE_URL or DATABASE_URL.")
+    parser.add_argument("--run-log-file", default=str(DEFAULT_RUN_LOG_FILE), help="Orchestrator JSONL run log path.")
     parser.add_argument("--no-state", action="store_true", help="Do not read/write connector state, locks, or run logs.")
     parser.add_argument("--ignore-cooldown", action="store_true", help="Ignore active local connector cooldown state.")
     parser.add_argument("--ai-parse", action="store_true", help="Enable optional batched NVIDIA AI enrichment.")
     parser.add_argument("--ai-prefer", action="store_true", help="Let AI values replace rule-parser values when available.")
     parser.add_argument("--headless", action="store_true", help="Force Facebook browser runs to be headless.")
     parser.add_argument("--facebook-details", action="store_true", help="Fetch Facebook detail pages for richer fields.")
+    parser.add_argument("--facebook-browser", choices=("chrome", "chromium"), default=None, help="Facebook Playwright browser channel override.")
     parser.add_argument("--facebook-target", action="append", default=None, help="Facebook target id from source_targets.json. Can be repeated.")
     parser.add_argument("--facebook-target-group", action="append", default=None, help="Facebook target group from source_targets.json. Can be repeated.")
     parser.add_argument("--instagram-account", action="append", default=None, help="Instagram account username. Can be repeated.")
@@ -263,7 +273,7 @@ def run_facebook(args: argparse.Namespace, config: dict[str, Any]) -> dict[str, 
         detail_scope="new",
         login=False,
         headless=bool(args.headless or facebook_config.get("headless", True)),
-        browser=str(facebook_config.get("browser") or "chrome"),
+        browser=str(args.facebook_browser or facebook_config.get("browser") or "chrome"),
         access_mode="browser",
         profile_dir=str(facebook.DEFAULT_PROFILE_DIR),
         include_keyword=None,
@@ -307,6 +317,73 @@ def run_facebook(args: argparse.Namespace, config: dict[str, Any]) -> dict[str, 
         "validationErrors": invalid,
         "listings": valid,
     }
+
+
+def write_storage(args: argparse.Namespace, listings: list[dict[str, Any]]) -> dict[str, Any]:
+    if not args.write_db:
+        return {
+            "enabled": False,
+            "ok": True,
+            "attempted": False,
+            "databaseUrl": None,
+            "summary": None,
+            "error": None,
+        }
+
+    database_url = None
+    try:
+        database_url = require_database_url(args.database_url)
+        summary = upsert_listings(database_url, listings)
+    except StorageError as exc:
+        return {
+            "enabled": True,
+            "ok": False,
+            "attempted": True,
+            "databaseUrl": safe_database_url(database_url),
+            "summary": None,
+            "error": str(exc),
+        }
+
+    return {
+        "enabled": True,
+        "ok": True,
+        "attempted": True,
+        "databaseUrl": safe_database_url(database_url),
+        "summary": summary.as_dict(),
+        "error": None,
+    }
+
+
+def write_orchestrator_log(args: argparse.Namespace, output: dict[str, Any]) -> None:
+    log_path = None if args.no_state else Path(args.run_log_file)
+    connector_summaries = [
+        {
+            "connector": result.get("connector"),
+            "ok": result.get("ok"),
+            "status": result.get("status"),
+            "exitCode": result.get("exitCode"),
+            "normalized": result.get("normalized"),
+            "validated": result.get("validated"),
+            "validationErrors": len(result.get("validationErrors") or []),
+            "durationMs": result.get("durationMs"),
+        }
+        for result in output["connectors"]
+    ]
+    write_run_log(
+        log_path,
+        {
+            "source": "orchestrator",
+            "status": "success" if output["ok"] else "failed",
+            "startedAt": output["startedAt"],
+            "finishedAt": output["finishedAt"],
+            "durationMs": output["durationMs"],
+            "databaseWrite": output["databaseWrite"],
+            "storage": output["storage"],
+            "summary": output["summary"],
+            "selectedConnectors": output["selectedConnectors"],
+            "connectors": connector_summaries,
+        },
+    )
 
 
 def enrich_with_nvidia(listings: list[dict[str, Any]], args: argparse.Namespace, run_config: dict[str, Any]) -> list[dict[str, Any]]:

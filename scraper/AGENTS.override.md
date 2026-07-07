@@ -77,7 +77,7 @@ python -m scraper.main --facebook --facebook-target gpu-rtx --headless
 
 Important behavior:
 
-1. `scraper/main.py` does not write to PostgreSQL. It only calls selected connectors, validates normalized listings, and emits JSON/JSONL.
+1. `scraper/main.py` stays read-only by default. It only writes to PostgreSQL when called with `--write-db`.
 2. Source settings live in `scraper/config/sources.toml`. Keep public URLs, account names, source target references, cadence hints, and safe connector defaults there. Do not put cookies, tokens, or secrets in the config.
 3. `scraper/shared/listing_contract.py` is the shared Prisma-facing output gate. Connector output must validate before the orchestrator reports success.
 4. Reddit remains RSS-first. The orchestrator default is `image_mode = "rss"` to avoid detail JSON `403`/`429` during cross-platform checks.
@@ -106,3 +106,53 @@ That run returned HTTP 200 for all 7 configured Instagram accounts, validated 7 
 Instagram does not require a browser in the current orchestrator path; it uses the public `web_profile_info` endpoint with browser-like headers. Facebook is different: direct HTTP probing was not reliable, so the current practical connector still uses Playwright and a persistent local profile, preferably headless on server after first session setup. Do not collapse those two access models into one assumption.
 
 One related parser bug was also fixed: Instagram status detection now checks source-specific sold markers near the listing header instead of scanning all footer/marketing text, so phrases like trusted-source sold history should not mark an available listing as `SOLD`.
+
+## Intended Production Scrape Workflow
+
+This is the target runtime shape. The root web image still excludes `scraper/`, so scraper execution uses the separate `scraper/Dockerfile` and the profile-gated Compose service.
+
+Keep the production flow small:
+
+```mermaid
+flowchart TD
+    A["docker compose up"] --> B["postgres + web + scraper worker"]
+    B --> C["scraper/main.py --all"]
+    C --> D["Reddit / Instagram / Facebook connectors"]
+    D --> E["Normalize + validate Listing contract"]
+    E --> F["Optional batched AI enrichment"]
+    F --> G["Upsert listings + images"]
+    G --> H["Scraper-side logs + state"]
+```
+
+Expected behavior now that the upsert/logging layer exists:
+
+1. `docker compose up` starts PostgreSQL and the web app. `docker compose --profile scraper run --rm scraper` starts the scraper worker after PostgreSQL is healthy.
+2. The scraper worker loads `scraper/config/sources.toml`, runs all enabled connectors, and respects platform-specific cooldown/state files.
+3. Each connector returns normalized listing JSON only; validation happens before any database write.
+4. AI parsing stays optional, batched, and limited to fields that exist on `listings` or `listing_images`.
+5. Database writes are idempotent by `sourceUrl`: update existing listings, insert new listings, and reconcile images without creating duplicate listing rows.
+6. Run status, connector errors, rate-limit notes, and last-seen cursors stay in scraper-side `.logs/` and `.state/` first, not PostgreSQL.
+7. For production, prefer a controlled worker loop with a configured interval, or a one-shot job triggered by cron. Do not rely on a crash/restart loop to schedule scraping because that can hammer source platforms.
+
+## Phase 2 Upsert And Run Logging Implementation
+
+The scraper storage layer is now in `scraper/storage/`.
+
+Important behavior:
+
+1. `scraper/storage/postgres.py` uses parameterized PostgreSQL writes through `psycopg`; no raw SQL string concatenation with listing values.
+2. Database URL resolution prefers `--database-url`, then `SCRAPER_DATABASE_URL`, then `DATABASE_URL`. Logs redact passwords before writing or printing storage details.
+3. Upserts are idempotent by `listings.source_url`. Existing rows keep their original `first_fetched_at`; later runs update scraper-backed fields and `last_fetched_at`.
+4. `listing_images` are reconciled inside the same transaction by deleting old rows for the listing and inserting the current normalized image set. Image identity is internal; `listing_id + position` remains the uniqueness rule.
+5. `scraper/storage/run_log.py` writes orchestrator JSONL run records without listing payloads. Default path is `scraper/.logs/scraper_runs.jsonl`; `--no-state` disables this log.
+6. The scraper container is intentionally behind the Compose `scraper` profile so normal local `docker compose up` does not start live scraping by accident.
+
+Useful commands:
+
+```powershell
+python -m scraper.main --reddit --limit 1 --write-db
+python -m scraper.main --all --write-db --headless --facebook-browser chromium
+docker compose --profile scraper run --rm scraper
+python -m unittest discover scraper.tests
+python -m ruff check scraper
+```
