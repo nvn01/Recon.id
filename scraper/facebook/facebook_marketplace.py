@@ -1,30 +1,40 @@
 """
-Starter Facebook Marketplace probe for RECON data collection.
+Facebook Marketplace connector for RECON scraper diagnostics.
 
-This is intentionally simple:
-- no database
-- no JSON export
-- no backend/app integration
-- uses a browser session because Facebook Marketplace is JS/session-driven
+This connector is intentionally still outside database ingestion:
+- normalizes visible Marketplace listings into the Prisma-facing listing shape
+- keeps run state, lock files, and logs in scraper-side local files
+- supports one-shot checks and minute-level watch diagnostics
+- uses Playwright because Marketplace is JS/session-driven
 
-First-time setup:
+First-time local session setup:
     python "scraper/facebook/facebook_marketplace.py" --login
 
-Then scrape sample cards:
-    python "scraper/facebook/facebook_marketplace.py" --query vga --limit 5
+One-shot normalized JSON:
+    python "scraper/facebook/facebook_marketplace.py" --once --query vga --limit 15 --format json
 
-For listing descriptions/condition:
-    python "scraper/facebook/facebook_marketplace.py" --query vga --limit 5 --details
+Minute-level diagnostic watcher:
+    python "scraper/facebook/facebook_marketplace.py" --watch --interval 60 --query vga --limit 15 --details
 """
 
 from __future__ import annotations
 
 import argparse
+import json
+import os
+import random
 import re
 import sys
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+from collections.abc import Iterable
+from contextlib import AbstractContextManager
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from urllib.parse import urlencode
+from typing import Any
 
 from playwright.sync_api import Error as PlaywrightError
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
@@ -37,9 +47,24 @@ if hasattr(sys.stderr, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 
+PLATFORM = "FACEBOOK"
 DEFAULT_LOCATION = "jakarta"
 DEFAULT_CATEGORY_ID = "479353692612078"  # Facebook Marketplace Electronics category
-DEFAULT_PROFILE_DIR = Path(__file__).resolve().parent / ".facebook-profile"
+SCRIPT_DIR = Path(__file__).resolve().parent
+SCRAPER_DIR = SCRIPT_DIR.parent
+DEFAULT_PROFILE_DIR = SCRIPT_DIR / ".facebook-profile"
+DEFAULT_STATE_DIR = SCRAPER_DIR / ".state"
+DEFAULT_LOG_DIR = SCRAPER_DIR / ".logs"
+DEFAULT_STATE_FILE = DEFAULT_STATE_DIR / "facebook_marketplace.json"
+DEFAULT_LOCK_FILE = DEFAULT_STATE_DIR / "facebook_marketplace.lock"
+DEFAULT_LOG_FILE = DEFAULT_LOG_DIR / "facebook_marketplace.jsonl"
+DEFAULT_TARGETS_FILE = SCRIPT_DIR / "source_targets.json"
+DEFAULT_USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/126.0 Safari/537.36"
+)
+
 DEFAULT_RECON_KEYWORDS = (
     "vga",
     "gpu",
@@ -74,8 +99,117 @@ DEFAULT_RECON_KEYWORDS = (
     "ps5",
     "xbox",
     "nintendo",
-    "switch",
     "steam deck",
+)
+
+DEFAULT_BLOCKED_KEYWORDS = (
+    "yamaha",
+    "vega r",
+    "vega zr",
+    "motor vega",
+    "kampas rem",
+    "sparepart motor",
+    "iphone",
+    "ipad",
+    "oppo",
+    "vivo",
+    "xiaomi",
+    "redmi",
+    "realme",
+    "samsung galaxy",
+    "android",
+    "indihome",
+    "wifi murah",
+    "paket wifi",
+    "mesin cuci",
+    "kulkas",
+    "lemari es",
+    "smart tv",
+    "tv led",
+    "cctv",
+    "kamera",
+    "printer",
+    "ac split",
+    "remote tv",
+    "kabel vga",
+    "converter vga",
+    "hdmi to vga",
+)
+
+SOLD_MARKERS = (
+    "sold out",
+    "sold",
+    "terjual",
+    "laku",
+    "booked",
+)
+ASK_PRICE_MARKERS = (
+    "ask price",
+    "askprice",
+    "tanya harga",
+    "tanya admin",
+    "tanyakan harga",
+    "hubungi",
+    "dm",
+    "pm",
+    "inbox",
+    "chat",
+)
+FREE_PRICE_MARKERS = (
+    "gratis",
+    "free",
+)
+LOCATION_PREFIXES = (
+    "lokasi",
+    "location",
+    "loc",
+    "cod",
+)
+CATEGORY_PATTERNS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("GPU", ("gpu", "vga", "rtx", "gtx", "radeon", "geforce")),
+    ("CPU", ("cpu", "processor", "prosesor", "ryzen", "core i", "intel i3", "intel i5", "intel i7", "intel i9")),
+    ("RAM", ("ram", "ddr3", "ddr4", "ddr5", "sodimm", "so-dimm", "memory")),
+    ("Storage", ("ssd", "hdd", "nvme", "harddisk", "hard disk", "m.2", "sata")),
+    ("Motherboard", ("motherboard", "mainboard", "mobo")),
+    ("Monitor", ("monitor", "lcd", "ips", "oled", "va panel", "hz")),
+    ("Keyboard", ("keyboard", "keychron", "mechanical", "mecha")),
+    ("Mouse", ("mouse", "logitech g", "razer viper", "deathadder")),
+    ("Desktop PC", ("pc rakitan", "desktop", "mini pc", "workstation", "komputer")),
+    ("Handheld PC", ("legion go", "steam deck", "rog ally", "handheld pc")),
+    ("Laptop", ("laptop", "notebook", "thinkpad", "macbook", "vivobook", "zenbook", "ideapad", "legion")),
+    ("Peripheral", ("headset", "earphone", "speaker", "webcam", "microphone", "mic")),
+)
+BRAND_PATTERNS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("Apple", ("apple", "macbook", "imac", "mac mini")),
+    ("ASUS", ("asus", "rog", "tuf")),
+    ("Acer", ("acer", "predator")),
+    ("Lenovo", ("lenovo", "thinkpad", "legion", "ideapad")),
+    ("HP", ("hp", "hewlett packard", "omen", "victus")),
+    ("Dell", ("dell", "alienware")),
+    ("MSI", ("msi",)),
+    ("Gigabyte", ("gigabyte", "aorus")),
+    ("ASRock", ("asrock",)),
+    ("Intel", ("intel",)),
+    ("AMD", ("amd", "ryzen", "radeon")),
+    ("NVIDIA", ("nvidia", "geforce")),
+    ("Zotac", ("zotac",)),
+    ("Inno3D", ("inno3d", "inno 3d")),
+    ("Sapphire", ("sapphire", "saphire")),
+    ("PowerColor", ("powercolor", "power color")),
+    ("Palit", ("palit",)),
+    ("Galax", ("galax",)),
+    ("Colorful", ("colorful",)),
+    ("Digital Alliance", ("digital alliance",)),
+    ("Corsair", ("corsair",)),
+    ("Kingston", ("kingston", "hyperx", "hyper x")),
+    ("ADATA", ("adata", "xpg")),
+    ("Samsung", ("samsung",)),
+    ("Crucial", ("crucial",)),
+    ("Western Digital", ("western digital", "wd", "wdc")),
+    ("Seagate", ("seagate",)),
+    ("Logitech", ("logitech",)),
+    ("Razer", ("razer",)),
+    ("SteelSeries", ("steelseries", "steel series")),
 )
 
 
@@ -92,13 +226,145 @@ class MarketplaceCard:
     raw_text: str
 
 
+@dataclass(frozen=True)
+class MarketplaceDetail:
+    posted: str = ""
+    condition: str = ""
+    description: str = ""
+    approx_location: str = ""
+    seller: str = ""
+    error: str = ""
+
+
+@dataclass(frozen=True)
+class SourceTarget:
+    id: str
+    query: str
+    label: str = ""
+    groups: tuple[str, ...] = ()
+    location: str = DEFAULT_LOCATION
+    category_id: str = DEFAULT_CATEGORY_ID
+    sort_by: str = "creation_time_descend"
+    exact: bool = False
+    radius: int | None = None
+    days_since_listed: int | None = None
+    delivery_method: str | None = None
+    availability: str | None = None
+    min_price: int | None = None
+    max_price: int | None = None
+    condition: str | None = None
+    cadence_seconds: int | None = None
+    limit: int | None = None
+    candidate_limit: int | None = None
+    max_scrolls: int | None = None
+    positive_keywords: tuple[str, ...] = ()
+    blocked_keywords: tuple[str, ...] = ()
+    notes: str = ""
+
+
+@dataclass(frozen=True)
+class MarketplaceTargetResult:
+    target: SourceTarget
+    url: str
+    cards: list[MarketplaceCard]
+    candidates_count: int
+    matched_count: int
+    skipped_count: int
+    blocked_count: int
+    matched_keywords: tuple[str, ...] = ()
+    blocked_keywords: tuple[str, ...] = ()
+
+
+class ConnectorBlockedError(RuntimeError):
+    pass
+
+
+class LoginBlockedError(ConnectorBlockedError):
+    pass
+
+
+class AlreadyRunningError(RuntimeError):
+    pass
+
+
+class FileLock(AbstractContextManager["FileLock"]):
+    def __init__(self, path: Path, stale_seconds: int) -> None:
+        self.path = path
+        self.stale_seconds = stale_seconds
+        self.fd: int | None = None
+
+    def __enter__(self) -> "FileLock":
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self._remove_stale_lock()
+        try:
+            self.fd = os.open(str(self.path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        except FileExistsError as exc:
+            raise AlreadyRunningError(f"lock already exists: {self.path}") from exc
+
+        payload = {
+            "pid": os.getpid(),
+            "created_at": now_utc().isoformat(),
+        }
+        os.write(self.fd, json.dumps(payload, separators=(",", ":")).encode("utf-8"))
+        return self
+
+    def __exit__(self, exc_type: object, exc: object, traceback: object) -> None:
+        if self.fd is not None:
+            os.close(self.fd)
+            self.fd = None
+        try:
+            self.path.unlink()
+        except FileNotFoundError:
+            pass
+
+    def _remove_stale_lock(self) -> None:
+        try:
+            age = time.time() - self.path.stat().st_mtime
+        except FileNotFoundError:
+            return
+        if age > self.stale_seconds:
+            self.path.unlink(missing_ok=True)
+
+
+def now_utc() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def parse_iso_datetime(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        if value.endswith("Z"):
+            value = f"{value[:-1]}+00:00"
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
 def keyword_matches(text: str, keyword: str) -> bool:
     lower = text.lower()
     keyword_lower = keyword.lower().strip()
     if not keyword_lower:
         return False
 
-    if keyword_lower in {"pc", "gpu", "vga", "rtx", "gtx", "ram", "ssd", "hdd", "psu"}:
+    if keyword_lower in {
+        "pc",
+        "gpu",
+        "vga",
+        "rtx",
+        "gtx",
+        "ram",
+        "ssd",
+        "hdd",
+        "psu",
+        "oppo",
+        "vivo",
+        "redmi",
+        "realme",
+    }:
         return bool(re.search(rf"\b{re.escape(keyword_lower)}\b", lower))
 
     return keyword_lower in lower
@@ -109,16 +375,183 @@ def matched_keywords(card: MarketplaceCard, keywords: list[str]) -> list[str]:
     return [keyword for keyword in keywords if keyword_matches(searchable_text, keyword)]
 
 
-def build_search_url(location: str, query: str, category_id: str) -> str:
-    params = urlencode(
-        {
-            "sortBy": "creation_time_descend",
-            "query": query,
-            "category_id": category_id,
-            "exact": "false",
-        }
+def build_search_url(target: SourceTarget) -> str:
+    params: dict[str, str] = {
+        "sortBy": target.sort_by,
+        "query": target.query,
+        "category_id": target.category_id,
+        "exact": "true" if target.exact else "false",
+    }
+    optional_params = {
+        "radius": target.radius,
+        "daysSinceListed": target.days_since_listed,
+        "deliveryMethod": target.delivery_method,
+        "availability": target.availability,
+        "minPrice": target.min_price,
+        "maxPrice": target.max_price,
+        "itemCondition": target.condition,
+    }
+    for key, value in optional_params.items():
+        if value is not None and value != "":
+            params[key] = str(value)
+
+    encoded = urllib.parse.urlencode(params)
+    return f"https://www.facebook.com/marketplace/{target.location}/search?{encoded}"
+
+
+def target_from_query(query: str, args: argparse.Namespace) -> SourceTarget:
+    return SourceTarget(
+        id=f"query-{slugify(query)}",
+        label=f"Manual query: {query}",
+        query=query,
+        location=args.location,
+        category_id=args.category_id,
     )
-    return f"https://www.facebook.com/marketplace/{location}/search?{params}"
+
+
+def load_source_targets(path: Path) -> list[SourceTarget]:
+    if not path.exists():
+        return []
+
+    try:
+        loaded = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError(f"failed to read source target file {path}: {exc}") from exc
+
+    defaults = loaded.get("defaults", {}) if isinstance(loaded, dict) else {}
+    records = loaded.get("targets", []) if isinstance(loaded, dict) else loaded
+    if not isinstance(records, list):
+        raise ValueError(f"source target file {path} must contain a list or a targets list")
+
+    targets: list[SourceTarget] = []
+    for index, record in enumerate(records, start=1):
+        if not isinstance(record, dict):
+            raise ValueError(f"source target #{index} must be an object")
+        merged = {**defaults, **record} if isinstance(defaults, dict) else record
+        targets.append(source_target_from_record(merged, index))
+    return targets
+
+
+def source_target_from_record(record: dict[str, Any], index: int) -> SourceTarget:
+    query = string_value(record.get("query"))
+    if not query:
+        raise ValueError(f"source target #{index} is missing query")
+
+    target_id = string_value(record.get("id")) or f"target-{index}-{slugify(query)}"
+    return SourceTarget(
+        id=target_id,
+        label=string_value(record.get("label")),
+        query=query,
+        groups=tuple(as_string_list(record.get("groups") or record.get("group"))),
+        location=string_value(record.get("location")) or DEFAULT_LOCATION,
+        category_id=string_value(first_present(record, "categoryId", "category_id")) or DEFAULT_CATEGORY_ID,
+        sort_by=string_value(first_present(record, "sortBy", "sort_by")) or "creation_time_descend",
+        exact=bool_value(record.get("exact"), default=False),
+        radius=optional_int(record.get("radius")),
+        days_since_listed=optional_int(first_present(record, "daysSinceListed", "days_since_listed")),
+        delivery_method=string_value(first_present(record, "deliveryMethod", "delivery_method")) or None,
+        availability=string_value(record.get("availability")) or None,
+        min_price=optional_int(first_present(record, "minPrice", "min_price")),
+        max_price=optional_int(first_present(record, "maxPrice", "max_price")),
+        condition=string_value(first_present(record, "itemCondition", "condition")) or None,
+        cadence_seconds=optional_int(first_present(record, "cadenceSeconds", "cadence_seconds")),
+        limit=optional_int(record.get("limit")),
+        candidate_limit=optional_int(first_present(record, "candidateLimit", "candidate_limit")),
+        max_scrolls=optional_int(first_present(record, "maxScrolls", "max_scrolls")),
+        positive_keywords=tuple(as_string_list(first_present(record, "positiveKeywords", "positive_keywords"))),
+        blocked_keywords=tuple(as_string_list(first_present(record, "blockedKeywords", "blocked_keywords"))),
+        notes=string_value(record.get("notes")),
+    )
+
+
+def resolve_targets(args: argparse.Namespace) -> list[SourceTarget]:
+    targets: list[SourceTarget] = []
+    target_file_targets: list[SourceTarget] = []
+    needs_target_file = bool(args.target or args.target_group or args.list_targets)
+    if needs_target_file:
+        target_file_targets = load_source_targets(Path(args.targets_file))
+
+    if args.target:
+        by_id = {target.id: target for target in target_file_targets}
+        missing = [target_id for target_id in args.target if target_id not in by_id]
+        if missing:
+            raise ValueError(f"unknown Facebook source target(s): {', '.join(missing)}")
+        targets.extend(by_id[target_id] for target_id in args.target)
+
+    if args.target_group:
+        selected_ids = {target.id for target in targets}
+        requested_groups = set(args.target_group)
+        for target in target_file_targets:
+            if target.id in selected_ids:
+                continue
+            if requested_groups.intersection(target.groups):
+                targets.append(target)
+                selected_ids.add(target.id)
+
+    for query in args.query or []:
+        targets.append(target_from_query(query, args))
+
+    if targets:
+        return dedupe_targets(targets)
+
+    return [target_from_query("vga", args)]
+
+
+def dedupe_targets(targets: Iterable[SourceTarget]) -> list[SourceTarget]:
+    seen: set[str] = set()
+    deduped: list[SourceTarget] = []
+    for target in targets:
+        key = target.id or target.query
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(target)
+    return deduped
+
+
+def slugify(value: str) -> str:
+    slug = re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")
+    return slug or "marketplace"
+
+
+def string_value(value: object) -> str:
+    return str(value).strip() if value is not None else ""
+
+
+def first_present(record: dict[str, Any], *keys: str) -> object:
+    for key in keys:
+        if key in record:
+            return record[key]
+    return None
+
+
+def as_string_list(value: object) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return [value] if value.strip() else []
+    if isinstance(value, list):
+        return [str(item).strip() for item in value if str(item).strip()]
+    return [str(value).strip()] if str(value).strip() else []
+
+
+def bool_value(value: object, *, default: bool) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "y", "on"}
+    return bool(value)
+
+
+def optional_int(value: object) -> int | None:
+    if value in (None, ""):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def clean_text(value: str) -> str:
@@ -193,6 +626,66 @@ def extract_cards(page, limit: int) -> list[MarketplaceCard]:
     return [parse_card(raw) for raw in raw_cards]
 
 
+def count_marketplace_card_links(page) -> int:
+    return int(
+        page.evaluate(
+            """
+            () => {
+              const ids = new Set();
+              for (const link of Array.from(document.querySelectorAll('a[href*="/marketplace/item/"]'))) {
+                const match = link.href.match(/marketplace\\/item\\/(\\d+)/);
+                if (match) ids.add(match[1]);
+              }
+              return ids.size;
+            }
+            """
+        )
+    )
+
+
+def load_candidate_window(page, target_limit: int, max_scrolls: int, scroll_wait_ms: int) -> None:
+    if max_scrolls <= 0:
+        return
+
+    previous_count = count_marketplace_card_links(page)
+    stagnant_scrolls = 0
+    for _ in range(max_scrolls):
+        if previous_count >= target_limit:
+            return
+        page.evaluate(
+            """
+            () => {
+              const elements = [
+                document.scrollingElement,
+                document.documentElement,
+                document.body,
+                ...Array.from(document.querySelectorAll('div'))
+              ].filter(Boolean);
+              let target = document.scrollingElement || document.documentElement || document.body;
+              let bestDelta = 0;
+              for (const element of elements) {
+                const delta = (element.scrollHeight || 0) - (element.clientHeight || 0);
+                if (delta > bestDelta) {
+                  bestDelta = delta;
+                  target = element;
+                }
+              }
+              const distance = Math.max((target.clientHeight || window.innerHeight) * 1.8, 1200);
+              target.scrollBy(0, distance);
+            }
+            """
+        )
+        page.wait_for_timeout(scroll_wait_ms)
+        current_count = count_marketplace_card_links(page)
+        if current_count <= previous_count:
+            stagnant_scrolls += 1
+            if stagnant_scrolls >= 2:
+                return
+            continue
+        stagnant_scrolls = 0
+        previous_count = current_count
+
+
 def extract_page_text(page, max_chars: int = 6000) -> str:
     return page.evaluate(
         """
@@ -205,27 +698,22 @@ def extract_page_text(page, max_chars: int = 6000) -> str:
     )
 
 
-def parse_detail_text(text: str) -> dict[str, str]:
+def parse_detail_text(text: str) -> MarketplaceDetail:
     lines = compact_lines(text)
-    detail: dict[str, str] = {
-        "posted": "",
-        "condition": "",
-        "description": "",
-        "approx_location": "",
-        "seller": "",
-    }
+    posted = ""
+    approx_location = ""
 
     for line in lines:
-        if line.startswith("Ditawarkan ") and not detail["posted"]:
-            detail["posted"] = line
-        if "Perkiraan lokasi" in line and not detail["approx_location"]:
-            detail["approx_location"] = line
+        if line.startswith("Ditawarkan ") and not posted:
+            posted = line
+        if "Perkiraan lokasi" in line and not approx_location:
+            approx_location = line
 
+    condition = ""
     if "Kondisi" in lines:
         condition_index = lines.index("Kondisi")
         if condition_index + 1 < len(lines):
-            detail["condition"] = lines[condition_index + 1]
-
+            condition = lines[condition_index + 1]
         description_start = condition_index + 2
     elif "Detail" in lines:
         description_start = lines.index("Detail") + 1
@@ -236,6 +724,7 @@ def parse_detail_text(text: str) -> dict[str, str]:
         "Informasi penjual",
         "Detail penjual",
         "Kirim pesan ke penjual",
+        "Kirim pesan",
         "Kirim",
         "Pilihan hari ini",
     }
@@ -245,16 +734,33 @@ def parse_detail_text(text: str) -> dict[str, str]:
             break
         if "Perkiraan lokasi" in line:
             continue
+        if line == "Lihat lebih banyak":
+            continue
         description_parts.append(line)
 
-    detail["description"] = "\n".join(description_parts).strip()
+    seller = extract_seller(lines)
+    return MarketplaceDetail(
+        posted=posted,
+        condition=condition,
+        description="\n".join(description_parts).strip(),
+        approx_location=approx_location,
+        seller=seller,
+    )
 
-    if "Detail penjual" in lines:
-        seller_index = lines.index("Detail penjual")
-        if seller_index + 1 < len(lines):
-            detail["seller"] = lines[seller_index + 1]
 
-    return detail
+def extract_seller(lines: list[str]) -> str:
+    labels = {"Informasi penjual", "Detail penjual", "Kirim pesan ke penjual", "Kirim"}
+    for label in ("Detail penjual", "Informasi penjual"):
+        if label not in lines:
+            continue
+        index = lines.index(label)
+        for candidate in lines[index + 1 : index + 5]:
+            if candidate in labels:
+                continue
+            if candidate.startswith("Bergabung dengan Facebook"):
+                continue
+            return candidate[:160]
+    return ""
 
 
 def open_marketplace(page, url: str, wait_ms: int, timeout_ms: int) -> None:
@@ -262,55 +768,123 @@ def open_marketplace(page, url: str, wait_ms: int, timeout_ms: int) -> None:
     page.wait_for_timeout(wait_ms)
 
 
-def scrape_query(page, query: str, args: argparse.Namespace, keywords: list[str]) -> list[MarketplaceCard]:
-    url = build_search_url(args.location, query, args.category_id)
-    print(f"Fetching Facebook Marketplace query: {query}", file=sys.stderr)
+def scrape_target(page, target: SourceTarget, args: argparse.Namespace, keywords: list[str]) -> MarketplaceTargetResult:
+    url = build_search_url(target)
+    target_limit = effective_limit(target, args)
+    candidate_limit = effective_candidate_limit(target, args)
+    print(f"Fetching Facebook Marketplace target: {target.id} ({target.query})", file=sys.stderr)
     print(f"URL: {url}", file=sys.stderr)
 
     open_marketplace(page, url, args.wait_ms, args.timeout * 1000)
 
     try:
         page.wait_for_selector('a[href*="/marketplace/item/"]', timeout=args.timeout * 1000)
-    except PlaywrightTimeoutError:
+    except PlaywrightTimeoutError as exc:
         page_text = extract_page_text(page, max_chars=1500)
-        print("No Marketplace item cards appeared.", file=sys.stderr)
         if looks_login_blocked(page_text):
-            print(
-                "The page looks login-gated. Run with --login first, then rerun the scrape command.",
-                file=sys.stderr,
-            )
-        else:
-            print("Page text sample:", file=sys.stderr)
-            print(page_text, file=sys.stderr)
-        return []
+            raise LoginBlockedError("Facebook Marketplace page is login-gated") from exc
+        raise ConnectorBlockedError(f"No Marketplace item cards appeared. Page sample: {page_text[:800]}") from exc
 
-    candidates = extract_cards(page, args.candidate_limit)
+    load_candidate_window(page, candidate_limit, effective_max_scrolls(target, args), args.scroll_wait_ms)
+    candidates = extract_cards(page, candidate_limit)
+    result = select_target_cards(target, candidates, args, keywords, target_limit, url)
+    if result.skipped_count or result.blocked_count:
+        print(
+            "Skipped "
+            f"{result.skipped_count} non-RECON and blocked {result.blocked_count} noisy "
+            f"Marketplace cards for target: {target.id}",
+            file=sys.stderr,
+        )
+    return result
+
+
+def select_target_cards(
+    target: SourceTarget,
+    candidates: list[MarketplaceCard],
+    args: argparse.Namespace,
+    keywords: list[str],
+    limit: int,
+    url: str,
+) -> MarketplaceTargetResult:
     if args.no_relevance_filter:
-        return candidates[: args.limit]
+        return MarketplaceTargetResult(
+            target=target,
+            url=url,
+            cards=candidates[:limit],
+            candidates_count=len(candidates),
+            matched_count=min(len(candidates), limit),
+            skipped_count=0,
+            blocked_count=0,
+        )
 
+    positive_keywords = keywords + list(target.positive_keywords)
+    blocked_keywords = list(DEFAULT_BLOCKED_KEYWORDS) + list(target.blocked_keywords)
     selected: list[MarketplaceCard] = []
-    skipped = 0
+    matched_count = 0
+    skipped_count = 0
+    blocked_count = 0
+    matched_hits: list[str] = []
+    blocked_hits: list[str] = []
+
     for card in candidates:
-        if matched_keywords(card, keywords):
-            selected.append(card)
-        else:
-            skipped += 1
+        block_matches = matched_keywords(card, blocked_keywords)
+        if block_matches:
+            blocked_count += 1
+            blocked_hits.extend(block_matches)
+            continue
 
-        if len(selected) >= args.limit:
-            break
+        positive_matches = matched_keywords(card, positive_keywords)
+        if positive_matches:
+            matched_count += 1
+            matched_hits.extend(positive_matches)
+            if len(selected) < limit:
+                selected.append(card)
+            continue
 
-    if skipped:
-        print(f"Skipped {skipped} non-RECON Marketplace cards for query: {query}", file=sys.stderr)
+        skipped_count += 1
 
-    return selected
+    return MarketplaceTargetResult(
+        target=target,
+        url=url,
+        cards=selected,
+        candidates_count=len(candidates),
+        matched_count=matched_count,
+        skipped_count=skipped_count,
+        blocked_count=blocked_count,
+        matched_keywords=tuple(unique_prefix(matched_hits, 20)),
+        blocked_keywords=tuple(unique_prefix(blocked_hits, 20)),
+    )
 
 
-def scrape_detail(page, card: MarketplaceCard, args: argparse.Namespace) -> dict[str, str]:
+def effective_limit(target: SourceTarget, args: argparse.Namespace) -> int:
+    configured = args.limit if args.limit is not None else target.limit
+    if configured is None:
+        configured = 15
+    return max(1, min(100, configured))
+
+
+def effective_candidate_limit(target: SourceTarget, args: argparse.Namespace) -> int:
+    target_limit = effective_limit(target, args)
+    configured = target.candidate_limit if target.candidate_limit is not None else args.candidate_limit
+    return max(target_limit, min(200, configured))
+
+
+def effective_max_scrolls(target: SourceTarget, args: argparse.Namespace) -> int:
+    configured = target.max_scrolls if target.max_scrolls is not None else args.max_scrolls
+    return max(0, min(10, configured))
+
+
+def scrape_query(page, query: str, args: argparse.Namespace, keywords: list[str]) -> list[MarketplaceCard]:
+    target = target_from_query(query, args)
+    return scrape_target(page, target, args, keywords).cards
+
+
+def scrape_detail(page, card: MarketplaceCard, args: argparse.Namespace) -> MarketplaceDetail:
     try:
         open_marketplace(page, card.url, args.wait_ms, args.timeout * 1000)
-        return parse_detail_text(extract_page_text(page, max_chars=7000))
+        return parse_detail_text(extract_page_text(page, max_chars=9000))
     except PlaywrightError as exc:
-        return {"error": str(exc)}
+        return MarketplaceDetail(error=str(exc))
 
 
 def looks_login_blocked(text: str) -> bool:
@@ -328,40 +902,487 @@ def looks_login_blocked(text: str) -> bool:
     )
 
 
-def print_card(index: int, card: MarketplaceCard, detail: dict[str, str] | None, keywords: list[str]) -> None:
-    print("=" * 88)
-    print(f"{index}. {card.title or '[title not parsed]'}")
-    print(f"Price:    {card.price or '[price not parsed]'}")
-    print(f"Location: {card.location or '[location not parsed]'}")
-    print(f"New:      {'yes' if card.is_newly_listed else 'no'}")
-    print(f"Item ID:  {card.item_id}")
-    print(f"URL:      {card.url}")
-    print(f"Image:    {card.image_url or '[no image found]'}")
-    matches = matched_keywords(card, keywords)
-    if matches:
-        print(f"Matched:  {', '.join(matches[:8])}")
+def normalize_card(
+    card: MarketplaceCard,
+    detail: MarketplaceDetail | None,
+    fetched_at: datetime,
+) -> dict[str, Any]:
+    detail = detail or MarketplaceDetail()
+    description = detail.description or card.raw_text
+    title = normalize_listing_title(card)
+    combined_text = "\n".join(
+        part
+        for part in (
+            title,
+            card.price,
+            clean_card_location(card.location),
+            card.raw_text,
+            detail.description,
+            detail.condition,
+            detail.approx_location,
+            card.image_alt,
+        )
+        if part
+    )
 
-    if card.image_alt:
-        print(f"Alt:      {card.image_alt}")
+    locations = unique_values(
+        [
+            clean_card_location(card.location),
+            normalize_approx_location(detail.approx_location),
+            *extract_locations(description),
+        ],
+        limit=8,
+    )
 
-    if detail:
-        if detail.get("error"):
-            print(f"Detail:   [failed] {detail['error']}")
-            return
+    return {
+        "platform": PLATFORM,
+        "sourceUrl": canonical_marketplace_url(card),
+        "externalId": card.item_id,
+        "title": title,
+        "description": description,
+        "category": extract_category(combined_text),
+        "brand": extract_brand(combined_text),
+        "price": extract_price(detail.description, card.price),
+        "locationTexts": locations,
+        "conditionText": detail.condition or extract_condition(description),
+        "sellerName": detail.seller or None,
+        "status": extract_status(combined_text),
+        "postedAt": parse_posted_at(detail.posted, fetched_at),
+        "firstFetchedAt": fetched_at.isoformat(),
+        "lastFetchedAt": fetched_at.isoformat(),
+        "images": build_images(card),
+    }
 
-        print()
-        print("Detail page:")
-        if detail.get("posted"):
-            print(f"Posted:      {detail['posted']}")
-        if detail.get("condition"):
-            print(f"Condition:   {detail['condition']}")
-        if detail.get("approx_location"):
-            print(f"Approx loc:  {detail['approx_location']}")
-        if detail.get("seller"):
-            print(f"Seller:      {detail['seller']}")
-        if detail.get("description"):
-            print()
-            print(detail["description"])
+
+def normalize_listing_title(card: MarketplaceCard) -> str:
+    if not is_low_value_title(card.title):
+        return card.title
+    image_title = title_from_image_alt(card.image_alt)
+    if image_title:
+        return image_title
+    return card.image_alt or "Facebook Marketplace listing"
+
+
+def is_low_value_title(value: str) -> bool:
+    normalized = normalize_spaces(value)
+    if not normalized:
+        return True
+    return not bool(re.search(r"[A-Za-z0-9]", normalized))
+
+
+def title_from_image_alt(value: str) -> str:
+    value = normalize_spaces(value)
+    if not value:
+        return ""
+    if " di " in value:
+        return trim_value(value.rsplit(" di ", 1)[0])
+    return value
+
+
+def clean_card_location(value: str) -> str:
+    value = normalize_spaces(value)
+    if not value:
+        return ""
+    if re.search(r"\brp\s*[0-9]", value, flags=re.I):
+        return ""
+    if re.search(r"\b(jt|juta|rb|ribu)\b", value, flags=re.I) and re.search(r"\d", value):
+        return ""
+    return value
+
+
+def canonical_marketplace_url(card: MarketplaceCard) -> str:
+    if card.item_id:
+        return f"https://www.facebook.com/marketplace/item/{card.item_id}/"
+    parsed = urllib.parse.urlsplit(card.url)
+    return urllib.parse.urlunsplit(("https", "www.facebook.com", parsed.path, "", ""))
+
+
+def build_images(card: MarketplaceCard) -> list[dict[str, Any]]:
+    if not card.image_url:
+        return []
+    return [
+        {
+            "sourceUrl": card.image_url,
+            "position": 0,
+            "altText": card.image_alt or None,
+        }
+    ]
+
+
+def extract_price(description: str, card_price: str) -> int | None:
+    description_price = extract_price_from_text(description, prefer_context=True)
+    if description_price is not None:
+        return description_price
+
+    card_price_lower = card_price.lower()
+    if any(marker in card_price_lower for marker in FREE_PRICE_MARKERS):
+        return None
+    if any(marker in card_price_lower for marker in ASK_PRICE_MARKERS):
+        return None
+
+    return extract_price_from_text(card_price, prefer_context=False)
+
+
+def extract_price_from_text(text: str, *, prefer_context: bool) -> int | None:
+    if not text:
+        return None
+
+    candidates: list[int] = []
+    for line in compact_lines(text):
+        lower = line.lower()
+        if prefer_context and not any(word in lower for word in ("harga", "price", "rp", "idr", "$", "nego", "nett", "net")):
+            continue
+        if any(marker in lower for marker in FREE_PRICE_MARKERS) and not re.search(r"\d", lower):
+            continue
+        if any(marker in lower for marker in ASK_PRICE_MARKERS) and not re.search(r"\d", lower):
+            continue
+
+        amount = parse_price_value(line)
+        if amount is not None:
+            candidates.append(amount)
+
+    return candidates[0] if candidates else None
+
+
+def parse_price_value(value: str) -> int | None:
+    value = value.lower().replace("\xa0", " ")
+    value = value.replace("idr", "rp")
+
+    unit_match = re.search(r"(?:rp|\$)?\s*(\d+(?:[.,]\d+)?)\s*(jt|juta|rb|ribu|k)\b", value, flags=re.I)
+    if unit_match:
+        number = float(unit_match.group(1).replace(",", "."))
+        unit = unit_match.group(2).lower()
+        multiplier = 1_000_000 if unit in {"jt", "juta"} else 1_000
+        amount = int(number * multiplier)
+        return amount if 10_000 <= amount <= 200_000_000 else None
+
+    money_match = re.search(r"(?:rp|\$)\s*([0-9][0-9.,]*)", value, flags=re.I)
+    if money_match:
+        amount = parse_grouped_digits(money_match.group(1))
+        return amount if amount and 10_000 <= amount <= 200_000_000 else None
+
+    grouped_match = re.search(r"\b([0-9]{1,3}(?:[.,][0-9]{3})+)\b", value)
+    if grouped_match:
+        amount = parse_grouped_digits(grouped_match.group(1))
+        return amount if amount and 10_000 <= amount <= 200_000_000 else None
+
+    return None
+
+
+def parse_grouped_digits(value: str) -> int | None:
+    separators = re.findall(r"[.,]", value)
+    digits = "".join(ch for ch in value if ch.isdigit())
+    if not digits:
+        return None
+    if not separators and len(digits) <= 3:
+        return None
+    return int(digits)
+
+
+def extract_status(text: str) -> str:
+    lower = text.lower()
+    if any(re.search(rf"\b{re.escape(marker)}\b", lower) for marker in SOLD_MARKERS):
+        return "SOLD"
+    return "AVAILABLE"
+
+
+def extract_category(text: str) -> str | None:
+    lower = normalize_spaces(text).lower()
+    if re.search(r"\b(legion go|steam deck|rog ally|handheld pc)\b", lower):
+        return "Handheld PC"
+    if re.search(r"\b(pc gaming|pc rakitan|komputer gaming|desktop|mini pc|workstation)\b", lower):
+        return "Desktop PC"
+    laptop_markers = (
+        r"\b(laptop|notebook|thinkpad|macbook|vivobook|zenbook|ideapad|legion|katana|zephyrus|omen|victus|nitro|predator|loq)\b",
+        r"\b(tuf gaming|ideapad gaming|pavilion gaming)\b",
+        r"\b(ga401|ga402|g513|g713|g14|g15|g16|fx506|fx507|fa506|fa507|gu603)[a-z0-9-]*\b",
+    )
+    if any(re.search(pattern, lower) for pattern in laptop_markers):
+        return "Laptop"
+    for category, keywords in CATEGORY_PATTERNS:
+        if any(keyword_matches(lower, keyword) for keyword in keywords):
+            return category
+    return None
+
+
+def extract_brand(text: str) -> str | None:
+    lower = normalize_spaces(text).lower()
+    for brand, keywords in BRAND_PATTERNS:
+        if any(keyword_matches(lower, keyword) for keyword in keywords):
+            return brand
+    return None
+
+
+def extract_condition(text: str) -> str | None:
+    for line in compact_lines(text):
+        lower = line.lower()
+        if re.search(r"\b(kondisi|condition|bekas|second|2nd|normal|minus)\b", lower) or "like new" in lower:
+            return line[:240]
+    return None
+
+
+def extract_locations(text: str) -> list[str]:
+    locations: list[str] = []
+    for line in compact_lines(text):
+        stripped = trim_value(line)
+        lower = stripped.lower()
+        for prefix in LOCATION_PREFIXES:
+            match = re.match(rf"^{re.escape(prefix)}\s*[:\\-]?\s*(.+)$", stripped, flags=re.I)
+            if match:
+                locations.extend(split_locations(match.group(1)))
+                break
+        if "perkiraan lokasi" in lower:
+            locations.append(normalize_approx_location(stripped))
+    return unique_values(locations, limit=8)
+
+
+def split_locations(value: str) -> list[str]:
+    value = trim_value(value)
+    value = re.sub(r"\b(?:bisa|prefer|only|aja|dan|sekitarnya)?\s*(?:kirim|lewat|ekspedisi|paket|juga).*$", "", value, flags=re.I)
+    parts = re.split(r"\s*(?:,|/|;|\||&|\+|\bdan\b|\batau\b|\bor\b)\s*", value, flags=re.I)
+    return [part[:160] for part in (trim_value(part) for part in parts) if part]
+
+
+def normalize_approx_location(value: str) -> str:
+    value = value.replace("· Perkiraan lokasi", "")
+    value = value.replace("Perkiraan lokasi", "")
+    return trim_value(value)
+
+
+def parse_posted_at(value: str, fallback: datetime) -> str | None:
+    if not value:
+        return None
+    lower = value.lower()
+    match = re.search(r"(\d+)\s*(menit|mnt|jam|hari|minggu|bulan)\s+lalu", lower)
+    if not match:
+        if "kemarin" in lower:
+            return (fallback - timedelta(days=1)).isoformat()
+        return None
+
+    amount = int(match.group(1))
+    unit = match.group(2)
+    if unit in {"menit", "mnt"}:
+        posted_at = fallback - timedelta(minutes=amount)
+    elif unit == "jam":
+        posted_at = fallback - timedelta(hours=amount)
+    elif unit == "hari":
+        posted_at = fallback - timedelta(days=amount)
+    elif unit == "minggu":
+        posted_at = fallback - timedelta(weeks=amount)
+    else:
+        posted_at = fallback - timedelta(days=amount * 30)
+    return posted_at.isoformat()
+
+
+def trim_value(value: str) -> str:
+    value = normalize_spaces(value)
+    return value.strip(" :;,.|-")
+
+
+def normalize_spaces(value: str) -> str:
+    return re.sub(r"\s+", " ", value or "").strip()
+
+
+def unique_values(values: Iterable[str | None], limit: int = 8) -> list[str]:
+    seen: set[str] = set()
+    result: list[str] = []
+    for value in values:
+        clean = trim_value(value or "")
+        if not clean:
+            continue
+        key = clean.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(clean)
+        if len(result) >= limit:
+            break
+    return result
+
+
+def listing_identity(listing: dict[str, Any]) -> str:
+    return str(listing.get("externalId") or listing.get("sourceUrl") or "")
+
+
+def card_identity(card: MarketplaceCard) -> str:
+    return card.item_id or canonical_marketplace_url(card)
+
+
+def should_fetch_detail(card: MarketplaceCard, state: dict[str, Any], args: argparse.Namespace) -> bool:
+    if not args.details:
+        return False
+    if args.no_state or args.detail_scope == "all":
+        return True
+
+    seen_ids = set(str(value) for value in state.get("seen_external_ids", []) if value)
+    seen_urls = set(str(value) for value in state.get("seen_source_urls", []) if value)
+    source_url = canonical_marketplace_url(card)
+    return not ((card.item_id and card.item_id in seen_ids) or (source_url and source_url in seen_urls))
+
+
+def dedupe_cards(cards: Iterable[MarketplaceCard]) -> list[MarketplaceCard]:
+    seen: set[str] = set()
+    deduped: list[MarketplaceCard] = []
+    for card in cards:
+        identity = card_identity(card)
+        if not identity or identity in seen:
+            continue
+        seen.add(identity)
+        deduped.append(card)
+    return deduped
+
+
+def dedupe_listings(listings: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
+    seen: set[str] = set()
+    deduped: list[dict[str, Any]] = []
+    for listing in listings:
+        identity = listing_identity(listing)
+        if not identity or identity in seen:
+            continue
+        seen.add(identity)
+        deduped.append(listing)
+    return deduped
+
+
+def default_state() -> dict[str, Any]:
+    return {
+        "seen_external_ids": [],
+        "seen_source_urls": [],
+        "cooldown_until": None,
+        "last_run_at": None,
+        "last_success_at": None,
+        "last_error": None,
+    }
+
+
+def load_state(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        return default_state()
+    try:
+        loaded = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return default_state()
+    state = default_state()
+    if isinstance(loaded, dict):
+        state.update(loaded)
+    return state
+
+
+def save_state(path: Path, state: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp_path = path.with_suffix(f"{path.suffix}.tmp")
+    temp_path.write_text(json.dumps(state, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    temp_path.replace(path)
+
+
+def filter_new_listings(listings: list[dict[str, Any]], state: dict[str, Any]) -> list[dict[str, Any]]:
+    seen_ids = set(str(value) for value in state.get("seen_external_ids", []) if value)
+    seen_urls = set(str(value) for value in state.get("seen_source_urls", []) if value)
+    new_listings: list[dict[str, Any]] = []
+    for listing in listings:
+        external_id = str(listing.get("externalId") or "")
+        source_url = str(listing.get("sourceUrl") or "")
+        if external_id and external_id in seen_ids:
+            continue
+        if source_url and source_url in seen_urls:
+            continue
+        new_listings.append(listing)
+    return new_listings
+
+
+def update_seen_state(state: dict[str, Any], listings: list[dict[str, Any]], max_seen: int) -> None:
+    new_ids = [str(item.get("externalId")) for item in listings if item.get("externalId")]
+    new_urls = [str(item.get("sourceUrl")) for item in listings if item.get("sourceUrl")]
+    state["seen_external_ids"] = unique_prefix(new_ids + list(state.get("seen_external_ids", [])), max_seen)
+    state["seen_source_urls"] = unique_prefix(new_urls + list(state.get("seen_source_urls", [])), max_seen)
+
+
+def unique_prefix(values: Iterable[str], limit: int) -> list[str]:
+    seen: set[str] = set()
+    result: list[str] = []
+    for value in values:
+        if not value or value in seen:
+            continue
+        seen.add(value)
+        result.append(value)
+        if len(result) >= limit:
+            break
+    return result
+
+
+def cooldown_seconds_remaining(state: dict[str, Any], now: datetime | None = None) -> int:
+    cooldown_until = parse_iso_datetime(str(state.get("cooldown_until") or ""))
+    if not cooldown_until:
+        return 0
+    current = now or now_utc()
+    return max(0, int((cooldown_until - current).total_seconds()))
+
+
+def set_cooldown(state: dict[str, Any], seconds: int, reason: str) -> None:
+    until = now_utc() + timedelta(seconds=max(1, seconds))
+    state["cooldown_until"] = until.isoformat()
+    state["last_error"] = reason
+
+
+def clear_cooldown(state: dict[str, Any]) -> None:
+    state["cooldown_until"] = None
+
+
+def log_event(path: Path | None, event: dict[str, Any]) -> None:
+    if path is None:
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    event = {"logged_at": now_utc().isoformat(), **event}
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(event, ensure_ascii=False, separators=(",", ":")) + "\n")
+
+
+def run_http_probe(args: argparse.Namespace) -> dict[str, Any]:
+    target = resolve_targets(args)[0]
+    url = build_search_url(target)
+    request = urllib.request.Request(
+        url,
+        headers={
+            "User-Agent": args.user_agent,
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        },
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=args.timeout) as response:
+            body = response.read().decode("utf-8", errors="replace")
+            return {
+                "source": "facebook",
+                "status": "http_probe",
+                "target_id": target.id,
+                "query": target.query,
+                "http_status": response.status,
+                "final_url": response.url,
+                "content_length": len(body),
+                "has_marketplace_item": "/marketplace/item/" in body,
+                "looks_login_blocked": looks_login_blocked(body),
+            }
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="replace")
+        return {
+            "source": "facebook",
+            "status": "http_probe_failed",
+            "target_id": target.id,
+            "query": target.query,
+            "http_status": exc.code,
+            "final_url": getattr(exc, "url", url),
+            "content_length": len(body),
+            "has_marketplace_item": "/marketplace/item/" in body,
+            "looks_login_blocked": looks_login_blocked(body),
+            "error": str(exc),
+        }
+    except urllib.error.URLError as exc:
+        return {
+            "source": "facebook",
+            "status": "http_probe_failed",
+            "target_id": target.id,
+            "query": target.query,
+            "error": str(exc),
+        }
 
 
 def run_login(page) -> None:
@@ -371,24 +1392,505 @@ def run_login(page) -> None:
     input("Press Enter here after the browser session is ready...")
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser(description="Fetch Facebook Marketplace sample cards for RECON.")
+def run_calibration(args: argparse.Namespace) -> tuple[int, list[dict[str, Any]]]:
+    state_path = Path(args.state_file)
+    log_path = None if args.no_state else Path(args.log_file)
+    state = default_state() if args.no_state else load_state(state_path)
+    state["last_run_at"] = now_utc().isoformat()
+
+    cooldown_remaining = 0 if args.ignore_cooldown else cooldown_seconds_remaining(state)
+    if cooldown_remaining > 0:
+        log_event(
+            log_path,
+            {
+                "source": "facebook",
+                "status": "calibration_cooldown_skip",
+                "cooldown_remaining_seconds": cooldown_remaining,
+            },
+        )
+        print(f"Facebook connector is cooling down for {cooldown_remaining}s.", file=sys.stderr)
+        return 0, []
+
+    try:
+        records = run_browser_calibration(args)
+        clear_cooldown(state)
+        state["last_success_at"] = now_utc().isoformat()
+        state["last_error"] = None
+        if not args.no_state:
+            save_state(state_path, state)
+        log_event(
+            log_path,
+            {
+                "source": "facebook",
+                "status": "calibration_success",
+                "targets": len(records),
+                "headless": bool(args.headless),
+            },
+        )
+        return 0, records
+    except LoginBlockedError as exc:
+        set_cooldown(state, args.cooldown_seconds, str(exc))
+        if not args.no_state:
+            save_state(state_path, state)
+        log_event(log_path, {"source": "facebook", "status": "calibration_login_blocked", "error": str(exc)})
+        print(f"Facebook Marketplace login gate detected. Cooling down for {args.cooldown_seconds}s.", file=sys.stderr)
+        return 1, []
+    except ConnectorBlockedError as exc:
+        set_cooldown(state, args.cooldown_seconds, str(exc))
+        if not args.no_state:
+            save_state(state_path, state)
+        log_event(log_path, {"source": "facebook", "status": "calibration_blocked_or_empty", "error": str(exc)})
+        print(f"Facebook Marketplace calibration did not expose cards. Cooling down for {args.cooldown_seconds}s.", file=sys.stderr)
+        return 1, []
+    except PlaywrightError as exc:
+        state["last_error"] = str(exc)
+        if not args.no_state:
+            save_state(state_path, state)
+        log_event(log_path, {"source": "facebook", "status": "calibration_failed", "error": str(exc)})
+        print(f"Facebook Marketplace calibration failed: {exc}", file=sys.stderr)
+        if args.browser == "chromium":
+            print("If Chromium is not installed, run: python -m playwright install chromium", file=sys.stderr)
+        return 1, []
+
+
+def run_browser_calibration(args: argparse.Namespace) -> list[dict[str, Any]]:
+    targets = resolve_targets(args)
+    keywords = list(DEFAULT_RECON_KEYWORDS)
+    if args.include_keyword:
+        keywords.extend(args.include_keyword)
+
+    profile_dir = Path(args.profile_dir).resolve()
+    profile_dir.mkdir(parents=True, exist_ok=True)
+
+    with sync_playwright() as playwright:
+        launch_options: dict[str, Any] = {
+            "user_data_dir": str(profile_dir),
+            "headless": args.headless,
+            "locale": "id-ID",
+            "viewport": {"width": 1440, "height": 900},
+        }
+        if args.browser == "chrome":
+            launch_options["channel"] = "chrome"
+
+        context = playwright.chromium.launch_persistent_context(**launch_options)
+        try:
+            page = context.pages[0] if context.pages else context.new_page()
+
+            if args.login:
+                run_login(page)
+                return []
+
+            records: list[dict[str, Any]] = []
+            for target in targets:
+                try:
+                    records.append(calibration_record(scrape_target(page, target, args, keywords)))
+                except LoginBlockedError:
+                    raise
+                except ConnectorBlockedError as exc:
+                    records.append(calibration_error_record(target, str(exc)))
+            return records
+        finally:
+            context.close()
+
+
+def calibration_record(result: MarketplaceTargetResult) -> dict[str, Any]:
+    return {
+        "targetId": result.target.id,
+        "label": result.target.label or None,
+        "groups": list(result.target.groups),
+        "query": result.target.query,
+        "url": result.url,
+        "cadenceSeconds": result.target.cadence_seconds,
+        "candidateCount": result.candidates_count,
+        "matchedCount": result.matched_count,
+        "selectedCount": len(result.cards),
+        "skippedCount": result.skipped_count,
+        "blockedCount": result.blocked_count,
+        "matchedKeywords": list(result.matched_keywords),
+        "blockedKeywords": list(result.blocked_keywords),
+        "sampleTitles": [card.title for card in result.cards[:5]],
+        "sampleIds": [card.item_id for card in result.cards[:5]],
+    }
+
+
+def calibration_error_record(target: SourceTarget, error: str) -> dict[str, Any]:
+    return {
+        "targetId": target.id,
+        "label": target.label or None,
+        "groups": list(target.groups),
+        "query": target.query,
+        "url": build_search_url(target),
+        "cadenceSeconds": target.cadence_seconds,
+        "candidateCount": 0,
+        "matchedCount": 0,
+        "selectedCount": 0,
+        "skippedCount": 0,
+        "blockedCount": 0,
+        "matchedKeywords": [],
+        "blockedKeywords": [],
+        "sampleTitles": [],
+        "sampleIds": [],
+        "error": error,
+    }
+
+
+def run_once(args: argparse.Namespace) -> tuple[int, list[dict[str, Any]]]:
+    state_path = Path(args.state_file)
+    log_path = None if args.no_state else Path(args.log_file)
+    state = default_state() if args.no_state else load_state(state_path)
+    state["last_run_at"] = now_utc().isoformat()
+
+    cooldown_remaining = 0 if args.ignore_cooldown else cooldown_seconds_remaining(state)
+    if cooldown_remaining > 0:
+        log_event(
+            log_path,
+            {
+                "source": "facebook",
+                "status": "cooldown_skip",
+                "cooldown_remaining_seconds": cooldown_remaining,
+            },
+        )
+        print(f"Facebook connector is cooling down for {cooldown_remaining}s.", file=sys.stderr)
+        return 0, []
+
+    if args.access_mode == "http-probe":
+        event = run_http_probe(args)
+        log_event(log_path, event)
+        print(json.dumps(event, ensure_ascii=False, indent=2), file=sys.stderr)
+        return (0 if event.get("has_marketplace_item") else 1), []
+
+    try:
+        listings = run_browser_fetch(args, state)
+        if args.ai_parse and listings:
+            listings = enrich_listings_with_ai(listings, args, log_path)
+
+        listings = dedupe_listings(listings)
+        new_listings = filter_new_listings(listings, state)
+        update_seen_state(state, listings, args.max_seen)
+        clear_cooldown(state)
+        state["last_success_at"] = now_utc().isoformat()
+        state["last_error"] = None
+        if not args.no_state:
+            save_state(state_path, state)
+        log_event(
+            log_path,
+            {
+                "source": "facebook",
+                "status": "success",
+                "normalized": len(listings),
+                "new": len(new_listings),
+                "details": bool(args.details),
+                "headless": bool(args.headless),
+            },
+        )
+    except LoginBlockedError as exc:
+        set_cooldown(state, args.cooldown_seconds, str(exc))
+        if not args.no_state:
+            save_state(state_path, state)
+        log_event(log_path, {"source": "facebook", "status": "login_blocked", "error": str(exc)})
+        print(f"Facebook Marketplace login gate detected. Cooling down for {args.cooldown_seconds}s.", file=sys.stderr)
+        return 1, []
+    except ConnectorBlockedError as exc:
+        set_cooldown(state, args.cooldown_seconds, str(exc))
+        if not args.no_state:
+            save_state(state_path, state)
+        log_event(log_path, {"source": "facebook", "status": "blocked_or_empty", "error": str(exc)})
+        print(f"Facebook Marketplace fetch did not expose cards. Cooling down for {args.cooldown_seconds}s.", file=sys.stderr)
+        return 1, []
+    except PlaywrightError as exc:
+        state["last_error"] = str(exc)
+        if not args.no_state:
+            save_state(state_path, state)
+        log_event(log_path, {"source": "facebook", "status": "failed", "error": str(exc)})
+        print(f"Facebook Marketplace scrape failed: {exc}", file=sys.stderr)
+        if args.browser == "chromium":
+            print("If Chromium is not installed, run: python -m playwright install chromium", file=sys.stderr)
+        return 1, []
+
+    selected = new_listings if args.emit == "new" else listings
+    return 0, selected
+
+
+def run_browser_fetch(args: argparse.Namespace, state: dict[str, Any]) -> list[dict[str, Any]]:
+    targets = resolve_targets(args)
+    keywords = list(DEFAULT_RECON_KEYWORDS)
+    if args.include_keyword:
+        keywords.extend(args.include_keyword)
+
+    profile_dir = Path(args.profile_dir).resolve()
+    profile_dir.mkdir(parents=True, exist_ok=True)
+
+    with sync_playwright() as playwright:
+        launch_options: dict[str, Any] = {
+            "user_data_dir": str(profile_dir),
+            "headless": args.headless,
+            "locale": "id-ID",
+            "viewport": {"width": 1440, "height": 900},
+        }
+        if args.browser == "chrome":
+            launch_options["channel"] = "chrome"
+
+        context = playwright.chromium.launch_persistent_context(**launch_options)
+        try:
+            page = context.pages[0] if context.pages else context.new_page()
+
+            if args.login:
+                run_login(page)
+                return []
+
+            all_cards: list[MarketplaceCard] = []
+            for target in targets:
+                all_cards.extend(scrape_target(page, target, args, keywords).cards)
+
+            cards = dedupe_cards(all_cards)
+            if not cards:
+                raise ConnectorBlockedError("No Facebook Marketplace cards found")
+
+            fetched_at = now_utc()
+            listings: list[dict[str, Any]] = []
+            for card in cards:
+                detail = scrape_detail(page, card, args) if should_fetch_detail(card, state, args) else None
+                if detail and detail.error:
+                    print(f"Detail fetch failed for {card.item_id}: {detail.error}", file=sys.stderr)
+                listings.append(normalize_card(card, detail, fetched_at))
+            return listings
+        finally:
+            context.close()
+
+
+def enrich_listings_with_ai(
+    listings: list[dict[str, Any]],
+    args: argparse.Namespace,
+    log_path: Path | None,
+) -> list[dict[str, Any]]:
+    if str(SCRAPER_DIR) not in sys.path:
+        sys.path.insert(0, str(SCRAPER_DIR))
+    try:
+        from reddit.nvidia_parser import NvidiaParserError, enrich_listings_with_nvidia
+    except ImportError as exc:
+        log_event(log_path, {"source": "facebook", "status": "ai_parse_unavailable", "error": str(exc)})
+        print(f"NVIDIA AI parsing unavailable: {exc}", file=sys.stderr)
+        return listings
+
+    try:
+        return enrich_listings_with_nvidia(
+            listings,
+            model=args.ai_model,
+            batch_size=args.ai_batch_size,
+            rate_limit_seconds=args.ai_rate_limit,
+            timeout=args.ai_timeout,
+            prefer_ai=args.ai_prefer,
+        )
+    except NvidiaParserError as exc:
+        log_event(log_path, {"source": "facebook", "status": "ai_parse_failed", "error": str(exc)})
+        print(f"NVIDIA AI parsing skipped: {exc}", file=sys.stderr)
+        return listings
+
+
+def guarded_run_once(args: argparse.Namespace) -> tuple[int, list[dict[str, Any]]]:
+    if args.no_state:
+        return run_once(args)
+
+    try:
+        with FileLock(Path(args.lock_file), args.lock_stale_seconds):
+            return run_once(args)
+    except AlreadyRunningError as exc:
+        log_event(Path(args.log_file), {"source": "facebook", "status": "locked", "error": str(exc)})
+        print(str(exc), file=sys.stderr)
+        return 2, []
+
+
+def guarded_run_calibration(args: argparse.Namespace) -> tuple[int, list[dict[str, Any]]]:
+    if args.no_state:
+        return run_calibration(args)
+
+    try:
+        with FileLock(Path(args.lock_file), args.lock_stale_seconds):
+            return run_calibration(args)
+    except AlreadyRunningError as exc:
+        log_event(Path(args.log_file), {"source": "facebook", "status": "calibration_locked", "error": str(exc)})
+        print(str(exc), file=sys.stderr)
+        return 2, []
+
+
+def watch(args: argparse.Namespace) -> int:
+    iteration = 0
+    last_code = 0
+    while True:
+        iteration += 1
+        last_code, listings = guarded_run_once(args)
+        print_listings(listings, args.format)
+        if args.max_iterations and iteration >= args.max_iterations:
+            return last_code
+        sleep_for = max(1, args.interval)
+        if args.jitter:
+            sleep_for += random.randint(0, args.jitter)
+        time.sleep(sleep_for)
+
+
+def print_calibration(records: list[dict[str, Any]], output_format: str) -> None:
+    if output_format == "json":
+        print(json.dumps(records, ensure_ascii=False, indent=2))
+        return
+    if output_format == "jsonl":
+        for record in records:
+            print(json.dumps(record, ensure_ascii=False, separators=(",", ":")))
+        return
+
+    if not records:
+        print("No Facebook Marketplace calibration records found.")
+        return
+
+    for record in records:
+        label = f" - {record['label']}" if record.get("label") else ""
+        print(f"{record['targetId']}{label}")
+        print(f"  query: {record['query']}")
+        print(
+            "  candidates/matched/selected/skipped/blocked: "
+            f"{record['candidateCount']}/{record['matchedCount']}/{record['selectedCount']}/"
+            f"{record['skippedCount']}/{record['blockedCount']}"
+        )
+        if record.get("matchedKeywords"):
+            print(f"  matched: {', '.join(record['matchedKeywords'][:8])}")
+        if record.get("blockedKeywords"):
+            print(f"  blocked: {', '.join(record['blockedKeywords'][:8])}")
+        if record.get("sampleTitles"):
+            print("  samples:")
+            for title in record["sampleTitles"][:5]:
+                print(f"    - {title}")
+        if record.get("error"):
+            print(f"  error: {record['error']}")
+        print()
+
+
+def target_summary(target: SourceTarget) -> dict[str, Any]:
+    return {
+        "id": target.id,
+        "label": target.label or None,
+        "groups": list(target.groups),
+        "query": target.query,
+        "location": target.location,
+        "categoryId": target.category_id,
+        "exact": target.exact,
+        "radius": target.radius,
+        "daysSinceListed": target.days_since_listed,
+        "deliveryMethod": target.delivery_method,
+        "availability": target.availability,
+        "cadenceSeconds": target.cadence_seconds,
+        "limit": target.limit,
+        "candidateLimit": target.candidate_limit,
+        "maxScrolls": target.max_scrolls,
+        "positiveKeywords": list(target.positive_keywords),
+        "blockedKeywords": list(target.blocked_keywords),
+        "notes": target.notes or None,
+    }
+
+
+def print_targets(targets: list[SourceTarget], output_format: str) -> None:
+    summaries = [target_summary(target) for target in targets]
+    if output_format == "json":
+        print(json.dumps(summaries, ensure_ascii=False, indent=2))
+        return
+    if output_format == "jsonl":
+        for summary in summaries:
+            print(json.dumps(summary, ensure_ascii=False, separators=(",", ":")))
+        return
+
+    for target in targets:
+        groups = f" [{', '.join(target.groups)}]" if target.groups else ""
+        cadence = f", {target.cadence_seconds}s" if target.cadence_seconds else ""
+        print(f"{target.id}{groups}: {target.query}{cadence}")
+
+
+def print_listings(listings: list[dict[str, Any]], output_format: str) -> None:
+    if output_format == "json":
+        print(json.dumps(listings, ensure_ascii=False, indent=2))
+        return
+    if output_format == "jsonl":
+        for listing in listings:
+            print(json.dumps(listing, ensure_ascii=False, separators=(",", ":")))
+        return
+
+    if not listings:
+        print("No Facebook Marketplace listings found.")
+        return
+
+    for index, listing in enumerate(listings, start=1):
+        print("=" * 88)
+        print(f"{index}. {listing['title']}")
+        print(f"Seller: {listing.get('sellerName') or '-'}")
+        print(f"Posted: {listing.get('postedAt') or '-'}")
+        print(f"Status: {listing.get('status') or '-'}")
+        print(f"Category: {listing.get('category') or '-'}")
+        print(f"Brand: {listing.get('brand') or '-'}")
+        print(f"Price: {listing.get('price') if listing.get('price') is not None else '-'}")
+        locations = listing.get("locationTexts") or []
+        print(f"Locations: {', '.join(locations) if locations else '-'}")
+        print(f"Condition: {listing.get('conditionText') or '-'}")
+        print(f"URL: {listing['sourceUrl']}")
+        images = listing.get("images") or []
+        if images:
+            print(f"Image: {images[0].get('sourceUrl')}")
+        print()
+        print(listing.get("description") or "[no description found]")
+        print()
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Fetch and normalize Facebook Marketplace listings for RECON.")
+    parser.add_argument("--once", action="store_true", help="Run one fetch cycle. This is the default mode.")
+    parser.add_argument("--watch", action="store_true", help="Run continuously.")
+    parser.add_argument("--max-iterations", type=int, default=0, help="Stop watch mode after this many iterations.")
+    parser.add_argument("--interval", type=int, default=60, help="Seconds between watch-mode checks.")
+    parser.add_argument("--jitter", type=int, default=8, help="Random extra seconds in watch mode.")
+    parser.add_argument("--emit", choices=["all", "new"], default=None, help="Print all fetched listings or only unseen ones.")
+    parser.add_argument("--only-new", action="store_true", help="Alias for --emit new.")
+    parser.add_argument("--format", choices=["text", "json", "jsonl"], default="text", help="Output format.")
     parser.add_argument(
         "--query",
         action="append",
         default=None,
         help="Marketplace search query. Can be repeated. Default: vga",
     )
-    parser.add_argument("--limit", type=int, default=5, help="Number of cards per query.")
+    parser.add_argument(
+        "--targets-file",
+        default=str(DEFAULT_TARGETS_FILE),
+        help="JSON file containing reviewed Facebook Marketplace source targets.",
+    )
+    parser.add_argument(
+        "--target",
+        action="append",
+        default=None,
+        help="Named source target id from --targets-file. Can be repeated.",
+    )
+    parser.add_argument(
+        "--target-group",
+        action="append",
+        default=None,
+        help="Source target group from --targets-file, such as hot, parts, peripherals, or discovery.",
+    )
+    parser.add_argument("--list-targets", action="store_true", help="List configured source targets and exit.")
+    parser.add_argument(
+        "--calibrate-targets",
+        action="store_true",
+        help="Fetch target result windows and print per-target noise/relevance metrics without updating seen IDs.",
+    )
+    parser.add_argument("--limit", type=int, default=None, help="Number of relevant cards per query.")
     parser.add_argument(
         "--candidate-limit",
         type=int,
-        default=40,
+        default=60,
         help="Number of visible cards to inspect before RECON relevance filtering.",
     )
     parser.add_argument("--location", default=DEFAULT_LOCATION, help="Marketplace location slug.")
     parser.add_argument("--category-id", default=DEFAULT_CATEGORY_ID, help="Marketplace category id.")
-    parser.add_argument("--details", action="store_true", help="Open each listing and fetch description/condition.")
+    parser.add_argument("--details", action="store_true", help="Open listing pages for description/condition.")
+    parser.add_argument(
+        "--detail-scope",
+        choices=["new", "all"],
+        default="new",
+        help="With state enabled, fetch detail pages only for new listings or for every fetched listing.",
+    )
     parser.add_argument("--login", action="store_true", help="Open browser for one-time Facebook login/session setup.")
     parser.add_argument("--headless", action="store_true", help="Run browser headless. Not recommended for first login.")
     parser.add_argument(
@@ -396,6 +1898,12 @@ def main() -> int:
         choices=("chrome", "chromium"),
         default="chrome",
         help="Use installed Chrome or Playwright Chromium.",
+    )
+    parser.add_argument(
+        "--access-mode",
+        choices=("browser", "http-probe"),
+        default="browser",
+        help="Use the browser connector or run a direct anonymous HTTP reachability probe.",
     )
     parser.add_argument(
         "--profile-dir",
@@ -415,60 +1923,77 @@ def main() -> int:
     )
     parser.add_argument("--timeout", type=int, default=30, help="Navigation/selector timeout in seconds.")
     parser.add_argument("--wait-ms", type=int, default=3000, help="Extra wait after page load for Marketplace JS.")
+    parser.add_argument("--max-scrolls", type=int, default=3, help="Maximum bounded search-result scrolls per query.")
+    parser.add_argument("--scroll-wait-ms", type=int, default=1000, help="Wait after each bounded search-result scroll.")
+    parser.add_argument("--state-file", default=str(DEFAULT_STATE_FILE), help="State JSON path.")
+    parser.add_argument("--lock-file", default=str(DEFAULT_LOCK_FILE), help="Duplicate-run lock path.")
+    parser.add_argument("--log-file", default=str(DEFAULT_LOG_FILE), help="JSONL run log path.")
+    parser.add_argument("--max-seen", type=int, default=500, help="Maximum seen IDs retained in state.")
+    parser.add_argument("--cooldown-seconds", type=int, default=300, help="Cooldown after login gate, block, or empty fetch.")
+    parser.add_argument("--ignore-cooldown", action="store_true", help="Ignore active cooldown state.")
+    parser.add_argument("--no-state", action="store_true", help="Do not read/write state, lock, or run logs.")
+    parser.add_argument("--lock-stale-seconds", type=int, default=900, help="Remove lock files older than this many seconds.")
+    parser.add_argument("--ai-parse", action="store_true", help="Enrich parsed listing fields with NVIDIA AI extraction.")
+    parser.add_argument("--ai-prefer", action="store_true", help="Let AI values replace rule-parser values when available.")
+    parser.add_argument("--ai-model", default=None, help="NVIDIA model ID for AI parsing.")
+    parser.add_argument("--ai-batch-size", type=int, default=5, help="Listings per NVIDIA parser request.")
+    parser.add_argument("--ai-rate-limit", type=float, default=2.0, help="Seconds between NVIDIA parser requests.")
+    parser.add_argument("--ai-timeout", type=int, default=45, help="NVIDIA parser timeout in seconds.")
+    parser.add_argument("--user-agent", default=DEFAULT_USER_AGENT, help="User-Agent header for direct HTTP probes.")
     args = parser.parse_args()
 
-    queries = args.query or ["vga"]
-    keywords = list(DEFAULT_RECON_KEYWORDS)
-    if args.include_keyword:
-        keywords.extend(args.include_keyword)
+    if args.limit is not None and (args.limit < 1 or args.limit > 100):
+        parser.error("--limit must be between 1 and 100.")
+    if args.limit is not None and args.candidate_limit < args.limit:
+        parser.error("--candidate-limit must be greater than or equal to --limit.")
+    if args.interval < 60:
+        parser.error("--interval must be at least 60 seconds for Facebook Marketplace.")
+    if args.ai_batch_size < 1 or args.ai_batch_size > 10:
+        parser.error("--ai-batch-size must be between 1 and 10.")
+    if args.timeout < 5:
+        parser.error("--timeout must be at least 5 seconds.")
+    if args.wait_ms < 0:
+        parser.error("--wait-ms must be zero or greater.")
+    if args.max_scrolls < 0 or args.max_scrolls > 10:
+        parser.error("--max-scrolls must be between 0 and 10.")
+    if args.scroll_wait_ms < 0:
+        parser.error("--scroll-wait-ms must be zero or greater.")
 
-    profile_dir = Path(args.profile_dir).resolve()
-    profile_dir.mkdir(parents=True, exist_ok=True)
+    if args.only_new:
+        args.emit = "new"
+    elif args.emit is None:
+        args.emit = "new" if args.watch else "all"
+
+    return args
+
+
+def main() -> int:
+    args = parse_args()
+    try:
+        if args.list_targets:
+            targets = resolve_targets(args) if args.target or args.target_group else load_source_targets(Path(args.targets_file))
+            print_targets(targets, args.format)
+            return 0
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
 
     try:
-        with sync_playwright() as playwright:
-            context = playwright.chromium.launch_persistent_context(
-                user_data_dir=str(profile_dir),
-                channel="chrome" if args.browser == "chrome" else None,
-                headless=args.headless,
-                locale="id-ID",
-                viewport={"width": 1440, "height": 900},
-            )
-            page = context.pages[0] if context.pages else context.new_page()
+        if args.watch:
+            return watch(args)
 
-            if args.login:
-                run_login(page)
-                context.close()
-                return 0
+        if args.calibrate_targets:
+            code, records = guarded_run_calibration(args)
+            print_calibration(records, args.format)
+            return code
 
-            all_cards: list[MarketplaceCard] = []
-            seen_ids: set[str] = set()
+        code, listings = guarded_run_once(args)
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
 
-            for query in queries:
-                cards = scrape_query(page, query, args, keywords)
-                for card in cards:
-                    if card.item_id in seen_ids:
-                        continue
-                    seen_ids.add(card.item_id)
-                    all_cards.append(card)
-
-            if not all_cards:
-                print("No Facebook Marketplace cards found.")
-                context.close()
-                return 1
-
-            for index, card in enumerate(all_cards, start=1):
-                detail = scrape_detail(page, card, args) if args.details else None
-                print_card(index, card, detail, keywords)
-                print()
-
-            context.close()
-            return 0
-    except PlaywrightError as exc:
-        print(f"Facebook Marketplace scrape failed: {exc}", file=sys.stderr)
-        if args.browser == "chromium":
-            print("If Chromium is not installed, run: python -m playwright install chromium", file=sys.stderr)
-        return 1
+    print_listings(listings, args.format)
+    return code
 
 
 if __name__ == "__main__":

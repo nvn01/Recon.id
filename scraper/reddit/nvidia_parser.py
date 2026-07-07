@@ -172,7 +172,7 @@ def build_prompt(listings: list[dict[str, Any]]) -> str:
         )
 
     return (
-        "Extract listing fields from these Reddit sale posts.\n"
+        "Extract listing fields from these Indonesian used-item sale listings.\n"
         "Rules:\n"
         "- price must be integer rupiah, no punctuation, no currency string.\n"
         "- Shorthand Indonesian prices: 9.6jt = 9600000, 3.5 juta = 3500000, 350rb = 350000.\n"

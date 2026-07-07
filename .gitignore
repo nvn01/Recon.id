@@ -41,6 +41,7 @@ db.sqlite
 
 # local browser/session state
 scraper/facebook/.facebook-profile/
+scraper/facebook/.facebook-profile*/
 
 # editor/system files
 .DS_Store

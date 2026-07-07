@@ -32,3 +32,34 @@ Instagram confirmed the shared connector shape still holds, but it also exposed 
 7. Runtime diagnostics such as `.codex-runtime/instagram-latest-normalized-local.json` are local evidence only. Do not commit browser cookies, CSRF tokens, captured headers, or unsanitized source snapshots.
 
 Facebook should inherit the same public-source posture: prove access first, keep run health and cooldowns scraper-side, normalize into `listings`/`listing_images`, and degrade gracefully when the source blocks, gates, removes, or reorders content.
+
+## Phase 2 Facebook Recap For Future Scraper Work
+
+Facebook Marketplace is now a hardened diagnostic connector, but it remains outside database ingestion until the ingestion path is explicitly approved.
+
+Current useful commands:
+
+```powershell
+python "scraper\facebook\facebook_marketplace.py" --list-targets
+python "scraper\facebook\facebook_marketplace.py" --once --target gpu-rtx --limit 5 --headless --format json --no-state
+python "scraper\facebook\facebook_marketplace.py" --once --target gpu-rtx --limit 5 --details --ai-parse --format json --no-state
+python "scraper\facebook\facebook_marketplace.py" --watch --interval 60 --target-group hot --headless --details --ai-parse
+python "scraper\facebook\facebook_marketplace.py" --calibrate-targets --target gpu-rtx --target laptop-gaming --format json --no-state
+python "scraper\facebook\facebook_marketplace.py" --access-mode http-probe --target gpu-rtx --no-state
+```
+
+Important Facebook-specific facts:
+
+1. Plain HTTP/requests access is not reliable. The direct probe returned HTTP 400/no item cards; keep it as a diagnostic only, not the collection strategy.
+2. The practical path is Playwright with a persistent local profile. It can run headless after session setup; first-time setup may need `--login` with a visible browser. Do not commit `.facebook-profile*`.
+3. Reviewed Marketplace targets live in `scraper/facebook/source_targets.json`. This is scraper-side config, not PostgreSQL. Do not reintroduce `source_targets`, `scrape_runs`, or connector health tables into the Phase 1 database.
+4. Use target groups instead of broad Electronics search. `hot` is minute-level diagnostic coverage; `parts` and `peripherals` should run slower; `discovery` is broad radar only and should not be promoted without calibration evidence.
+5. `--calibrate-targets` is the safe way to judge a query before adding it to a faster cadence. It reports candidate, matched, skipped, blocked, and sample title counts without updating seen IDs.
+6. The connector emits the shared listing shape only: `platform`, `sourceUrl`, `externalId`, `title`, `description`, `category`, `brand`, `price`, `locationTexts`, `conditionText`, `sellerName`, `status`, `postedAt`, `firstFetchedAt`, `lastFetchedAt`, and nested `images`.
+7. NVIDIA AI parsing is optional with `--ai-parse`; it must stay batched and limited to database-backed fields. Rule parsing remains the fallback. Use `--ai-prefer` carefully because model output can be worse than browser/rule fields.
+8. Detail pages are expensive and more likely to expose gating. With state enabled, `--details` fetches details only for new listings by default; use `--detail-scope all` only for controlled debugging.
+9. Runtime state and logs are local-only: `scraper/.state/facebook_marketplace.json`, `scraper/.state/facebook_marketplace.lock`, and `scraper/.logs/facebook_marketplace.jsonl`.
+10. Parser fixes already handled: broad `switch` was removed, CLI `--limit` now overrides target defaults, low-value titles such as `·` fall back to image alt text, card-location blobs containing prices are dropped, `Bekasi` no longer becomes condition text, and ROG/Zephyrus/Victus/Nitro style laptop titles classify as `Laptop`.
+11. Do not add login-wall bypass, CAPTCHA solving, account rotation, proxy escalation, seller messaging, form submission, or account-side actions. Prefer cooldowns, degraded state, and explicit approval before changing access strategy.
+
+Latest verification before this note: Python compile passed, JSON target config validated, `ruff` passed for scraper files, `npm run check` passed, headless Facebook fetch returned live listing JSON, and `npm audit --omit=dev` still only showed the known existing `next -> postcss` advisory.
