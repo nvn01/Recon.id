@@ -20,8 +20,10 @@ async function main() {
       externalId: "db-smoke",
       title: "Recon DB smoke listing",
       description: "Fixture row created by scripts/db-smoke.mjs.",
+      category: "RAM",
+      brand: "ADATA",
       price: 1500000,
-      locationText: "Jakarta",
+      locationTexts: ["Jakarta", "Bekasi"],
       conditionText: "used",
       sellerName: "recon-smoke",
       status: ListingStatus.AVAILABLE,
@@ -34,7 +36,7 @@ async function main() {
       },
     },
     update: {
-      lastSeenAt: new Date(),
+      lastFetchedAt: new Date(),
     },
   });
 
@@ -66,6 +68,14 @@ async function main() {
 
   if (loaded.status !== ListingStatus.AVAILABLE) {
     throw new Error(`Unexpected status: ${loaded.status}`);
+  }
+
+  if (loaded.category !== "RAM" || loaded.brand !== "ADATA") {
+    throw new Error(`Unexpected category/brand: ${loaded.category}/${loaded.brand}`);
+  }
+
+  if (loaded.locationTexts.length !== 2) {
+    throw new Error(`Expected two locations, found ${loaded.locationTexts.length}`);
   }
 
   if (loaded.images.length !== 1) {

@@ -185,7 +185,7 @@
       <li><strong>Initial categories:</strong> computer, PC parts, tech, gaming gear, and gaming peripherals.</li>
       <li><strong>Primary workflow:</strong> fetch public listings, normalize messy marketplace/social-post data, store provenance, and expose reliable queryable records.</li>
       <li><strong>Auth:</strong> no login, user accounts, saved preferences, or authenticated scraping in the first pass.</li>
-      <li><strong>AI:</strong> no AI classification, recommendation, deal scoring, or market-price baseline in v1.</li>
+      <li><strong>AI:</strong> optional AI field extraction is allowed for messy source text, but no recommendation, deal scoring, or market-price baseline in v1.</li>
       <li><strong>Scraping:</strong> public URL fetch only. No login credentials. No Playwright/Selenium unless explicitly approved as a last-resort fallback.</li>
       <li><strong>Scraper runtime:</strong> Python is locked for v1.</li>
       <li><strong>First connector:</strong> harden Reddit first because it is the easier public-fetch baseline.</li>
@@ -217,8 +217,8 @@
     <h3>Success metrics</h3>
     <ul>
       <li><strong>Freshness:</strong> in staging, each active connector can run every 5 minutes without duplicate spam, crashes, or source lockout.</li>
-      <li><strong>Parse quality:</strong> 80%+ of stored listings have title, price when confidently parsed, source URL, platform, and availability state.</li>
-      <li><strong>Provenance:</strong> inferred fields store source evidence, raw text, or confidence metadata.</li>
+      <li><strong>Parse quality:</strong> 80%+ of stored listings have title, source URL, platform, availability state, and price/category/brand when confidently parsed.</li>
+      <li><strong>Provenance:</strong> raw listing descriptions stay stored; parser evidence and confidence remain scraper-side until the database plan explicitly adds provenance columns.</li>
       <li><strong>Health:</strong> scraper-side logs show last success, last failure, and error reason.</li>
       <li><strong>Scope:</strong> no login, public UI, alerts, AI, payment, or chat in the first-pass release.</li>
     </ul>
@@ -241,7 +241,8 @@
     <h3>Instagram seed accounts</h3>
     <ul>
       <li><code>chemicy.consignment</code></li>
-      <li><code>chemicygaming</code></li>
+      <li><code>thelazytitip</code></li>
+      <li><code>sensegame.id</code></li>
       <li><code>cappee.gaming</code></li>
       <li><code>gamecentral.id</code></li>
       <li><code>consigngaming</code></li>
@@ -321,12 +322,14 @@ Backend API / query layer
       <li><code>external_id</code>: nullable source post/listing ID when available</li>
       <li><code>title</code></li>
       <li><code>description</code></li>
+      <li><code>category</code></li>
+      <li><code>brand</code></li>
       <li><code>price</code>: nullable integer IDR value when confidently parsed; no currency column in v1.</li>
-      <li><code>location_text</code></li>
+      <li><code>location_texts</code>: one or more public listing locations.</li>
       <li><code>condition_text</code></li>
       <li><code>seller_name</code></li>
       <li><code>status</code>: available, sold, unknown</li>
-      <li><code>posted_at</code>, <code>first_seen_at</code>, <code>last_seen_at</code></li>
+      <li><code>posted_at</code>, <code>first_fetched_at</code>, <code>last_fetched_at</code></li>
     </ul>
 
     <h3>Supporting records</h3>
@@ -379,7 +382,7 @@ Backend API / query layer
       <li>Done: replace the T3 starter <code>Post</code> model before any real migration or <code>db:push</code>; do not treat the scaffold schema as RECON data storage.</li>
       <li>Done: Prisma schema for <code>listings</code> and <code>listing_images</code> only.</li>
       <li>Done: uniqueness constraint for <code>source_url</code>.</li>
-      <li>Done: indexes for platform, status, last seen date, and price.</li>
+      <li>Done: indexes for platform, status, category, brand, last fetched date, and price.</li>
       <li>Done: no database-backed scraper config, source target table, scrape-run table, or connector-health table in v1.</li>
       <li>Done: local PostgreSQL migration and DB smoke check for insert, image relation, readback, and <code>source_url</code> uniqueness.</li>
       <li>Done: Phase 1 closeout audit for env handling, Docker context, database access, public API surface, and eval items; known Next/PostCSS audit advisory tracked separately.</li>
@@ -462,7 +465,7 @@ Backend API / query layer
       <li>Takedown/hide path implemented.</li>
       <li>Platform-term risk reviewed and accepted or mitigated.</li>
       <li>Privacy note: Recon does not collect visitor accounts in v1; listing data comes from public source posts.</li>
-      <li>Source URL, raw text provenance, and extraction confidence preserved in stored rows and API responses.</li>
+      <li>Source URL and raw listing description preserved in stored rows and API responses; extraction confidence remains scraper-side until explicitly added to the schema.</li>
     </ul>
 
     <h2>9. Local skill bench</h2>

@@ -25,27 +25,31 @@ enum ListingStatus {
 }
 
 model Listing {
-  id            String          @id @default(cuid())
-  platform      ListingPlatform
-  sourceUrl     String          @unique @map("source_url")
-  externalId    String?         @map("external_id")
-  title         String
-  description   String
-  price         Int?
-  locationText  String?         @map("location_text")
-  conditionText String?         @map("condition_text")
-  sellerName    String?         @map("seller_name")
-  status        ListingStatus   @default(UNKNOWN)
-  postedAt      DateTime?       @map("posted_at")
-  firstSeenAt   DateTime        @default(now()) @map("first_seen_at")
-  lastSeenAt    DateTime        @default(now()) @map("last_seen_at")
-  createdAt     DateTime        @default(now()) @map("created_at")
-  updatedAt     DateTime        @default(now()) @updatedAt @map("updated_at")
-  images        ListingImage[]
+  id             String          @id @default(cuid())
+  platform       ListingPlatform
+  sourceUrl      String          @unique @map("source_url")
+  externalId     String?         @map("external_id")
+  title          String
+  description    String
+  category       String?
+  brand          String?
+  price          Int?
+  locationTexts  String[]        @default([]) @map("location_texts")
+  conditionText  String?         @map("condition_text")
+  sellerName     String?         @map("seller_name")
+  status         ListingStatus   @default(UNKNOWN)
+  postedAt       DateTime?       @map("posted_at")
+  firstFetchedAt DateTime        @default(now()) @map("first_fetched_at")
+  lastFetchedAt  DateTime        @default(now()) @map("last_fetched_at")
+  createdAt      DateTime        @default(now()) @map("created_at")
+  updatedAt      DateTime        @default(now()) @updatedAt @map("updated_at")
+  images         ListingImage[]
 
   @@index([platform])
   @@index([status])
-  @@index([lastSeenAt])
+  @@index([category])
+  @@index([brand])
+  @@index([lastFetchedAt])
   @@index([price])
   @@map("listings")
 }

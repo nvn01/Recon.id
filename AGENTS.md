@@ -16,7 +16,7 @@ The main work right now is:
 
 - Make scraping repeatable, source-aware, and resilient.
 - Normalize listings into a consistent data structure before writing them to the database.
-- Extract useful fields from messy post descriptions, including specs, condition, location, price hints, and seller context.
+- Extract useful database fields from messy post descriptions, including category, brand, price, condition, locations, status, and seller context.
 - Avoid rate limits, temporary blocks, duplicate spam, and brittle scraping behavior.
 - Keep the system inspectable so future agents can understand what happened during each scrape run.
 
@@ -121,8 +121,8 @@ Required expectations:
 - Respect source-specific limits, errors, and blocking signals.
 - Implement per-source backoff, cooldowns, retry limits, and failure logging.
 - Make each connector idempotent so repeated runs do not create duplicate listings.
-- Store source URL, external listing identity when available, scrape timestamp, raw text, parsed fields, and extraction confidence.
-- Preserve raw descriptions when extracting specs or condition from unstructured text.
+- Store source URL, external listing identity when available, scrape timestamp, raw text, and parsed database fields.
+- Preserve raw descriptions when extracting category, brand, condition, location, or price from unstructured text.
 - Mark inferred fields as inferred. Do not present low-confidence extraction as fact.
 - Prefer structured parsing when a source provides structured data.
 - Keep connector-specific logic isolated behind a shared normalized listing contract.
@@ -139,14 +139,14 @@ Normalized listings should be able to represent at least:
 - Description or raw post text.
 - Price and currency.
 - Product category.
-- Brand, model, CPU, GPU, RAM, storage, monitor size, or other relevant specs when available.
+- Brand.
 - Condition.
-- Location.
+- One or more public listing locations.
 - Seller or account identity when available.
 - Original image URLs and cached thumbnail metadata.
 - Listing status, such as active, sold, removed, unknown, or duplicate.
-- First seen, last seen, and scrape-run metadata.
-- Extraction confidence and provenance for parsed fields.
+- First fetched, last fetched, and scraper-side run metadata.
+- Parser provenance in scraper-side logs or notes until the database plan explicitly adds provenance columns.
 
 Design the schema so future agents can inspect why a field has a value.
 
