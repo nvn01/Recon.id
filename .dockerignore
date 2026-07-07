@@ -3,6 +3,7 @@
 .codex
 .codex-runtime
 .plan
+**/AGENTS.override.md
 .env
 .env.*
 !.env.example

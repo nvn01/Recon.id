@@ -2,6 +2,8 @@
 .agents/
 .codex/
 .codex-runtime/
+**/AGENTS.override.md
+!AGENTS.md
 
 # dependencies
 node_modules/

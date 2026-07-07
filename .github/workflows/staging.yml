@@ -1,0 +1,75 @@
+name: Build Stagging Image
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  IMAGE_NAME: novn01/recon.id
+  IMAGE_TAG: stagging
+  DATABASE_URL: postgresql://recon@localhost:5432/recon_ci
+  SKIP_ENV_VALIDATION: "1"
+
+jobs:
+  build-stagging:
+    name: Build and push stagging image
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Validate Prisma schema
+        run: npx prisma validate
+
+      - name: Check Next.js app
+        run: npm run check
+
+      - name: Build Next.js app
+        run: npm run build
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Python verification tools
+        run: python -m pip install ruff
+
+      - name: Run scraper unit tests
+        run: python -m unittest discover scraper.tests
+
+      - name: Lint scraper
+        run: python -m ruff check scraper
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push stagging image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}

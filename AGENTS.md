@@ -194,6 +194,37 @@ Use the homelab CI/CD path for now. Keep the architecture portable so Recon can 
 
 Prefer Dockerized services for the web app, scraper, and PostgreSQL. Keep staging and production configuration separate, and never commit real secrets.
 
+## CI/CD Image Publishing
+
+GitHub Actions publishes the root web Docker image to Docker Hub. The scraper service still has its own Dockerfile and is not included in the root web image because `scraper/` is excluded from the root Docker context.
+
+Required GitHub repository secrets:
+
+- `DOCKERHUB_USERNAME`
+- `DOCKERHUB_TOKEN`
+
+Current Docker Hub image name:
+
+```text
+novn01/recon.id
+```
+
+Staging workflow:
+
+- File: `.github/workflows/staging.yml`
+- Trigger: push to `main` or manual workflow dispatch.
+- Checks: `npm ci`, Prisma validate, Next lint/typecheck/build, Python scraper unit tests, and Ruff.
+- Publishes the moving staging tag: `novn01/recon.id:stagging`.
+
+Production workflow:
+
+- File: `.github/workflows/promote-production.yml`
+- Trigger: manual workflow dispatch only.
+- Input: Docker tag version, for example `1.0.0`.
+- Behavior: pulls `novn01/recon.id:stagging`, retags that exact image as `novn01/recon.id:<version>`, and pushes it. Do not rebuild production separately from staging.
+
+Production rollback is a manual Docker tag choice: redeploy the previous known-good fixed version tag.
+
 ## Documentation And Handoff
 
 Capture durable project knowledge in the right place:
