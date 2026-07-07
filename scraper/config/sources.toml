@@ -1,0 +1,52 @@
+# RECON scraper source configuration.
+# Edit this file when you want to add or remove source URLs/accounts without
+# changing Python code. Keep secrets, browser cookies, and API keys out of here.
+
+[run]
+# Main orchestrator defaults. CLI flags can override these values.
+limit = 3
+timeout_seconds = 30
+ai_batch_size = 5
+ai_rate_limit_seconds = 2.0
+
+[reddit.wts_computers]
+enabled = true
+# Human-facing source URL. The Reddit connector still uses subreddit + flair
+# internally so it can request the RSS search URL with sort=new.
+url = "https://www.reddit.com/r/jualbeliindonesia/?f=flair_name%3A%22WTS%3A%20Computers%20%26%20Peripherals%22"
+subreddit = "jualbeliindonesia"
+flair = "WTS: Computers & Peripherals"
+limit = 3
+# rss is safest for cross-platform test runs because Reddit detail JSON often
+# returns 403/429 from this environment. Use auto only for controlled debugging.
+image_mode = "rss"
+
+[instagram.accounts]
+enabled = true
+# Add more public account URLs by adding usernames here. Keep account names
+# only, not session headers or cookies.
+names = [
+  "chemicy.consignment",
+  "thelazytitip",
+  "sensegame.id",
+  "cappee.gaming",
+  "gamecentral.id",
+  "consigngaming",
+  "ggsconsign",
+]
+max_posts_per_account = 10
+delay_seconds = 1.0
+
+[facebook.marketplace]
+enabled = true
+# Reviewed Facebook targets live beside the connector. Add queries there first,
+# then reference target IDs or target groups here.
+targets_file = "../facebook/source_targets.json"
+target_ids = ["gpu-rtx"]
+# Template for broader runs after calibration:
+# target_groups = ["hot"]
+limit = 1
+candidate_limit = 12
+max_scrolls = 1
+headless = true
+details = false

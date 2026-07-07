@@ -391,8 +391,8 @@ Backend API / query layer
 
     <h3>Phase 2: scraper core</h3>
     <ul class="checklist">
-      <li>Implement <code>main.py</code> with flags such as <code>--reddit</code>, <code>--instagram</code>, and <code>--facebook</code>.</li>
-      <li>Implement shared normalized listing contract.</li>
+      <li>Done: implement <code>scraper/main.py</code> with flags such as <code>--reddit</code>, <code>--instagram</code>, <code>--facebook</code>, and <code>--all</code>; current orchestrator is read-only and emits JSON/JSONL without database writes.</li>
+      <li>Done: implement shared normalized listing contract in <code>scraper/shared/listing_contract.py</code>.</li>
       <li>Implement database upsert layer and scraper-side run logging.</li>
       <li>Implement request timeout, retry, jitter, cooldown, and duplicate-run lock.</li>
       <li>Add optional VPN/proxy egress configuration behind explicit env flags.</li>

@@ -63,3 +63,46 @@ Important Facebook-specific facts:
 11. Do not add login-wall bypass, CAPTCHA solving, account rotation, proxy escalation, seller messaging, form submission, or account-side actions. Prefer cooldowns, degraded state, and explicit approval before changing access strategy.
 
 Latest verification before this note: Python compile passed, JSON target config validated, `ruff` passed for scraper files, `npm run check` passed, headless Facebook fetch returned live listing JSON, and `npm audit --omit=dev` still only showed the known existing `next -> postcss` advisory.
+
+## Phase 2 Orchestrator And Shared Contract
+
+The scraper root now has a read-only orchestrator:
+
+```powershell
+python -m scraper.main --all --limit 1 --no-state --headless
+python -m scraper.main --reddit --format json
+python -m scraper.main --instagram --instagram-account chemicy.consignment
+python -m scraper.main --facebook --facebook-target gpu-rtx --headless
+```
+
+Important behavior:
+
+1. `scraper/main.py` does not write to PostgreSQL. It only calls selected connectors, validates normalized listings, and emits JSON/JSONL.
+2. Source settings live in `scraper/config/sources.toml`. Keep public URLs, account names, source target references, cadence hints, and safe connector defaults there. Do not put cookies, tokens, or secrets in the config.
+3. `scraper/shared/listing_contract.py` is the shared Prisma-facing output gate. Connector output must validate before the orchestrator reports success.
+4. Reddit remains RSS-first. The orchestrator default is `image_mode = "rss"` to avoid detail JSON `403`/`429` during cross-platform checks.
+5. Instagram now has `scraper/instagram/instagram.py`, which uses the public `web_profile_info` path with browser-like public headers. It sorts posts by timestamp, skips obvious non-listing content, and reports per-account HTTP status. If Instagram returns `429` or blocks, report it honestly; do not add captured session headers or cookies.
+6. Facebook still runs through Playwright and a persistent local profile. A browser-based success does not always expose a useful single HTTP status, so judge it by card exposure, normalized listing count, and validation errors.
+7. The first successful all-connector read-only check was:
+
+```powershell
+python -m scraper.main --all --limit 1 --no-state --headless > .codex-runtime\phase2-main-test.json
+```
+
+That run produced 9 validated listings across Reddit, Instagram, and Facebook with no validation errors and no database writes.
+
+## Phase 2 Latest Parser Footnote
+
+The Instagram connector and AI enrichment path were rechecked after the shared orchestrator landed:
+
+```powershell
+python -m py_compile scraper\main.py scraper\instagram\instagram.py scraper\reddit\nvidia_parser.py
+python -m ruff check scraper
+python -m scraper.main --instagram --limit 1 --no-state --ai-parse > .codex-runtime\instagram-ai-parse-check-2.json
+```
+
+That run returned HTTP 200 for all 7 configured Instagram accounts, validated 7 normalized listings, and applied NVIDIA AI parsing successfully with `aiParse.applied = true`. The sample output had populated `category`/`brand` for product-supported rows such as Desktop PC/AMD, Motherboard/Gigabyte, Audio/Sony, Game/Square Enix, GPU/Razer, and Peripheral/Moza. Keep `brand = null` when the source text does not identify a product manufacturer, such as generic headset posts.
+
+Instagram does not require a browser in the current orchestrator path; it uses the public `web_profile_info` endpoint with browser-like headers. Facebook is different: direct HTTP probing was not reliable, so the current practical connector still uses Playwright and a persistent local profile, preferably headless on server after first session setup. Do not collapse those two access models into one assumption.
+
+One related parser bug was also fixed: Instagram status detection now checks source-specific sold markers near the listing header instead of scanning all footer/marketing text, so phrases like trusted-source sold history should not mark an available listing as `SOLD`.

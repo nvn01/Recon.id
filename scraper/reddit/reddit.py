@@ -327,16 +327,16 @@ def retry_after_seconds(exc: urllib.error.HTTPError) -> int | None:
     return max(1, int(delta.total_seconds()))
 
 
-def build_rss_url(limit: int) -> str:
+def build_rss_url(limit: int, subreddit: str = SUBREDDIT, flair: str = FLAIR) -> str:
     query = urllib.parse.urlencode(
         {
-            "q": f'flair:"{FLAIR}"',
+            "q": f'flair:"{flair}"',
             "restrict_sr": "1",
             "sort": "new",
             "limit": str(limit),
         }
     )
-    return f"https://www.reddit.com/r/{SUBREDDIT}/search.rss?{query}"
+    return f"https://www.reddit.com/r/{subreddit}/search.rss?{query}"
 
 
 def parsedate_to_datetime(value: str) -> datetime:
@@ -1051,7 +1051,7 @@ def run_once(args: argparse.Namespace) -> tuple[int, list[dict[str, Any]]]:
         print(f"Reddit connector is cooling down for {cooldown_remaining}s.", file=sys.stderr)
         return 0, []
 
-    url = build_rss_url(args.limit)
+    url = build_rss_url(args.limit, getattr(args, "subreddit", SUBREDDIT), getattr(args, "flair", FLAIR))
     print(f"Fetching: {url}", file=sys.stderr)
 
     try:
@@ -1239,6 +1239,8 @@ def guarded_run_once(args: argparse.Namespace) -> tuple[int, list[dict[str, Any]
 def main() -> int:
     parser = argparse.ArgumentParser(description="Fetch latest Reddit WTS computer/peripheral posts.")
     parser.add_argument("--limit", type=int, default=15, help="Number of posts to fetch.")
+    parser.add_argument("--subreddit", default=SUBREDDIT, help="Subreddit name for the Reddit RSS search.")
+    parser.add_argument("--flair", default=FLAIR, help="Flair name for the Reddit RSS search.")
     parser.add_argument("--retries", type=int, default=3, help="HTTP retry attempts.")
     parser.add_argument("--retry-wait", type=int, default=20, help="Seconds to wait after HTTP 429.")
     parser.add_argument("--timeout", type=int, default=30, help="HTTP timeout in seconds.")

@@ -136,8 +136,10 @@ class NvidiaParseClient:
                 {
                     "role": "system",
                     "content": (
-                        "You extract Indonesian used computer, laptop, PC part, and peripheral sale listing fields. "
-                        "Return only JSON. Do not guess: use null for fields not supported by text."
+                        "You extract Indonesian used computer, laptop, PC part, gaming, console, and peripheral sale listing fields. "
+                        "Instagram consignment captions often start with hashtags or marketing copy before the actual product line; "
+                        "use the actual product/model text, not seller slogans. Return only JSON. "
+                        "Use null only when the title and description do not support a field."
                     ),
                 },
                 {"role": "user", "content": prompt},
@@ -180,8 +182,9 @@ def build_prompt(listings: list[dict[str, Any]]) -> str:
         "- status must be AVAILABLE, SOLD, UNKNOWN, or null.\n"
         "- locationTexts must be an array. Return multiple public areas/cities when the post gives more than one.\n"
         "- Keep conditionText as short text copied or lightly normalized from the post.\n"
-        "- category must be a broad product group such as Laptop, Handheld PC, GPU, RAM, Storage, Monitor, Keyboard, Mouse, Network Adapter, Peripheral, or Desktop PC.\n"
+        "- category must be a broad product group such as Laptop, Desktop PC, GPU, CPU, RAM, Storage, Motherboard, Monitor, Keyboard, Mouse, Network Adapter, Peripheral, Audio, Controller, Game Console, Game, Smartphone, Drawing Tablet, or Handheld PC.\n"
         "- brand must be the product brand or manufacturer only, not the seller name.\n"
+        "- Instagram examples: Rode VideoMic -> brand Rode and category Peripheral or Audio; Xiaomi 13 Ultra -> brand Xiaomi and category Smartphone; Call of Duty / Black Ops -> brand Activision and category Game; Genki Sase Switch -> brand Genki and category Controller; Moza R3 -> brand Moza and category Peripheral; Gigabyte H610M -> brand Gigabyte and category Motherboard.\n"
         "- Do not extract model, specs, warranty, minus, evidence, confidence, or notes. Those remain in the original description field.\n"
         f"Return JSON matching this schema: {json.dumps(PARSE_SCHEMA, ensure_ascii=False)}\n\n"
         f"Items:\n{json.dumps({'items': items}, ensure_ascii=False)}"
@@ -296,7 +299,14 @@ def parse_model_json(content: str) -> dict[str, Any]:
     try:
         parsed = json.loads(text)
     except json.JSONDecodeError as exc:
-        raise NvidiaParserError("NVIDIA parser returned non-JSON content") from exc
+        start = text.find("{")
+        end = text.rfind("}")
+        if start == -1 or end == -1 or end <= start:
+            raise NvidiaParserError("NVIDIA parser returned non-JSON content") from exc
+        try:
+            parsed = json.loads(text[start : end + 1])
+        except json.JSONDecodeError as nested_exc:
+            raise NvidiaParserError("NVIDIA parser returned non-JSON content") from nested_exc
     if not isinstance(parsed, dict):
         raise NvidiaParserError("NVIDIA parser JSON root was not an object")
     return parsed
