@@ -6,6 +6,11 @@
 # Main orchestrator defaults. CLI flags can override these values.
 limit = 3
 timeout_seconds = 30
+retries = 2
+retry_base_seconds = 2.0
+retry_max_seconds = 30.0
+retry_jitter_seconds = 1.0
+lock_stale_seconds = 900
 ai_batch_size = 5
 ai_rate_limit_seconds = 2.0
 
@@ -17,6 +22,11 @@ url = "https://www.reddit.com/r/jualbeliindonesia/?f=flair_name%3A%22WTS%3A%20Co
 subreddit = "jualbeliindonesia"
 flair = "WTS: Computers & Peripherals"
 limit = 3
+retries = 2
+retry_wait_seconds = 20
+retry_jitter_seconds = 1.0
+timeout_seconds = 30
+cooldown_seconds = 300
 # rss is safest for cross-platform test runs because Reddit detail JSON often
 # returns 403/429 from this environment. Use auto only for controlled debugging.
 image_mode = "rss"
@@ -36,6 +46,12 @@ names = [
 ]
 max_posts_per_account = 10
 delay_seconds = 1.0
+retries = 2
+retry_base_seconds = 2.0
+retry_max_seconds = 30.0
+retry_jitter_seconds = 1.0
+timeout_seconds = 30
+cooldown_seconds = 300
 
 [facebook.marketplace]
 enabled = true
@@ -48,5 +64,7 @@ target_ids = ["gpu-rtx"]
 limit = 1
 candidate_limit = 12
 max_scrolls = 1
+timeout_seconds = 30
+cooldown_seconds = 300
 headless = true
 details = false

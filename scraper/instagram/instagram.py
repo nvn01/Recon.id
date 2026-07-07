@@ -17,9 +17,11 @@ from typing import Any
 
 try:
     from scraper.reddit import reddit as rule_parser
+    from scraper.shared.runtime import RetryPolicy, retry_after_seconds_from_headers, retry_call
 except ImportError:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
     from reddit import reddit as rule_parser
+    from shared.runtime import RetryPolicy, retry_after_seconds_from_headers, retry_call
 
 
 PLATFORM = "INSTAGRAM"
@@ -91,9 +93,10 @@ class InstagramAccountResult:
 
 
 class InstagramFetchError(RuntimeError):
-    def __init__(self, message: str, status: int | None = None) -> None:
+    def __init__(self, message: str, status: int | None = None, retry_after_seconds: int | None = None) -> None:
         super().__init__(message)
         self.status = status
+        self.retry_after_seconds = retry_after_seconds
 
 
 def run_accounts(
@@ -104,16 +107,26 @@ def run_accounts(
     timeout: int = 30,
     delay_seconds: float = 1.0,
     user_agent: str = DEFAULT_USER_AGENT,
+    retry_policy: RetryPolicy | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     listings: list[dict[str, Any]] = []
     results: list[dict[str, Any]] = []
     fetched_at = datetime.now(timezone.utc)
+    policy = retry_policy or RetryPolicy(attempts=1)
 
     for index, account in enumerate(accounts):
         if index and delay_seconds > 0:
             time.sleep(delay_seconds)
         try:
-            status, payload = fetch_profile(account, timeout=timeout, user_agent=user_agent)
+            status, payload = retry_call(
+                lambda: fetch_profile(account, timeout=timeout, user_agent=user_agent),
+                policy=policy,
+                should_retry=is_retryable_fetch_error,
+                on_retry=lambda exc, next_attempt, attempts, delay: print(
+                    f"Instagram {account} request failed ({exc}). Waiting {delay:.1f}s before retry {next_attempt}/{attempts}...",
+                    file=sys.stderr,
+                ),
+            )
             posts = extract_posts(payload)
             selected: list[dict[str, Any]] = []
             skipped_count = 0
@@ -169,11 +182,23 @@ def fetch_profile(username: str, *, timeout: int, user_agent: str) -> tuple[int,
             body = response.read().decode("utf-8", errors="replace")
             return int(response.status), json.loads(body)
     except urllib.error.HTTPError as exc:
-        raise InstagramFetchError(f"Instagram HTTP {exc.code}", status=exc.code) from exc
+        raise InstagramFetchError(
+            f"Instagram HTTP {exc.code}",
+            status=exc.code,
+            retry_after_seconds=retry_after_seconds_from_headers(exc.headers),
+        ) from exc
     except urllib.error.URLError as exc:
         raise InstagramFetchError(f"Instagram request failed: {exc}") from exc
     except json.JSONDecodeError as exc:
         raise InstagramFetchError("Instagram returned invalid JSON") from exc
+
+
+def is_retryable_fetch_error(exc: Exception) -> bool:
+    if not isinstance(exc, InstagramFetchError):
+        return False
+    if exc.status is None:
+        return True
+    return exc.status in {408, 409, 425, 429, 500, 502, 503, 504}
 
 
 def extract_posts(payload: dict[str, Any]) -> list[dict[str, Any]]:

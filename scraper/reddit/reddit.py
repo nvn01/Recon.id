@@ -285,6 +285,7 @@ def fetch_text(
     user_agent: str,
     retries: int,
     retry_wait: int,
+    retry_jitter: float = 0.0,
     timeout: int = 30,
 ) -> str:
     headers = {
@@ -299,8 +300,8 @@ def fetch_text(
                 return response.read().decode("utf-8", errors="replace")
         except urllib.error.HTTPError as exc:
             if exc.code == 429 and attempt < retries:
-                wait = retry_after_seconds(exc) or retry_wait
-                print(f"Reddit returned 429. Waiting {wait}s before retry {attempt + 1}/{retries}...", file=sys.stderr)
+                wait = retry_wait_with_jitter(exc, retry_wait, retry_jitter)
+                print(f"Reddit returned 429. Waiting {wait:.1f}s before retry {attempt + 1}/{retries}...", file=sys.stderr)
                 time.sleep(wait)
                 continue
             if exc.code == 429:
@@ -325,6 +326,13 @@ def retry_after_seconds(exc: urllib.error.HTTPError) -> int | None:
         retry_at = retry_at.replace(tzinfo=timezone.utc)
     delta = retry_at.astimezone(timezone.utc) - now_utc()
     return max(1, int(delta.total_seconds()))
+
+
+def retry_wait_with_jitter(exc: urllib.error.HTTPError, retry_wait: int, retry_jitter: float) -> float:
+    retry_after = retry_after_seconds(exc)
+    if retry_after is not None:
+        return float(retry_after)
+    return float(retry_wait) + random.uniform(0.0, max(0.0, retry_jitter))
 
 
 def build_rss_url(limit: int, subreddit: str = SUBREDDIT, flair: str = FLAIR) -> str:
@@ -394,6 +402,7 @@ def fetch_post_detail_images(
     user_agent: str,
     retries: int,
     retry_wait: int,
+    retry_jitter: float,
     timeout: int,
 ) -> list[str]:
     external_id = extract_external_id(str(post.get("url", "")), str(post.get("atom_id", "")))
@@ -402,7 +411,7 @@ def fetch_post_detail_images(
 
     for url in candidates:
         try:
-            payload = fetch_json(url, user_agent, retries, retry_wait, timeout)
+            payload = fetch_json(url, user_agent, retries, retry_wait, retry_jitter, timeout)
         except RateLimitedError:
             raise
         except Exception as exc:
@@ -440,6 +449,7 @@ def fetch_json(
     user_agent: str,
     retries: int,
     retry_wait: int,
+    retry_jitter: float,
     timeout: int,
 ) -> Any:
     headers = {
@@ -454,8 +464,11 @@ def fetch_json(
                 return json.loads(response.read().decode("utf-8", errors="replace"))
         except urllib.error.HTTPError as exc:
             if exc.code == 429 and attempt < retries:
-                wait = retry_after_seconds(exc) or retry_wait
-                print(f"Reddit image detail returned 429. Waiting {wait}s before retry {attempt + 1}/{retries}...", file=sys.stderr)
+                wait = retry_wait_with_jitter(exc, retry_wait, retry_jitter)
+                print(
+                    f"Reddit image detail returned 429. Waiting {wait:.1f}s before retry {attempt + 1}/{retries}...",
+                    file=sys.stderr,
+                )
                 time.sleep(wait)
                 continue
             if exc.code == 429:
@@ -563,6 +576,7 @@ def enrich_posts_with_detail_images(
     user_agent: str,
     retries: int,
     retry_wait: int,
+    retry_jitter: float,
     timeout: int,
     delay_seconds: float,
 ) -> list[dict[str, Any]]:
@@ -583,6 +597,7 @@ def enrich_posts_with_detail_images(
                     user_agent=user_agent,
                     retries=retries,
                     retry_wait=retry_wait,
+                    retry_jitter=retry_jitter,
                     timeout=timeout,
                 )
             except RateLimitedError as exc:
@@ -1055,7 +1070,14 @@ def run_once(args: argparse.Namespace) -> tuple[int, list[dict[str, Any]]]:
     print(f"Fetching: {url}", file=sys.stderr)
 
     try:
-        xml_text = fetch_text(url, args.user_agent, args.retries, args.retry_wait, args.timeout)
+        xml_text = fetch_text(
+            url,
+            args.user_agent,
+            args.retries,
+            args.retry_wait,
+            getattr(args, "retry_jitter_seconds", 0.0),
+            args.timeout,
+        )
         posts = parse_feed(xml_text, args.limit)
         posts = enrich_posts_with_detail_images(
             posts,
@@ -1066,6 +1088,7 @@ def run_once(args: argparse.Namespace) -> tuple[int, list[dict[str, Any]]]:
             user_agent=args.user_agent,
             retries=args.image_retries,
             retry_wait=args.retry_wait,
+            retry_jitter=getattr(args, "retry_jitter_seconds", 0.0),
             timeout=args.image_timeout,
             delay_seconds=args.image_detail_delay,
         )
@@ -1243,6 +1266,7 @@ def main() -> int:
     parser.add_argument("--flair", default=FLAIR, help="Flair name for the Reddit RSS search.")
     parser.add_argument("--retries", type=int, default=3, help="HTTP retry attempts.")
     parser.add_argument("--retry-wait", type=int, default=20, help="Seconds to wait after HTTP 429.")
+    parser.add_argument("--retry-jitter-seconds", type=float, default=0.0, help="Random extra seconds added to retry waits.")
     parser.add_argument("--timeout", type=int, default=30, help="HTTP timeout in seconds.")
     parser.add_argument("--interval", type=int, default=60, help="Seconds between watch-mode checks.")
     parser.add_argument("--jitter", type=int, default=8, help="Random extra seconds in watch mode.")
@@ -1296,6 +1320,9 @@ def main() -> int:
         return 2
     if args.interval < 30:
         print("--interval must be at least 30 seconds for Reddit RSS.", file=sys.stderr)
+        return 2
+    if args.retry_jitter_seconds < 0 or args.retry_jitter_seconds > 60:
+        print("--retry-jitter-seconds must be between 0 and 60.", file=sys.stderr)
         return 2
     if args.image_retries < 1 or args.image_retries > 3:
         print("--image-retries must be between 1 and 3.", file=sys.stderr)

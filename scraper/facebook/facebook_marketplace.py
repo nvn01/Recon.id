@@ -1469,6 +1469,8 @@ def run_browser_calibration(args: argparse.Namespace) -> list[dict[str, Any]]:
             "locale": "id-ID",
             "viewport": {"width": 1440, "height": 900},
         }
+        if getattr(args, "proxy_url", None):
+            launch_options["proxy"] = {"server": args.proxy_url}
         if args.browser == "chrome":
             launch_options["channel"] = "chrome"
 
@@ -1627,6 +1629,8 @@ def run_browser_fetch(args: argparse.Namespace, state: dict[str, Any]) -> list[d
             "locale": "id-ID",
             "viewport": {"width": 1440, "height": 900},
         }
+        if getattr(args, "proxy_url", None):
+            launch_options["proxy"] = {"server": args.proxy_url}
         if args.browser == "chrome":
             launch_options["channel"] = "chrome"
 

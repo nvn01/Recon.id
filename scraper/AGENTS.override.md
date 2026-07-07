@@ -156,3 +156,17 @@ docker compose --profile scraper run --rm scraper
 python -m unittest discover scraper.tests
 python -m ruff check scraper
 ```
+
+## Phase 2 Runtime Guardrails
+
+The remaining Phase 2 scraper guardrails are implemented as a minimal runtime layer, not as new database tables.
+
+Important behavior:
+
+1. `scraper/shared/runtime.py` owns the shared `FileLock`, cooldown helpers, retry/backoff helpers, and explicit egress config parsing.
+2. `scraper/main.py` takes an orchestrator lock for stateful `--all`, default all-connector runs, and `--write-db` runs. Single-connector read-only orchestrator runs are not globally locked, and `--no-state` bypasses the lock for diagnostics.
+3. Reddit and Facebook keep their existing connector-local state, locks, and cooldowns. Reddit now adds configured jitter to its existing 429 retry waits.
+4. Instagram now uses bounded retries with jitter around public profile requests and stores cooldown state in `scraper/.state/instagram_accounts.json` when accounts return rate-limit or block statuses.
+5. Egress defaults to direct access. Proxy mode requires `SCRAPER_EGRESS_MODE=proxy`, `SCRAPER_ALLOW_PROXY=true`, and `SCRAPER_PROXY_URL`. VPN mode requires `SCRAPER_EGRESS_MODE=vpn` and `SCRAPER_ALLOW_VPN=true`; actual VPN routing is deployment/network setup, not automatic rotation in Python.
+6. Proxy URLs may contain credentials, so keep them only in ignored env files or secret stores. Runtime logs redact proxy credentials.
+7. Do not add proxy rotation, account rotation, CAPTCHA solving, or automatic VPN switching as a follow-up to blocks. Prefer lower cadence, cooldowns, source-specific fixes, and degraded state first.
