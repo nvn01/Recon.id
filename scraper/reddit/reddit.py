@@ -307,6 +307,26 @@ def fetch_text(
             if exc.code == 429:
                 raise RateLimitedError("Reddit returned HTTP 429", retry_after_seconds(exc)) from exc
             raise
+        except urllib.error.URLError as exc:
+            if attempt < retries and is_retryable_transport_error(exc):
+                wait = retry_wait_seconds(retry_wait, retry_jitter)
+                print(
+                    f"Reddit transport error ({exc}). Waiting {wait:.1f}s before retry {attempt + 1}/{retries}...",
+                    file=sys.stderr,
+                )
+                time.sleep(wait)
+                continue
+            raise
+        except TimeoutError as exc:
+            if attempt < retries:
+                wait = retry_wait_seconds(retry_wait, retry_jitter)
+                print(
+                    f"Reddit request timed out ({exc}). Waiting {wait:.1f}s before retry {attempt + 1}/{retries}...",
+                    file=sys.stderr,
+                )
+                time.sleep(wait)
+                continue
+            raise
 
     raise RuntimeError("fetch failed without a specific HTTP error")
 
@@ -332,7 +352,28 @@ def retry_wait_with_jitter(exc: urllib.error.HTTPError, retry_wait: int, retry_j
     retry_after = retry_after_seconds(exc)
     if retry_after is not None:
         return float(retry_after)
+    return retry_wait_seconds(retry_wait, retry_jitter)
+
+
+def retry_wait_seconds(retry_wait: int, retry_jitter: float) -> float:
     return float(retry_wait) + random.uniform(0.0, max(0.0, retry_jitter))
+
+
+def is_retryable_transport_error(exc: urllib.error.URLError) -> bool:
+    reason = getattr(exc, "reason", None)
+    if isinstance(reason, TimeoutError):
+        return True
+    reason_text = str(reason or exc).lower()
+    retryable_markers = (
+        "timed out",
+        "temporarily unavailable",
+        "temporary failure",
+        "connection reset",
+        "connection aborted",
+        "remote end closed",
+        "handshake operation timed out",
+    )
+    return any(marker in reason_text for marker in retryable_markers)
 
 
 def build_rss_url(limit: int, subreddit: str = SUBREDDIT, flair: str = FLAIR) -> str:
