@@ -196,17 +196,18 @@ Prefer Dockerized services for the web app, scraper, and PostgreSQL. Keep stagin
 
 ## CI/CD Image Publishing
 
-GitHub Actions publishes the root web Docker image to Docker Hub. The scraper service still has its own Dockerfile and is not included in the root web image because `scraper/` is excluded from the root Docker context.
+GitHub Actions publishes separate web and scraper Docker images to Docker Hub. The scraper service has its own Dockerfile and is still not included in the root web image because `scraper/` is excluded from the root Docker context.
 
 Required GitHub repository secrets:
 
 - `DOCKERHUB_USERNAME`
 - `DOCKERHUB_TOKEN`
 
-Current Docker Hub image name:
+Current Docker Hub image names:
 
 ```text
 novn01/recon.id
+novn01/recon-scraper
 ```
 
 Staging workflow:
@@ -214,16 +215,16 @@ Staging workflow:
 - File: `.github/workflows/staging.yml`
 - Trigger: push to `main` or manual workflow dispatch.
 - Checks: `npm ci`, Prisma validate, Next lint/typecheck/build, Python scraper unit tests, and Ruff.
-- Publishes the moving staging tag: `novn01/recon.id:stagging`.
+- Publishes the moving staging tags: `novn01/recon.id:stagging` and `novn01/recon-scraper:stagging`.
 
 Production workflow:
 
 - File: `.github/workflows/promote-production.yml`
 - Trigger: manual workflow dispatch only.
 - Input: Docker tag version, for example `1.0.0`.
-- Behavior: pulls `novn01/recon.id:stagging`, retags that exact image as `novn01/recon.id:<version>`, and pushes it. Do not rebuild production separately from staging.
+- Behavior: pulls the `stagging` web and scraper images, retags those exact images as `<version>`, and pushes them. Do not rebuild production separately from staging.
 
-Production rollback is a manual Docker tag choice: redeploy the previous known-good fixed version tag.
+Production rollback is a manual Docker tag choice: redeploy the previous known-good fixed version tags.
 
 ## Documentation And Handoff
 

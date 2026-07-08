@@ -12,7 +12,8 @@ permissions:
   contents: read
 
 env:
-  IMAGE_NAME: novn01/recon.id
+  WEB_IMAGE_NAME: novn01/recon.id
+  SCRAPER_IMAGE_NAME: novn01/recon-scraper
   STAGGING_TAG: stagging
 
 jobs:
@@ -37,10 +38,12 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Promote stagging image
+      - name: Promote stagging images
         env:
           VERSION: ${{ inputs.version }}
         run: |
-          docker pull "$IMAGE_NAME:$STAGGING_TAG"
-          docker tag "$IMAGE_NAME:$STAGGING_TAG" "$IMAGE_NAME:$VERSION"
-          docker push "$IMAGE_NAME:$VERSION"
+          for IMAGE_NAME in "$WEB_IMAGE_NAME" "$SCRAPER_IMAGE_NAME"; do
+            docker pull "$IMAGE_NAME:$STAGGING_TAG"
+            docker tag "$IMAGE_NAME:$STAGGING_TAG" "$IMAGE_NAME:$VERSION"
+            docker push "$IMAGE_NAME:$VERSION"
+          done

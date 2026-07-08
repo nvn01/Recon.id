@@ -32,6 +32,7 @@ COPY --from=builder --chown=nextjs:nodejs /app/.next ./.next
 COPY --from=builder --chown=nextjs:nodejs /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/prisma ./prisma
 COPY --from=builder --chown=nextjs:nodejs /app/generated ./generated
+COPY --from=builder --chown=nextjs:nodejs /app/src/env.js ./src/env.js
 COPY --from=builder --chown=nextjs:nodejs /app/next.config.js ./next.config.js
 
 USER nextjs
