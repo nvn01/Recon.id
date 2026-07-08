@@ -50,7 +50,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install Python verification tools
-        run: python -m pip install ruff
+        run: python -m pip install ruff -r scraper/requirements.txt
 
       - name: Run scraper unit tests
         run: python -m unittest discover scraper.tests
