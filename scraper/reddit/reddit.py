@@ -376,6 +376,18 @@ def is_retryable_transport_error(exc: urllib.error.URLError) -> bool:
     return any(marker in reason_text for marker in retryable_markers)
 
 
+def is_tls_verification_error(exc: Exception) -> bool:
+    reason = getattr(exc, "reason", None)
+    reason_text = str(reason or exc).lower()
+    markers = (
+        "certificate verify failed",
+        "self-signed certificate",
+        "unable to get local issuer certificate",
+        "hostname mismatch",
+    )
+    return any(marker in reason_text for marker in markers)
+
+
 def build_rss_url(limit: int, subreddit: str = SUBREDDIT, flair: str = FLAIR) -> str:
     query = urllib.parse.urlencode(
         {
@@ -1189,6 +1201,22 @@ def run_once(args: argparse.Namespace) -> tuple[int, list[dict[str, Any]]]:
         print(f"Reddit rate limited this connector. Cooling down for {wait}s.", file=sys.stderr)
         return 1, []
     except Exception as exc:
+        if is_tls_verification_error(exc):
+            wait = max(60, args.cooldown_seconds)
+            set_cooldown(state, wait, str(exc))
+            if not args.no_state:
+                save_state(state_path, state)
+            log_event(
+                log_path,
+                {
+                    "source": "reddit",
+                    "status": "tls_verification_failed",
+                    "cooldown_seconds": wait,
+                    "error": str(exc),
+                },
+            )
+            print(f"Reddit TLS verification failed. Cooling down for {wait}s.", file=sys.stderr)
+            return 1, []
         state["last_error"] = str(exc)
         if not args.no_state:
             save_state(state_path, state)

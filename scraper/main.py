@@ -138,6 +138,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--facebook-target", action="append", default=None, help="Facebook target id from source_targets.json. Can be repeated.")
     parser.add_argument("--facebook-target-group", action="append", default=None, help="Facebook target group from source_targets.json. Can be repeated.")
     parser.add_argument("--instagram-account", action="append", default=None, help="Instagram account username. Can be repeated.")
+    parser.add_argument(
+        "--instagram-fetch-mode",
+        choices=("direct", "browser", "auto"),
+        default=None,
+        help="Instagram public fetch path. auto falls back to a non-persistent browser context on 403/429.",
+    )
+    parser.add_argument("--instagram-browser", choices=("chrome", "chromium"), default=None, help="Instagram browser fallback engine.")
+    parser.add_argument("--instagram-visible-browser", action="store_true", help="Run Instagram browser fallback visibly for diagnostics.")
     return parser.parse_args()
 
 
@@ -405,6 +413,11 @@ def run_instagram(args: argparse.Namespace, config: dict[str, Any]) -> dict[str,
         timeout=int_value(instagram_config.get("timeout_seconds"), int_value(run_config.get("timeout_seconds"), 30)),
         delay_seconds=float_value(instagram_config.get("delay_seconds"), 1.0),
         retry_policy=retry_policy,
+        fetch_mode=str(getattr(args, "instagram_fetch_mode", None) or instagram_config.get("fetch_mode") or "direct"),
+        browser=str(getattr(args, "instagram_browser", None) or instagram_config.get("browser") or "chromium"),
+        headless=not bool(getattr(args, "instagram_visible_browser", False))
+        and bool_value(instagram_config.get("headless"), default=True),
+        browser_wait_ms=int_value(instagram_config.get("browser_wait_ms"), 2500),
     )
     account_results = skipped_accounts + account_results
     ai_parse_error = None
@@ -484,7 +497,7 @@ def run_instagram(args: argparse.Namespace, config: dict[str, Any]) -> dict[str,
         "status": status,
         "exitCode": 0 if ok else 1,
         "httpStatus": statuses[0] if len(statuses) == 1 else statuses,
-        "transport": "instagram_web_profile_info",
+        "transport": str(getattr(args, "instagram_fetch_mode", None) or instagram_config.get("fetch_mode") or "direct"),
         "accounts": account_results,
         "aiParse": {
             "requested": bool(args.ai_parse),
@@ -519,6 +532,7 @@ def instagram_account_skip_result(account: str, cooldown_remaining: int) -> dict
         "account": account,
         "ok": True,
         "http_status": None,
+        "transport": "cooldown_skip",
         "returned_count": 0,
         "normalized_count": 0,
         "skipped_count": 0,
@@ -708,6 +722,14 @@ def enrich_with_nvidia(listings: list[dict[str, Any]], args: argparse.Namespace,
 def effective_limit(args: argparse.Namespace, source_config: dict[str, Any], run_config: dict[str, Any]) -> int:
     configured = args.limit if args.limit is not None else source_config.get("limit", run_config.get("limit", 3))
     return max(1, min(100, int_value(configured, 3)))
+
+
+def bool_value(value: Any, *, default: bool) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
 
 
 def now_iso() -> str:

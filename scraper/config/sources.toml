@@ -4,7 +4,7 @@
 
 [run]
 # Main orchestrator defaults. CLI flags can override these values.
-limit = 3
+limit = 10
 timeout_seconds = 30
 retries = 2
 retry_base_seconds = 2.0
@@ -17,36 +17,41 @@ ai_rate_limit_seconds = 2.0
 [scheduler]
 # Production-shaped scheduler defaults. This runs source-specific one-shot
 # orchestrator commands and keeps its own state/logs beside connector state.
-loop_sleep_seconds = 30
+loop_sleep_seconds = 60
 job_timeout_seconds = 300
 state_file = ".state/scheduler.json"
 log_file = ".logs/scheduler_runs.jsonl"
 
 [scheduler.reddit]
 enabled = true
-cadence_seconds = 300
-jitter_seconds = 15
-limit = 3
+cadence_seconds = 60
+jitter_seconds = 10
+limit = 15
 
 [scheduler.instagram]
 enabled = true
-# Instagram is still diagnostic on staging while direct web_profile_info returns
-# 429. Pace one account at a time and let account-level cooldowns persist.
+# Instagram remains slow/staggered until the browser-backed public fallback
+# proves stable on staging. Pace one account at a time and persist cooldowns.
 cadence_seconds = 3600
-stagger_seconds = 300
+stagger_seconds = 600
 jitter_seconds = 60
-limit = 1
+limit = 2
 per_account = true
 
 [scheduler.facebook]
 enabled = true
-# Browser-backed Marketplace fetches are slower and beta; do not share Reddit's
-# 5-minute cadence until staging burn-in proves it.
-cadence_seconds = 900
-jitter_seconds = 45
-limit = 1
+# Rotate reviewed hot targets one at a time instead of hammering all Marketplace
+# searches together. With the current hot target count this yields about one
+# browser-backed Marketplace search per minute, while each target repeats slower.
+cadence_seconds = 600
+target_cadence_seconds = 600
+target_stagger_seconds = 60
+jitter_seconds = 30
+limit = 3
 headless = true
 browser = "chromium"
+split_targets = true
+target_groups = ["hot"]
 
 [reddit.wts_computers]
 enabled = true
@@ -55,7 +60,7 @@ enabled = true
 url = "https://www.reddit.com/r/jualbeliindonesia/?f=flair_name%3A%22WTS%3A%20Computers%20%26%20Peripherals%22"
 subreddit = "jualbeliindonesia"
 flair = "WTS: Computers & Peripherals"
-limit = 3
+limit = 15
 retries = 2
 retry_wait_seconds = 20
 retry_jitter_seconds = 1.0
@@ -80,22 +85,24 @@ names = [
 ]
 max_posts_per_account = 10
 delay_seconds = 1.0
-retries = 2
+retries = 1
 retry_base_seconds = 2.0
 retry_max_seconds = 30.0
 retry_jitter_seconds = 1.0
 timeout_seconds = 30
-cooldown_seconds = 300
+cooldown_seconds = 3600
+fetch_mode = "auto"
+headless = true
+browser = "chromium"
+browser_wait_ms = 2500
 
 [facebook.marketplace]
 enabled = true
 # Reviewed Facebook targets live beside the connector. Add queries there first,
 # then reference target IDs or target groups here.
 targets_file = "../facebook/source_targets.json"
-target_ids = ["gpu-rtx"]
-# Template for broader runs after calibration:
-# target_groups = ["hot"]
-limit = 1
+target_groups = ["hot"]
+limit = 3
 candidate_limit = 12
 max_scrolls = 1
 timeout_seconds = 30

@@ -85,6 +85,7 @@ class InstagramAccountResult:
     account: str
     ok: bool
     http_status: int | None
+    transport: str
     returned_count: int
     normalized_count: int
     skipped_count: int
@@ -108,6 +109,10 @@ def run_accounts(
     delay_seconds: float = 1.0,
     user_agent: str = DEFAULT_USER_AGENT,
     retry_policy: RetryPolicy | None = None,
+    fetch_mode: str = "direct",
+    browser: str = "chromium",
+    headless: bool = True,
+    browser_wait_ms: int = 2500,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     listings: list[dict[str, Any]] = []
     results: list[dict[str, Any]] = []
@@ -119,7 +124,15 @@ def run_accounts(
             time.sleep(delay_seconds)
         try:
             status, payload = retry_call(
-                lambda: fetch_profile(account, timeout=timeout, user_agent=user_agent),
+                lambda: fetch_profile_resilient(
+                    account,
+                    timeout=timeout,
+                    user_agent=user_agent,
+                    fetch_mode=fetch_mode,
+                    browser=browser,
+                    headless=headless,
+                    browser_wait_ms=browser_wait_ms,
+                ),
                 policy=policy,
                 should_retry=is_retryable_fetch_error,
                 on_retry=lambda exc, next_attempt, attempts, delay: print(
@@ -143,6 +156,7 @@ def run_accounts(
                     account=account,
                     ok=True,
                     http_status=status,
+                    transport=transport_name(fetch_mode, status),
                     returned_count=len(posts),
                     normalized_count=len(selected),
                     skipped_count=skipped_count,
@@ -156,6 +170,7 @@ def run_accounts(
                     account=account,
                     ok=False,
                     http_status=exc.status,
+                    transport=transport_name(fetch_mode, exc.status),
                     returned_count=0,
                     normalized_count=0,
                     skipped_count=0,
@@ -164,6 +179,58 @@ def run_accounts(
                 ).__dict__
             )
     return listings, results
+
+
+def transport_name(fetch_mode: str, status: int | None) -> str:
+    mode = (fetch_mode or "direct").strip().lower()
+    if mode == "auto" and status in {403, 429}:
+        return "instagram_web_profile_info_auto"
+    if mode == "browser":
+        return "instagram_web_profile_info_browser"
+    if mode == "auto":
+        return "instagram_web_profile_info_auto"
+    return "instagram_web_profile_info"
+
+
+def fetch_profile_resilient(
+    username: str,
+    *,
+    timeout: int,
+    user_agent: str,
+    fetch_mode: str,
+    browser: str,
+    headless: bool,
+    browser_wait_ms: int,
+) -> tuple[int, dict[str, Any]]:
+    mode = (fetch_mode or "direct").strip().lower()
+    if mode not in {"direct", "browser", "auto"}:
+        raise InstagramFetchError(f"unsupported Instagram fetch_mode: {fetch_mode}")
+
+    if mode == "browser":
+        return fetch_profile_browser(
+            username,
+            timeout=timeout,
+            user_agent=user_agent,
+            browser=browser,
+            headless=headless,
+            wait_ms=browser_wait_ms,
+        )
+    if mode == "direct":
+        return fetch_profile(username, timeout=timeout, user_agent=user_agent)
+
+    try:
+        return fetch_profile(username, timeout=timeout, user_agent=user_agent)
+    except InstagramFetchError as exc:
+        if exc.status not in {403, 429}:
+            raise
+        return fetch_profile_browser(
+            username,
+            timeout=timeout,
+            user_agent=user_agent,
+            browser=browser,
+            headless=headless,
+            wait_ms=browser_wait_ms,
+        )
 
 
 def fetch_profile(username: str, *, timeout: int, user_agent: str) -> tuple[int, dict[str, Any]]:
@@ -191,6 +258,95 @@ def fetch_profile(username: str, *, timeout: int, user_agent: str) -> tuple[int,
         raise InstagramFetchError(f"Instagram request failed: {exc}") from exc
     except json.JSONDecodeError as exc:
         raise InstagramFetchError("Instagram returned invalid JSON") from exc
+
+
+def fetch_profile_browser(
+    username: str,
+    *,
+    timeout: int,
+    user_agent: str,
+    browser: str,
+    headless: bool,
+    wait_ms: int,
+) -> tuple[int, dict[str, Any]]:
+    try:
+        from playwright.sync_api import Error as PlaywrightError
+        from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
+        from playwright.sync_api import sync_playwright
+    except ImportError as exc:
+        raise InstagramFetchError("Instagram browser fallback unavailable: playwright is not installed") from exc
+
+    timeout_ms = max(5000, int(timeout * 1000))
+    captured_status: int | None = None
+    captured_payload: dict[str, Any] | None = None
+    query = {"username": username}
+
+    try:
+        with sync_playwright() as playwright:
+            launch_options: dict[str, Any] = {"headless": headless}
+            if browser == "chrome":
+                launch_options["channel"] = "chrome"
+            browser_instance = playwright.chromium.launch(**launch_options)
+            context = browser_instance.new_context(
+                user_agent=user_agent,
+                locale="id-ID",
+                viewport={"width": 1365, "height": 768},
+            )
+            try:
+                page = context.new_page()
+
+                def capture_response(response: Any) -> None:
+                    nonlocal captured_status, captured_payload
+                    if WEB_PROFILE_INFO_URL not in str(response.url):
+                        return
+                    try:
+                        payload = response.json()
+                    except Exception:
+                        return
+                    if isinstance(payload, dict):
+                        captured_status = int(response.status)
+                        captured_payload = payload
+
+                page.on("response", capture_response)
+                try:
+                    page.goto(
+                        f"https://www.instagram.com/{username}/",
+                        wait_until="domcontentloaded",
+                        timeout=timeout_ms,
+                    )
+                    page.wait_for_timeout(max(0, wait_ms))
+                except (PlaywrightError, PlaywrightTimeoutError):
+                    pass
+
+                if captured_payload is not None:
+                    if captured_status is not None and captured_status >= 400:
+                        raise InstagramFetchError(f"Instagram browser HTTP {captured_status}", status=captured_status)
+                    return captured_status or 200, captured_payload
+
+                response = context.request.get(
+                    WEB_PROFILE_INFO_URL,
+                    params=query,
+                    headers={
+                        "X-IG-App-ID": INSTAGRAM_APP_ID,
+                        "Accept": "application/json,text/plain,*/*",
+                        "Referer": f"https://www.instagram.com/{username}/",
+                    },
+                    timeout=timeout_ms,
+                )
+                status = int(response.status)
+                if status >= 400:
+                    raise InstagramFetchError(f"Instagram browser HTTP {status}", status=status)
+                payload = response.json()
+                if not isinstance(payload, dict):
+                    raise InstagramFetchError("Instagram browser returned invalid JSON")
+                return status, payload
+            finally:
+                context.close()
+                browser_instance.close()
+    except InstagramFetchError:
+        raise
+    except (PlaywrightError, PlaywrightTimeoutError) as exc:
+        raise InstagramFetchError(f"Instagram browser fetch failed: {exc}") from exc
 
 
 def is_retryable_fetch_error(exc: Exception) -> bool:

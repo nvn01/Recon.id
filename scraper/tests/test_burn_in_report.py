@@ -50,6 +50,8 @@ class BurnInReportTests(unittest.TestCase):
         self.assertEqual(report["connectorStatusCounts"], {"reddit": {"success": 1}})
         self.assertEqual(report["storageTotals"]["requested"], 3)
         self.assertEqual(report["storageTotals"]["inserted"], 3)
+        self.assertEqual(report["yieldSummary"]["newListingsInserted"], 3)
+        self.assertEqual(report["yieldSummary"]["newPerSuccessfulRun"], 3.0)
         self.assertEqual(report["records"]["scheduler"], 1)
         self.assertEqual(report["records"]["orchestrator"], 1)
 

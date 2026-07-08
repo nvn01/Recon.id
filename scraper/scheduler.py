@@ -52,6 +52,14 @@ class JobRun:
     stderr_tail: str | None = None
 
 
+@dataclass(frozen=True)
+class FacebookTargetPlan:
+    id: str
+    groups: tuple[str, ...] = ()
+    cadence_seconds: int | None = None
+    limit: int | None = None
+
+
 def main() -> int:
     args = parse_args()
     config = load_config(args.config)
@@ -187,13 +195,28 @@ def build_facebook_jobs(config: dict[str, Any]) -> list[ScheduleJob]:
     if not source_config.get("enabled", True) or not schedule_config.get("enabled", True):
         return []
 
-    cadence = max(300, int_value(schedule_config.get("cadence_seconds"), 900))
+    cadence = max(60, int_value(schedule_config.get("cadence_seconds"), 900))
     jitter = max(0, int_value(schedule_config.get("jitter_seconds"), 0))
     limit = max(1, int_value(schedule_config.get("limit"), int_value(source_config.get("limit"), 1)))
     browser = str(schedule_config.get("browser") or source_config.get("browser") or "").strip()
     headless = bool_value(schedule_config.get("headless"), default=bool_value(source_config.get("headless"), default=True))
     target_ids = string_list(schedule_config.get("target_ids")) or string_list(source_config.get("target_ids"))
     target_groups = string_list(schedule_config.get("target_groups")) or string_list(source_config.get("target_groups"))
+    split_targets = bool_value(schedule_config.get("split_targets"), default=False)
+
+    if split_targets:
+        targets_file = resolve_facebook_targets_path(source_config.get("targets_file"))
+        targets = select_facebook_targets(load_facebook_targets(targets_file), target_ids, target_groups)
+        if targets:
+            return build_facebook_target_jobs(
+                targets,
+                schedule_config=schedule_config,
+                default_cadence=cadence,
+                default_limit=limit,
+                jitter=jitter,
+                browser=browser,
+                headless=headless,
+            )
 
     job_args: list[str] = ["--facebook", "--limit", str(limit)]
     for target_id in target_ids:
@@ -214,6 +237,126 @@ def build_facebook_jobs(config: dict[str, Any]) -> list[ScheduleJob]:
             jitter_seconds=jitter,
         )
     ]
+
+
+def build_facebook_target_jobs(
+    targets: list[FacebookTargetPlan],
+    *,
+    schedule_config: dict[str, Any],
+    default_cadence: int,
+    default_limit: int,
+    jitter: int,
+    browser: str,
+    headless: bool,
+) -> list[ScheduleJob]:
+    target_stagger = max(0, int_value(schedule_config.get("target_stagger_seconds"), 60))
+    target_cadence_override = int_value(schedule_config.get("target_cadence_seconds"), 0)
+    jobs: list[ScheduleJob] = []
+
+    for index, target in enumerate(targets):
+        cadence = target_cadence_override or target.cadence_seconds or default_cadence
+        cadence = max(60, cadence)
+        limit = max(1, int_value(schedule_config.get("limit"), target.limit or default_limit))
+        job_args: list[str] = ["--facebook", "--facebook-target", target.id, "--limit", str(limit)]
+        if headless:
+            job_args.append("--headless")
+        if browser:
+            job_args.extend(["--facebook-browser", browser])
+
+        jobs.append(
+            ScheduleJob(
+                id=f"facebook:{target.id}",
+                connector="facebook",
+                cadence_seconds=cadence,
+                args=tuple(job_args),
+                initial_delay_seconds=index * target_stagger,
+                jitter_seconds=jitter,
+            )
+        )
+    return jobs
+
+
+def resolve_facebook_targets_path(value: Any) -> Path:
+    raw = Path(str(value or "../facebook/source_targets.json"))
+    if raw.is_absolute():
+        return raw
+    return (SCRAPER_DIR / "config" / raw).resolve()
+
+
+def load_facebook_targets(path: Path) -> list[FacebookTargetPlan]:
+    if not path.exists():
+        return []
+    try:
+        loaded = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return []
+    records = loaded.get("targets", []) if isinstance(loaded, dict) else loaded
+    if not isinstance(records, list):
+        return []
+
+    targets: list[FacebookTargetPlan] = []
+    for index, record in enumerate(records, start=1):
+        if not isinstance(record, dict):
+            continue
+        target_id = str(record.get("id") or f"target-{index}").strip()
+        if not target_id:
+            continue
+        targets.append(
+            FacebookTargetPlan(
+                id=target_id,
+                groups=tuple(raw_string_list(record.get("groups") or record.get("group"))),
+                cadence_seconds=optional_int(record.get("cadenceSeconds") or record.get("cadence_seconds")),
+                limit=optional_int(record.get("limit")),
+            )
+        )
+    return targets
+
+
+def select_facebook_targets(
+    targets: list[FacebookTargetPlan],
+    target_ids: list[str],
+    target_groups: list[str],
+) -> list[FacebookTargetPlan]:
+    requested_ids = set(target_ids)
+    requested_groups = set(target_groups)
+    selected: list[FacebookTargetPlan] = []
+    seen: set[str] = set()
+
+    for target in targets:
+        if requested_ids and target.id in requested_ids and target.id not in seen:
+            selected.append(target)
+            seen.add(target.id)
+
+    for target in targets:
+        if target.id in seen:
+            continue
+        if requested_groups and requested_groups.intersection(target.groups):
+            selected.append(target)
+            seen.add(target.id)
+
+    return selected
+
+
+def raw_string_list(value: Any) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return [value.strip()] if value.strip() else []
+    if isinstance(value, list):
+        return [str(item).strip() for item in value if str(item).strip()]
+    parsed = str(value).strip()
+    return [parsed] if parsed else []
+
+
+def optional_int(value: Any) -> int | None:
+    if value in (None, ""):
+        return None
+    if isinstance(value, bool):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def filter_jobs(jobs: list[ScheduleJob], include: list[str] | None, exclude: list[str] | None) -> list[ScheduleJob]:
@@ -428,12 +571,15 @@ def format_run_summary(run: JobRun) -> str:
     storage = run.summary.get("storage") if isinstance(run.summary.get("storage"), dict) else {}
     storage_summary = storage.get("summary") if isinstance(storage.get("summary"), dict) else {}
     listings = run_summary.get("listings", 0) if isinstance(run_summary, dict) else 0
+    requested = storage_summary.get("requested", 0) if isinstance(storage_summary, dict) else 0
+    deduplicated = storage_summary.get("deduplicated", 0) if isinstance(storage_summary, dict) else 0
     inserted = storage_summary.get("inserted", 0) if isinstance(storage_summary, dict) else 0
     updated = storage_summary.get("updated", 0) if isinstance(storage_summary, dict) else 0
     duplicates = storage_summary.get("duplicates", 0) if isinstance(storage_summary, dict) else 0
     return (
         f"{run.finished_at} {run.job_id} {run.status} exit={run.exit_code} "
-        f"listings={listings} inserted={inserted} updated={updated} duplicates={duplicates} "
+        f"listings={listings} requested={requested} deduped={deduplicated} "
+        f"inserted={inserted} updated={updated} duplicates={duplicates} "
         f"durationMs={run.duration_ms}"
     )
 

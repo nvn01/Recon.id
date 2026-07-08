@@ -58,6 +58,16 @@ class RedditFetchTests(unittest.TestCase):
         self.assertEqual(urlopen.call_count, 1)
         sleep.assert_not_called()
 
+    def test_tls_verification_error_is_classified(self):
+        self.assertTrue(
+            reddit.is_tls_verification_error(
+                urllib.error.URLError(
+                    "[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: self-signed certificate"
+                )
+            )
+        )
+        self.assertFalse(reddit.is_tls_verification_error(urllib.error.URLError("The handshake operation timed out")))
+
 
 if __name__ == "__main__":
     unittest.main()

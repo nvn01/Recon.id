@@ -62,6 +62,7 @@ def build_report(logs_dir: Path, *, since: datetime) -> dict[str, Any]:
         "schedulerStatusCounts": counter_by(scheduler_records, "status"),
         "connectorStatusCounts": connector_status_counts(connector_records),
         "storageTotals": storage_totals,
+        "yieldSummary": yield_summary(scheduler_records, connector_records, storage_totals),
         "latestConnectorStatus": latest_connector_status(connector_records),
         "latestDegraded": degraded[-5:],
         "readiness": readiness(connector_records, storage_totals, degraded),
@@ -140,6 +141,29 @@ def connector_status_counts(records: list[dict[str, Any]]) -> dict[str, dict[str
     return {connector: dict(counter) for connector, counter in counts.items()}
 
 
+def yield_summary(
+    scheduler_records: list[dict[str, Any]],
+    connector_records: list[dict[str, Any]],
+    storage_totals: dict[str, int],
+) -> dict[str, Any]:
+    requested = int(storage_totals.get("requested") or 0)
+    inserted = int(storage_totals.get("inserted") or 0)
+    updated = int(storage_totals.get("updated") or 0)
+    duplicates = int(storage_totals.get("duplicates") or 0)
+    successful_scheduler_runs = sum(1 for record in scheduler_records if str(record.get("status")) == "success")
+    successful_connector_runs = sum(1 for record in connector_records if str(record.get("status")) == "success")
+    denominator = successful_scheduler_runs or successful_connector_runs or 1
+    return {
+        "requestedListings": requested,
+        "newListingsInserted": inserted,
+        "existingListingsUpdated": updated,
+        "duplicateInputs": duplicates,
+        "usefulWrites": inserted + updated,
+        "newPerSuccessfulRun": round(inserted / denominator, 2),
+        "insertedShare": round(inserted / requested, 4) if requested else 0.0,
+    }
+
+
 def latest_connector_status(records: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
     latest: dict[str, dict[str, Any]] = {}
     for record in records:
@@ -197,6 +221,11 @@ def markdown_report(report: dict[str, Any]) -> str:
     lines.append("")
     lines.append("## Storage Totals")
     for key, value in sorted(report["storageTotals"].items()):
+        lines.append(f"- {key}: {value}")
+
+    lines.append("")
+    lines.append("## Yield")
+    for key, value in report["yieldSummary"].items():
         lines.append(f"- {key}: {value}")
 
     lines.append("")

@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import unittest
+import json
+import tempfile
 from datetime import datetime, timezone
+from pathlib import Path
 
 from scraper.scheduler import (
     build_jobs,
@@ -48,6 +51,56 @@ class SchedulerTests(unittest.TestCase):
         self.assertEqual(jobs[2].initial_delay_seconds, 300)
         self.assertIn("--facebook-browser", jobs[3].args)
         self.assertIn("chromium", jobs[3].args)
+
+    def test_build_jobs_can_split_facebook_targets_with_staggered_cadence(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            targets_file = Path(tmpdir) / "targets.json"
+            targets_file.write_text(
+                json.dumps(
+                    {
+                        "targets": [
+                            {"id": "gpu-rtx", "groups": ["hot"], "cadenceSeconds": 60, "limit": 5},
+                            {"id": "laptop-gaming", "groups": ["hot"], "cadenceSeconds": 60, "limit": 5},
+                            {"id": "keyboard-mechanical", "groups": ["peripherals"], "cadenceSeconds": 300},
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            config = sample_config()
+            config["scheduler"]["facebook"].update(
+                {
+                    "split_targets": True,
+                    "target_groups": ["hot"],
+                    "target_cadence_seconds": 600,
+                    "target_stagger_seconds": 60,
+                    "limit": 3,
+                }
+            )
+            config["facebook"]["marketplace"] = {
+                "enabled": True,
+                "targets_file": str(targets_file),
+                "headless": True,
+            }
+
+            jobs = [job for job in build_jobs(config) if job.connector == "facebook"]
+
+        self.assertEqual([job.id for job in jobs], ["facebook:gpu-rtx", "facebook:laptop-gaming"])
+        self.assertEqual(jobs[0].cadence_seconds, 600)
+        self.assertEqual(jobs[1].initial_delay_seconds, 60)
+        self.assertEqual(
+            jobs[0].args,
+            (
+                "--facebook",
+                "--facebook-target",
+                "gpu-rtx",
+                "--limit",
+                "3",
+                "--headless",
+                "--facebook-browser",
+                "chromium",
+            ),
+        )
 
     def test_initial_stagger_prevents_all_instagram_accounts_from_being_due_at_start(self):
         jobs = build_jobs(sample_config())
