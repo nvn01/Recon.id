@@ -1094,7 +1094,8 @@ def extract_category(text: str) -> str | None:
         return "Desktop PC"
     laptop_markers = (
         r"\b(laptop|notebook|thinkpad|macbook|vivobook|zenbook|ideapad|legion|katana|zephyrus|omen|victus|nitro|predator|loq)\b",
-        r"\b(tuf gaming|ideapad gaming|pavilion gaming)\b",
+        r"\b(rog strix|asus tuf|tuf gaming|tuf a15|tuf f15|ideapad gaming|pavilion gaming)\b",
+        r"\b(msi gf63|msi gf65|msi gf66|msi gf76|msi gl63|msi gl65|msi ge66|msi cyborg|msi stealth|msi raider)\b",
         r"\b(ga401|ga402|g513|g713|g14|g15|g16|fx506|fx507|fa506|fa507|gu603)[a-z0-9-]*\b",
     )
     if any(re.search(pattern, lower) for pattern in laptop_markers):

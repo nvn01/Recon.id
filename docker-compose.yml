@@ -69,6 +69,33 @@ services:
       postgres:
         condition: service_healthy
 
+  scraper-scheduler:
+    profiles:
+      - scraper-scheduler
+    build:
+      context: ./scraper
+    command:
+      - python
+      - -m
+      - scraper.scheduler
+      - --write-db
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-recon}:${POSTGRES_PASSWORD:-recon_dev_password}@postgres:5432/${POSTGRES_DB:-recon_dev}
+      SCRAPER_EGRESS_MODE: ${SCRAPER_EGRESS_MODE:-direct}
+      SCRAPER_ALLOW_PROXY: ${SCRAPER_ALLOW_PROXY:-false}
+      SCRAPER_PROXY_URL: ${SCRAPER_PROXY_URL:-}
+      SCRAPER_ALLOW_VPN: ${SCRAPER_ALLOW_VPN:-false}
+    volumes:
+      - ./scraper:/app/scraper
+      - scraper-logs:/app/scraper/.logs
+      - scraper-state:/app/scraper/.state
+      - scraper-facebook-profile:/app/scraper/facebook/.facebook-profile
+    depends_on:
+      postgres:
+        condition: service_healthy
+
 volumes:
   postgres-data:
   scraper-logs:

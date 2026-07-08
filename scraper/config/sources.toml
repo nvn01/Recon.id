@@ -14,6 +14,40 @@ lock_stale_seconds = 900
 ai_batch_size = 5
 ai_rate_limit_seconds = 2.0
 
+[scheduler]
+# Production-shaped scheduler defaults. This runs source-specific one-shot
+# orchestrator commands and keeps its own state/logs beside connector state.
+loop_sleep_seconds = 30
+job_timeout_seconds = 300
+state_file = ".state/scheduler.json"
+log_file = ".logs/scheduler_runs.jsonl"
+
+[scheduler.reddit]
+enabled = true
+cadence_seconds = 300
+jitter_seconds = 15
+limit = 3
+
+[scheduler.instagram]
+enabled = true
+# Instagram is still diagnostic on staging while direct web_profile_info returns
+# 429. Pace one account at a time and let account-level cooldowns persist.
+cadence_seconds = 3600
+stagger_seconds = 300
+jitter_seconds = 60
+limit = 1
+per_account = true
+
+[scheduler.facebook]
+enabled = true
+# Browser-backed Marketplace fetches are slower and beta; do not share Reddit's
+# 5-minute cadence until staging burn-in proves it.
+cadence_seconds = 900
+jitter_seconds = 45
+limit = 1
+headless = true
+browser = "chromium"
+
 [reddit.wts_computers]
 enabled = true
 # Human-facing source URL. The Reddit connector still uses subreddit + flair
@@ -67,4 +101,5 @@ max_scrolls = 1
 timeout_seconds = 30
 cooldown_seconds = 300
 headless = true
+browser = "chromium"
 details = false

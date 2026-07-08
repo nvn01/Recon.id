@@ -314,7 +314,7 @@ def run_reddit(args: argparse.Namespace, config: dict[str, Any]) -> dict[str, An
     return {
         "connector": "reddit",
         "ok": ok,
-        "status": "success" if ok else "failed",
+        "status": connector_result_status(ok, len(valid)),
         "exitCode": code,
         "httpStatus": 200 if code == 0 else None,
         "httpStatusSource": "inferred from successful urllib fetch",
@@ -327,6 +327,12 @@ def run_reddit(args: argparse.Namespace, config: dict[str, Any]) -> dict[str, An
     }
 
 
+def connector_result_status(ok: bool, validated_count: int) -> str:
+    if ok:
+        return "success" if validated_count else "no_new_data"
+    return "degraded"
+
+
 def run_instagram(args: argparse.Namespace, config: dict[str, Any]) -> dict[str, Any]:
     run_config = table(config, "run")
     instagram_config = table(config, "instagram", "accounts")
@@ -336,17 +342,30 @@ def run_instagram(args: argparse.Namespace, config: dict[str, Any]) -> dict[str,
     log_path = None if args.no_state else DEFAULT_INSTAGRAM_LOG_FILE
     state = default_runtime_state() if args.no_state else load_runtime_state(state_path)
     state["last_run_at"] = now_iso()
+    state["cooldown_until"] = None
+    account_state_map = instagram_account_state_map(state)
+    accounts_to_fetch: list[str] = []
+    skipped_accounts: list[dict[str, Any]] = []
+    for account in accounts:
+        account_state = instagram_account_state(account_state_map, account)
+        cooldown_remaining = 0 if args.ignore_cooldown else cooldown_seconds_remaining(account_state)
+        if cooldown_remaining > 0:
+            skipped_accounts.append(instagram_account_skip_result(account, cooldown_remaining))
+            continue
+        accounts_to_fetch.append(account)
 
-    cooldown_remaining = 0 if args.ignore_cooldown else cooldown_seconds_remaining(state)
-    if cooldown_remaining > 0:
+    if accounts and not accounts_to_fetch:
         log_event(
             log_path,
             {
                 "source": "instagram",
                 "status": "cooldown_skip",
-                "cooldown_remaining_seconds": cooldown_remaining,
+                "accounts": len(accounts),
+                "skipped_accounts": len(skipped_accounts),
             },
         )
+        if not args.no_state:
+            save_runtime_state(state_path, state)
         return {
             "connector": "instagram",
             "ok": True,
@@ -354,7 +373,7 @@ def run_instagram(args: argparse.Namespace, config: dict[str, Any]) -> dict[str,
             "exitCode": 0,
             "httpStatus": None,
             "transport": "instagram_web_profile_info",
-            "accounts": [],
+            "accounts": skipped_accounts,
             "aiParse": {
                 "requested": bool(args.ai_parse),
                 "applied": False,
@@ -364,7 +383,10 @@ def run_instagram(args: argparse.Namespace, config: dict[str, Any]) -> dict[str,
             "validated": 0,
             "validationErrors": [],
             "listings": [],
-            "cooldownRemainingSeconds": cooldown_remaining,
+            "cooldownRemainingSeconds": max(
+                (int(item.get("cooldown_remaining_seconds") or 0) for item in skipped_accounts),
+                default=0,
+            ),
         }
 
     retry_policy = RetryPolicy(
@@ -377,13 +399,14 @@ def run_instagram(args: argparse.Namespace, config: dict[str, Any]) -> dict[str,
         ),
     )
     listings, account_results = run_accounts(
-        accounts,
+        accounts_to_fetch,
         limit=limit,
         max_posts_per_account=int_value(instagram_config.get("max_posts_per_account"), 10),
         timeout=int_value(instagram_config.get("timeout_seconds"), int_value(run_config.get("timeout_seconds"), 30)),
         delay_seconds=float_value(instagram_config.get("delay_seconds"), 1.0),
         retry_policy=retry_policy,
     )
+    account_results = skipped_accounts + account_results
     ai_parse_error = None
     if args.ai_parse and listings:
         try:
@@ -391,27 +414,40 @@ def run_instagram(args: argparse.Namespace, config: dict[str, Any]) -> dict[str,
         except NvidiaParserError as exc:
             ai_parse_error = str(exc)
     valid, invalid = validate_listings(listings)
-    failed_accounts = [result for result in account_results if not result["ok"]]
+    fetched_results = [result for result in account_results if not result.get("skipped_by_cooldown")]
+    failed_accounts = [result for result in fetched_results if not result["ok"]]
     cooldown_accounts = [result for result in failed_accounts if result.get("http_status") in {403, 429}]
     ok = not failed_accounts and not invalid
     statuses = sorted({result["http_status"] for result in account_results if result["http_status"] is not None})
+    cooldown = int_value(instagram_config.get("cooldown_seconds"), 300)
+    for result in fetched_results:
+        account_state = instagram_account_state(account_state_map, str(result.get("account") or ""))
+        account_state["last_run_at"] = now_iso()
+        if result.get("ok"):
+            clear_cooldown(account_state)
+            account_state["last_success_at"] = now_iso()
+            account_state["last_error"] = None
+        elif result.get("http_status") in {403, 429}:
+            set_cooldown(account_state, cooldown, str(result.get("error") or "Instagram rate limited or blocked"))
+        else:
+            account_state["last_error"] = result.get("error")
+
     if cooldown_accounts:
-        cooldown = int_value(instagram_config.get("cooldown_seconds"), 300)
         reason = "; ".join(f"{item['account']}: {item['error']}" for item in cooldown_accounts[:3])
-        set_cooldown(state, cooldown, reason)
         state["last_error"] = reason
         log_event(
             log_path,
             {
                 "source": "instagram",
-                "status": "rate_limited_or_blocked",
+                "status": "degraded",
                 "cooldown_seconds": cooldown,
+                "checked_accounts": len(fetched_results),
+                "skipped_accounts": len(skipped_accounts),
                 "failed_accounts": len(failed_accounts),
                 "error": reason,
             },
         )
     elif ok:
-        clear_cooldown(state)
         state["last_success_at"] = now_iso()
         state["last_error"] = None
         log_event(
@@ -419,7 +455,8 @@ def run_instagram(args: argparse.Namespace, config: dict[str, Any]) -> dict[str,
             {
                 "source": "instagram",
                 "status": "success",
-                "accounts": len(account_results),
+                "checked_accounts": len(fetched_results),
+                "skipped_accounts": len(skipped_accounts),
                 "normalized": len(listings),
                 "validated": len(valid),
             },
@@ -430,7 +467,9 @@ def run_instagram(args: argparse.Namespace, config: dict[str, Any]) -> dict[str,
             log_path,
             {
                 "source": "instagram",
-                "status": "failed" if not valid else "partial",
+                "status": "degraded",
+                "checked_accounts": len(fetched_results),
+                "skipped_accounts": len(skipped_accounts),
                 "failed_accounts": len(failed_accounts),
                 "validation_errors": len(invalid),
                 "error": state["last_error"],
@@ -438,10 +477,11 @@ def run_instagram(args: argparse.Namespace, config: dict[str, Any]) -> dict[str,
         )
     if not args.no_state:
         save_runtime_state(state_path, state)
+    status = instagram_connector_status(ok, valid, cooldown_accounts, failed_accounts, skipped_accounts, accounts)
     return {
         "connector": "instagram",
         "ok": ok,
-        "status": "success" if ok else "rate_limited" if cooldown_accounts else "partial" if valid else "failed",
+        "status": status,
         "exitCode": 0 if ok else 1,
         "httpStatus": statuses[0] if len(statuses) == 1 else statuses,
         "transport": "instagram_web_profile_info",
@@ -456,6 +496,53 @@ def run_instagram(args: argparse.Namespace, config: dict[str, Any]) -> dict[str,
         "validationErrors": invalid,
         "listings": valid,
     }
+
+
+def instagram_account_state_map(state: dict[str, Any]) -> dict[str, Any]:
+    accounts = state.get("accounts")
+    if not isinstance(accounts, dict):
+        accounts = {}
+        state["accounts"] = accounts
+    return accounts
+
+
+def instagram_account_state(accounts: dict[str, Any], account: str) -> dict[str, Any]:
+    value = accounts.get(account)
+    if not isinstance(value, dict):
+        value = default_runtime_state()
+        accounts[account] = value
+    return value
+
+
+def instagram_account_skip_result(account: str, cooldown_remaining: int) -> dict[str, Any]:
+    return {
+        "account": account,
+        "ok": True,
+        "http_status": None,
+        "returned_count": 0,
+        "normalized_count": 0,
+        "skipped_count": 0,
+        "error": None,
+        "latest_shortcode": None,
+        "status": "cooldown_skip",
+        "skipped_by_cooldown": True,
+        "cooldown_remaining_seconds": cooldown_remaining,
+    }
+
+
+def instagram_connector_status(
+    ok: bool,
+    valid: list[dict[str, Any]],
+    cooldown_accounts: list[dict[str, Any]],
+    failed_accounts: list[dict[str, Any]],
+    skipped_accounts: list[dict[str, Any]],
+    requested_accounts: list[str],
+) -> str:
+    if requested_accounts and len(skipped_accounts) == len(requested_accounts):
+        return "cooldown_skip"
+    if cooldown_accounts or failed_accounts or not ok:
+        return "degraded"
+    return "success" if valid else "no_new_data"
 
 
 def run_facebook(args: argparse.Namespace, config: dict[str, Any], egress: EgressConfig) -> dict[str, Any]:
@@ -525,7 +612,7 @@ def run_facebook(args: argparse.Namespace, config: dict[str, Any], egress: Egres
     return {
         "connector": "facebook",
         "ok": ok,
-        "status": "success" if ok else "failed",
+        "status": connector_result_status(ok, len(valid)),
         "exitCode": code,
         "httpStatus": None,
         "httpStatusSource": "not available from browser card extraction",

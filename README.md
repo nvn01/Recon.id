@@ -4,10 +4,11 @@ Recon is an early-stage scraper-first listing intelligence project for monitorin
 
 ## Current Phase
 
-Phase 2 is focused on scraper ingestion:
+Phase 3 is focused on production scraper hardening:
 
 - Prisma schema for `listings` and `listing_images`.
 - Scraper can upsert validated normalized listings with `python -m scraper.main --reddit --write-db`.
+- `scraper.scheduler` runs source-specific one-shot connector jobs on persisted cadences.
 - No user accounts, saved preferences, checkout, chat, alerts, or public listing UI yet.
 - Scraper run logs, connector health, cadence, and source configuration stay in the scraper service for now.
 
@@ -37,4 +38,11 @@ The optional scraper container is profile-gated:
 
 ```powershell
 docker compose --profile scraper run --rm scraper
+```
+
+The production-shaped scheduler is a separate profile:
+
+```powershell
+docker compose --profile scraper-scheduler up scraper-scheduler
+python -m scraper.burn_in_report --since-hours 6
 ```

@@ -7,8 +7,9 @@ import unittest
 from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 
-from scraper.main import should_lock_orchestrator
+from scraper.main import run_instagram, should_lock_orchestrator
 from scraper.shared.runtime import (
     AlreadyRunningError,
     EgressConfigError,
@@ -164,6 +165,100 @@ class RuntimeGuardrailTests(unittest.TestCase):
         self.assertTrue(should_lock_orchestrator(SimpleNamespace(**{**base, "all": True})))
         self.assertFalse(should_lock_orchestrator(SimpleNamespace(**{**base, "reddit": True})))
         self.assertFalse(should_lock_orchestrator(SimpleNamespace(**{**base, "write_db": True, "no_state": True})))
+
+    def test_instagram_rate_limit_cooldown_is_account_scoped(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            state_path = Path(tmpdir) / "instagram_accounts.json"
+            log_path = Path(tmpdir) / "instagram_accounts.jsonl"
+            calls: list[list[str]] = []
+
+            def fake_run_accounts(accounts, **_kwargs):
+                calls.append(list(accounts))
+                listings = []
+                results = []
+                for account in accounts:
+                    if account == "blocked.shop":
+                        results.append(
+                            {
+                                "account": account,
+                                "ok": False,
+                                "http_status": 429,
+                                "returned_count": 0,
+                                "normalized_count": 0,
+                                "skipped_count": 0,
+                                "error": "Instagram HTTP 429",
+                                "latest_shortcode": None,
+                            }
+                        )
+                        continue
+                    results.append(
+                        {
+                            "account": account,
+                            "ok": True,
+                            "http_status": 200,
+                            "returned_count": 1,
+                            "normalized_count": 1,
+                            "skipped_count": 0,
+                            "error": None,
+                            "latest_shortcode": "abc123",
+                        }
+                    )
+                    listings.append(sample_instagram_listing(account))
+                return listings, results
+
+            args = SimpleNamespace(
+                instagram_account=None,
+                limit=1,
+                no_state=False,
+                ignore_cooldown=False,
+                ai_parse=False,
+                ai_prefer=False,
+            )
+            config = {
+                "run": {},
+                "instagram": {
+                    "accounts": {
+                        "names": ["blocked.shop", "open.shop"],
+                        "cooldown_seconds": 600,
+                        "retries": 1,
+                    }
+                },
+            }
+
+            with (
+                patch("scraper.main.DEFAULT_INSTAGRAM_STATE_FILE", state_path),
+                patch("scraper.main.DEFAULT_INSTAGRAM_LOG_FILE", log_path),
+                patch("scraper.main.run_accounts", side_effect=fake_run_accounts),
+            ):
+                first = run_instagram(args, config)
+                second = run_instagram(args, config)
+
+        self.assertEqual(calls, [["blocked.shop", "open.shop"], ["open.shop"]])
+        self.assertEqual(first["status"], "degraded")
+        self.assertEqual(second["status"], "success")
+        skipped = [account for account in second["accounts"] if account.get("skipped_by_cooldown")]
+        self.assertEqual(skipped[0]["account"], "blocked.shop")
+
+
+def sample_instagram_listing(account: str) -> dict[str, object]:
+    return {
+        "platform": "INSTAGRAM",
+        "sourceUrl": f"https://www.instagram.com/p/{account}/",
+        "externalId": account,
+        "title": "Laptop gaming RTX",
+        "description": "Laptop gaming RTX\nHarga Rp 10.000.000\nLokasi Jakarta",
+        "category": "Laptop",
+        "brand": "ASUS",
+        "price": 10_000_000,
+        "locationTexts": ["Jakarta"],
+        "conditionText": None,
+        "sellerName": account,
+        "status": "AVAILABLE",
+        "postedAt": "2026-07-08T00:00:00+00:00",
+        "firstFetchedAt": "2026-07-08T00:00:00+00:00",
+        "lastFetchedAt": "2026-07-08T00:00:00+00:00",
+        "images": [],
+    }
 
 
 if __name__ == "__main__":
