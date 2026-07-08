@@ -9,9 +9,10 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from scraper.main import run_instagram, should_lock_orchestrator
+from scraper.main import run_facebook, run_instagram, should_lock_orchestrator
 from scraper.shared.runtime import (
     AlreadyRunningError,
+    EgressConfig,
     EgressConfigError,
     FileLock,
     RetryPolicy,
@@ -238,6 +239,47 @@ class RuntimeGuardrailTests(unittest.TestCase):
         self.assertEqual(second["status"], "success")
         skipped = [account for account in second["accounts"] if account.get("skipped_by_cooldown")]
         self.assertEqual(skipped[0]["account"], "blocked.shop")
+
+    def test_facebook_cli_target_does_not_inherit_config_target_group(self):
+        captured_args = None
+
+        def fake_guarded_run_once(args):
+            nonlocal captured_args
+            captured_args = args
+            return 0, []
+
+        args = SimpleNamespace(
+            facebook_target=["gpu-rtx"],
+            facebook_target_group=None,
+            limit=3,
+            facebook_details=False,
+            headless=True,
+            facebook_browser="chromium",
+            ignore_cooldown=False,
+            no_state=True,
+            ai_parse=False,
+            ai_prefer=False,
+        )
+        config = {
+            "run": {},
+            "facebook": {
+                "marketplace": {
+                    "enabled": True,
+                    "target_groups": ["hot"],
+                    "limit": 3,
+                    "headless": True,
+                    "browser": "chromium",
+                }
+            },
+        }
+
+        with patch("scraper.facebook.facebook_marketplace.guarded_run_once", side_effect=fake_guarded_run_once):
+            result = run_facebook(args, config, EgressConfig())
+
+        self.assertTrue(result["ok"])
+        self.assertIsNotNone(captured_args)
+        self.assertEqual(captured_args.target, ["gpu-rtx"])
+        self.assertIsNone(captured_args.target_group)
 
 
 def sample_instagram_listing(account: str) -> dict[str, object]:

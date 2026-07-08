@@ -567,8 +567,12 @@ def run_facebook(args: argparse.Namespace, config: dict[str, Any], egress: Egres
     targets_file = Path(str(facebook_config.get("targets_file") or facebook.DEFAULT_TARGETS_FILE))
     if not targets_file.is_absolute():
         targets_file = (SCRAPER_DIR / "config" / targets_file).resolve()
-    target_ids = args.facebook_target or string_list(facebook_config.get("target_ids"))
-    target_groups = args.facebook_target_group or string_list(facebook_config.get("target_groups"))
+    if args.facebook_target is not None or args.facebook_target_group is not None:
+        target_ids = args.facebook_target or []
+        target_groups = args.facebook_target_group or []
+    else:
+        target_ids = string_list(facebook_config.get("target_ids"))
+        target_groups = string_list(facebook_config.get("target_groups"))
     limit = effective_limit(args, facebook_config, run_config)
 
     facebook_args = SimpleNamespace(
