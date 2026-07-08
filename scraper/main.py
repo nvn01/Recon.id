@@ -47,6 +47,7 @@ DEFAULT_RUN_LOG_FILE = SCRAPER_DIR / ".logs" / "scraper_runs.jsonl"
 DEFAULT_RUN_LOCK_FILE = SCRAPER_DIR / ".state" / "scraper_orchestrator.lock"
 DEFAULT_INSTAGRAM_STATE_FILE = SCRAPER_DIR / ".state" / "instagram_accounts.json"
 DEFAULT_INSTAGRAM_LOG_FILE = SCRAPER_DIR / ".logs" / "instagram_accounts.jsonl"
+INSTAGRAM_COOLDOWN_HTTP_STATUSES = {401, 403, 429}
 
 
 def main() -> int:
@@ -429,7 +430,9 @@ def run_instagram(args: argparse.Namespace, config: dict[str, Any]) -> dict[str,
     valid, invalid = validate_listings(listings)
     fetched_results = [result for result in account_results if not result.get("skipped_by_cooldown")]
     failed_accounts = [result for result in fetched_results if not result["ok"]]
-    cooldown_accounts = [result for result in failed_accounts if result.get("http_status") in {403, 429}]
+    cooldown_accounts = [
+        result for result in failed_accounts if result.get("http_status") in INSTAGRAM_COOLDOWN_HTTP_STATUSES
+    ]
     ok = not failed_accounts and not invalid
     statuses = sorted({result["http_status"] for result in account_results if result["http_status"] is not None})
     cooldown = int_value(instagram_config.get("cooldown_seconds"), 300)
@@ -440,7 +443,7 @@ def run_instagram(args: argparse.Namespace, config: dict[str, Any]) -> dict[str,
             clear_cooldown(account_state)
             account_state["last_success_at"] = now_iso()
             account_state["last_error"] = None
-        elif result.get("http_status") in {403, 429}:
+        elif result.get("http_status") in INSTAGRAM_COOLDOWN_HTTP_STATUSES:
             set_cooldown(account_state, cooldown, str(result.get("error") or "Instagram rate limited or blocked"))
         else:
             account_state["last_error"] = result.get("error")

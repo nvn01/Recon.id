@@ -167,7 +167,7 @@ class RuntimeGuardrailTests(unittest.TestCase):
         self.assertFalse(should_lock_orchestrator(SimpleNamespace(**{**base, "reddit": True})))
         self.assertFalse(should_lock_orchestrator(SimpleNamespace(**{**base, "write_db": True, "no_state": True})))
 
-    def test_instagram_rate_limit_cooldown_is_account_scoped(self):
+    def test_instagram_block_cooldown_is_account_scoped(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             state_path = Path(tmpdir) / "instagram_accounts.json"
             log_path = Path(tmpdir) / "instagram_accounts.jsonl"
@@ -188,6 +188,20 @@ class RuntimeGuardrailTests(unittest.TestCase):
                                 "normalized_count": 0,
                                 "skipped_count": 0,
                                 "error": "Instagram HTTP 429",
+                                "latest_shortcode": None,
+                            }
+                        )
+                        continue
+                    if account == "auth.shop":
+                        results.append(
+                            {
+                                "account": account,
+                                "ok": False,
+                                "http_status": 401,
+                                "returned_count": 0,
+                                "normalized_count": 0,
+                                "skipped_count": 0,
+                                "error": "Instagram browser HTTP 401",
                                 "latest_shortcode": None,
                             }
                         )
@@ -219,7 +233,7 @@ class RuntimeGuardrailTests(unittest.TestCase):
                 "run": {},
                 "instagram": {
                     "accounts": {
-                        "names": ["blocked.shop", "open.shop"],
+                        "names": ["blocked.shop", "auth.shop", "open.shop"],
                         "cooldown_seconds": 600,
                         "retries": 1,
                     }
@@ -234,11 +248,11 @@ class RuntimeGuardrailTests(unittest.TestCase):
                 first = run_instagram(args, config)
                 second = run_instagram(args, config)
 
-        self.assertEqual(calls, [["blocked.shop", "open.shop"], ["open.shop"]])
+        self.assertEqual(calls, [["blocked.shop", "auth.shop", "open.shop"], ["open.shop"]])
         self.assertEqual(first["status"], "degraded")
         self.assertEqual(second["status"], "success")
         skipped = [account for account in second["accounts"] if account.get("skipped_by_cooldown")]
-        self.assertEqual(skipped[0]["account"], "blocked.shop")
+        self.assertEqual([account["account"] for account in skipped], ["blocked.shop", "auth.shop"])
 
     def test_facebook_cli_target_does_not_inherit_config_target_group(self):
         captured_args = None
