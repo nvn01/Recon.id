@@ -94,13 +94,16 @@ def connector_records_from(
     scheduler_records: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
     records: list[dict[str, Any]] = []
-    for record in orchestrator_records:
+    source_records = orchestrator_records
+    if not source_records:
+        source_records = []
+        for scheduler_record in scheduler_records:
+            summary = scheduler_record.get("summary") if isinstance(scheduler_record.get("summary"), dict) else {}
+            if isinstance(summary, dict):
+                source_records.append({**summary, "logged_at": scheduler_record.get("logged_at"), "_logFile": scheduler_record.get("_logFile")})
+
+    for record in source_records:
         for connector in record.get("connectors") or []:
-            if isinstance(connector, dict):
-                records.append({**connector, "logged_at": record.get("logged_at"), "_logFile": record.get("_logFile")})
-    for record in scheduler_records:
-        summary = record.get("summary") if isinstance(record.get("summary"), dict) else {}
-        for connector in summary.get("connectors") or []:
             if isinstance(connector, dict):
                 records.append({**connector, "logged_at": record.get("logged_at"), "_logFile": record.get("_logFile")})
     return records
@@ -112,11 +115,13 @@ def storage_totals_from(
 ) -> dict[str, int]:
     totals: Counter[str] = Counter()
     candidates: list[dict[str, Any]] = []
-    candidates.extend(orchestrator_records)
-    for scheduler in scheduler_records:
-        summary = scheduler.get("summary") if isinstance(scheduler.get("summary"), dict) else {}
-        if isinstance(summary, dict):
-            candidates.append(summary)
+    if orchestrator_records:
+        candidates.extend(orchestrator_records)
+    else:
+        for scheduler in scheduler_records:
+            summary = scheduler.get("summary") if isinstance(scheduler.get("summary"), dict) else {}
+            if isinstance(summary, dict):
+                candidates.append(summary)
 
     for record in candidates:
         storage = record.get("storage") if isinstance(record.get("storage"), dict) else {}
