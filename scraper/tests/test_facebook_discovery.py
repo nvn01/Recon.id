@@ -3,9 +3,10 @@ from __future__ import annotations
 import json
 import unittest
 from datetime import datetime, timezone
+from types import SimpleNamespace
 
 from scraper.facebook.embedded import extract_marketplace_records
-from scraper.facebook.facebook_marketplace import card_from_embedded_record, normalize_card
+from scraper.facebook.facebook_marketplace import card_from_embedded_record, normalize_card, uses_persistent_profile
 
 
 def marketplace_payload(*, sold: bool = False) -> dict:
@@ -53,6 +54,11 @@ def marketplace_payload(*, sold: bool = False) -> dict:
 
 
 class FacebookDiscoveryTests(unittest.TestCase):
+    def test_logged_out_discovery_does_not_use_persistent_profile(self):
+        self.assertFalse(uses_persistent_profile(SimpleNamespace(login=False, session_mode="ephemeral")))
+        self.assertTrue(uses_persistent_profile(SimpleNamespace(login=True, session_mode="ephemeral")))
+        self.assertTrue(uses_persistent_profile(SimpleNamespace(login=False, session_mode="persistent")))
+
     def test_embedded_marketplace_payload_exposes_complete_discovery_record(self):
         records = extract_marketplace_records(["not-json", json.dumps(marketplace_payload())], limit=10)
 
