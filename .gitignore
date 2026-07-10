@@ -25,6 +25,7 @@ out/
 dist/
 build/
 coverage/
+.coverage
 generated/prisma/
 next-env.d.ts
 *.tsbuildinfo
