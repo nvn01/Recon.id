@@ -9,7 +9,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from scraper.main import run_facebook, run_instagram, should_lock_orchestrator
+from scraper.main import run_facebook, run_instagram, run_reddit, should_lock_orchestrator, write_storage
 from scraper.shared.runtime import (
     AlreadyRunningError,
     EgressConfig,
@@ -104,7 +104,7 @@ class RuntimeGuardrailTests(unittest.TestCase):
         self.assertEqual(sleeps, [1.0])
 
     def test_egress_defaults_to_direct_even_when_proxy_url_is_present(self):
-        config = resolve_egress_config({"SCRAPER_PROXY_URL": "http://user:pass@proxy.test:8080"})
+        config = resolve_egress_config({"SCRAPER_PROXY_URL": "http://user:test-proxy-value@proxy.test:8080"})
 
         self.assertEqual(config.mode, "direct")
         self.assertIsNone(config.proxy_url)
@@ -124,12 +124,12 @@ class RuntimeGuardrailTests(unittest.TestCase):
             {
                 "SCRAPER_EGRESS_MODE": "proxy",
                 "SCRAPER_ALLOW_PROXY": "true",
-                "SCRAPER_PROXY_URL": "http://user:secret@proxy.test:8080",
+                "SCRAPER_PROXY_URL": "http://user:test-placeholder-123@proxy.test:8080",
             }
         )
 
         self.assertEqual(config.mode, "proxy")
-        self.assertEqual(config.proxy_url, "http://user:secret@proxy.test:8080")
+        self.assertEqual(config.proxy_url, "http://user:test-placeholder-123@proxy.test:8080")
         self.assertEqual(config.as_log_dict()["proxyUrl"], "http://user:***@proxy.test:8080")
 
     def test_proxy_egress_sets_urllib_proxy_env_explicitly(self):
@@ -146,6 +146,19 @@ class RuntimeGuardrailTests(unittest.TestCase):
 
         self.assertEqual(environ["HTTP_PROXY"], "http://proxy.test:8080")
         self.assertEqual(environ["HTTPS_PROXY"], "http://proxy.test:8080")
+
+    def test_direct_egress_clears_inherited_proxy_environment(self):
+        config = resolve_egress_config({"SCRAPER_EGRESS_MODE": "direct"})
+        environ = {
+            "HTTP_PROXY": "http://old-proxy.test:8080",
+            "HTTPS_PROXY": "http://old-proxy.test:8080",
+            "http_proxy": "http://old-proxy.test:8080",
+            "https_proxy": "http://old-proxy.test:8080",
+        }
+
+        configure_urllib_egress(config, environ)
+
+        self.assertTrue(all(key not in environ for key in ("HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy")))
 
     def test_vpn_egress_requires_explicit_allow_flag(self):
         with self.assertRaises(EgressConfigError):
@@ -166,6 +179,39 @@ class RuntimeGuardrailTests(unittest.TestCase):
         self.assertTrue(should_lock_orchestrator(SimpleNamespace(**{**base, "all": True})))
         self.assertFalse(should_lock_orchestrator(SimpleNamespace(**{**base, "reddit": True})))
         self.assertFalse(should_lock_orchestrator(SimpleNamespace(**{**base, "write_db": True, "no_state": True})))
+
+    def test_storage_connection_failure_returns_structured_error(self):
+        args = SimpleNamespace(write_db=True, database_url="postgresql://recon:test-placeholder-123@postgres:5432/recon")
+
+        with patch("scraper.main.upsert_listings", side_effect=RuntimeError("connection failed")):
+            result = write_storage(args, [])
+
+        self.assertFalse(result["ok"])
+        self.assertTrue(result["attempted"])
+        self.assertEqual(result["error"], "RuntimeError: database write failed")
+
+    def test_reddit_cooldown_status_survives_orchestrator_summary(self):
+        args = SimpleNamespace(
+            limit=1,
+            reddit=None,
+            ignore_cooldown=False,
+            no_state=False,
+            ai_parse=False,
+            ai_prefer=False,
+        )
+        config = {
+            "run": {},
+            "reddit": {"wts_computers": {"enabled": True, "limit": 1}},
+        }
+
+        with patch(
+            "scraper.reddit.reddit.guarded_run_once",
+            return_value=(0, [], "cooldown_skip"),
+        ):
+            result = run_reddit(args, config)
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["status"], "cooldown_skip")
 
     def test_instagram_block_cooldown_is_account_scoped(self):
         with tempfile.TemporaryDirectory() as tmpdir:

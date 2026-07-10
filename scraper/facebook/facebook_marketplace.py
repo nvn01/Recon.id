@@ -920,8 +920,11 @@ def scrape_query(page, query: str, args: argparse.Namespace, keywords: list[str]
 
 
 def scrape_detail(page, card: MarketplaceCard, args: argparse.Namespace) -> MarketplaceDetail:
+    url = canonical_marketplace_url(card)
+    if not url:
+        return MarketplaceDetail(error="Invalid Facebook Marketplace item URL")
     try:
-        open_marketplace(page, card.url, args.wait_ms, args.timeout * 1000)
+        open_marketplace(page, url, args.wait_ms, args.timeout * 1000)
         return parse_detail_text(extract_page_text(page, max_chars=9000))
     except PlaywrightError as exc:
         return MarketplaceDetail(error=str(exc))
@@ -1039,9 +1042,13 @@ def clean_card_location(value: str) -> str:
 
 
 def canonical_marketplace_url(card: MarketplaceCard) -> str:
-    if card.item_id:
+    if re.fullmatch(r"\d+", card.item_id):
         return f"https://www.facebook.com/marketplace/item/{card.item_id}/"
     parsed = urllib.parse.urlsplit(card.url)
+    if parsed.scheme.lower() not in {"http", "https"} or (parsed.hostname or "").lower() not in {"facebook.com", "www.facebook.com", "m.facebook.com"}:
+        return ""
+    if not re.fullmatch(r"/marketplace/item/\d+/?", parsed.path):
+        return ""
     return urllib.parse.urlunsplit(("https", "www.facebook.com", parsed.path, "", ""))
 
 

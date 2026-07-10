@@ -18,13 +18,14 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-import xml.etree.ElementTree as ET
 from collections.abc import Iterable
 from contextlib import AbstractContextManager
 from datetime import datetime, timedelta, timezone
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any
+
+from defusedxml import ElementTree as ET
 
 try:
     from .nvidia_parser import NvidiaParserError, enrich_listings_with_nvidia
@@ -34,6 +35,7 @@ except ImportError:
 
 SUBREDDIT = "jualbeliindonesia"
 FLAIR = "WTS: Computers & Peripherals"
+REDDIT_HOSTS = {"reddit.com", "www.reddit.com", "old.reddit.com", "redd.it", "www.redd.it"}
 ATOM_NS = {"atom": "http://www.w3.org/2005/Atom"}
 PLATFORM = "REDDIT"
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -781,6 +783,8 @@ def canonical_url(url: str) -> str:
     if not url:
         return ""
     parsed = urllib.parse.urlsplit(url)
+    if parsed.scheme.lower() not in {"http", "https"} or (parsed.hostname or "").lower() not in REDDIT_HOSTS:
+        return ""
     path = parsed.path
     if not path.endswith("/"):
         path = f"{path}/"
@@ -1100,7 +1104,11 @@ def log_event(path: Path | None, event: dict[str, Any]) -> None:
         handle.write(json.dumps(event, ensure_ascii=False, separators=(",", ":")) + "\n")
 
 
-def run_once(args: argparse.Namespace) -> tuple[int, list[dict[str, Any]]]:
+def run_once(
+    args: argparse.Namespace,
+    *,
+    include_status: bool = False,
+) -> tuple[int, list[dict[str, Any]]] | tuple[int, list[dict[str, Any]], str]:
     state_path = Path(args.state_file)
     log_path = None if args.no_state else Path(args.log_file)
     state = default_state() if args.no_state else load_state(state_path)
@@ -1117,7 +1125,7 @@ def run_once(args: argparse.Namespace) -> tuple[int, list[dict[str, Any]]]:
             },
         )
         print(f"Reddit connector is cooling down for {cooldown_remaining}s.", file=sys.stderr)
-        return 0, []
+        return format_run_result(0, [], "cooldown_skip", include_status)
 
     url = build_rss_url(args.limit, getattr(args, "subreddit", SUBREDDIT), getattr(args, "flair", FLAIR))
     print(f"Fetching: {url}", file=sys.stderr)
@@ -1199,7 +1207,7 @@ def run_once(args: argparse.Namespace) -> tuple[int, list[dict[str, Any]]]:
             },
         )
         print(f"Reddit rate limited this connector. Cooling down for {wait}s.", file=sys.stderr)
-        return 1, []
+        return format_run_result(1, [], "rate_limited", include_status)
     except Exception as exc:
         if is_tls_verification_error(exc):
             wait = max(60, args.cooldown_seconds)
@@ -1216,7 +1224,7 @@ def run_once(args: argparse.Namespace) -> tuple[int, list[dict[str, Any]]]:
                 },
             )
             print(f"Reddit TLS verification failed. Cooling down for {wait}s.", file=sys.stderr)
-            return 1, []
+            return format_run_result(1, [], "tls_verification_failed", include_status)
         state["last_error"] = str(exc)
         if not args.no_state:
             save_state(state_path, state)
@@ -1229,10 +1237,21 @@ def run_once(args: argparse.Namespace) -> tuple[int, list[dict[str, Any]]]:
             },
         )
         print(f"Failed to fetch Reddit posts: {exc}", file=sys.stderr)
-        return 1, []
+        return format_run_result(1, [], "failed", include_status)
 
     selected = new_listings if args.emit == "new" else listings
-    return 0, selected
+    return format_run_result(0, selected, "success", include_status)
+
+
+def format_run_result(
+    code: int,
+    listings: list[dict[str, Any]],
+    status: str,
+    include_status: bool,
+) -> tuple[int, list[dict[str, Any]]] | tuple[int, list[dict[str, Any]], str]:
+    if include_status:
+        return code, listings, status
+    return code, listings
 
 
 def dedupe_listings(listings: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -1308,13 +1327,17 @@ def watch(args: argparse.Namespace) -> int:
         time.sleep(sleep_for)
 
 
-def guarded_run_once(args: argparse.Namespace) -> tuple[int, list[dict[str, Any]]]:
+def guarded_run_once(
+    args: argparse.Namespace,
+    *,
+    include_status: bool = False,
+) -> tuple[int, list[dict[str, Any]]] | tuple[int, list[dict[str, Any]], str]:
     if args.no_state:
-        return run_once(args)
+        return run_once(args, include_status=include_status)
 
     try:
         with FileLock(Path(args.lock_file), args.lock_stale_seconds):
-            return run_once(args)
+            return run_once(args, include_status=include_status)
     except AlreadyRunningError as exc:
         log_event(
             Path(args.log_file),
@@ -1325,7 +1348,7 @@ def guarded_run_once(args: argparse.Namespace) -> tuple[int, list[dict[str, Any]
             },
         )
         print(str(exc), file=sys.stderr)
-        return 2, []
+        return format_run_result(2, [], "locked", include_status)
 
 
 def main() -> int:

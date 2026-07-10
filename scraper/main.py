@@ -317,13 +317,14 @@ def run_reddit(args: argparse.Namespace, config: dict[str, Any]) -> dict[str, An
         ai_timeout=45,
         user_agent=reddit.DEFAULT_USER_AGENT,
     )
-    code, listings = reddit.guarded_run_once(reddit_args)
+    code, listings, source_status = reddit.guarded_run_once(reddit_args, include_status=True)
     valid, invalid = validate_listings(listings)
     ok = code == 0 and not invalid
+    status = source_status if source_status == "cooldown_skip" else connector_result_status(ok, len(valid))
     return {
         "connector": "reddit",
         "ok": ok,
-        "status": connector_result_status(ok, len(valid)),
+        "status": status,
         "exitCode": code,
         "httpStatus": 200 if code == 0 else None,
         "httpStatusSource": "inferred from successful urllib fetch",
@@ -674,6 +675,15 @@ def write_storage(args: argparse.Namespace, listings: list[dict[str, Any]]) -> d
             "databaseUrl": safe_database_url(database_url),
             "summary": None,
             "error": str(exc),
+        }
+    except Exception as exc:
+        return {
+            "enabled": True,
+            "ok": False,
+            "attempted": True,
+            "databaseUrl": safe_database_url(database_url),
+            "summary": None,
+            "error": f"{type(exc).__name__}: database write failed",
         }
 
     return {

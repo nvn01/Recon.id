@@ -51,7 +51,7 @@ services:
       - --write-db
       - --headless
       - --facebook-browser
-      - chromium
+      - chrome
     env_file:
       - .env
     environment:

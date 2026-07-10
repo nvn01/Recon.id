@@ -21,6 +21,8 @@ loop_sleep_seconds = 60
 job_timeout_seconds = 300
 state_file = ".state/scheduler.json"
 log_file = ".logs/scheduler_runs.jsonl"
+lock_file = ".state/scheduler.lock"
+lock_stale_seconds = 7200
 
 [scheduler.reddit]
 enabled = true

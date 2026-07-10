@@ -1,18 +1,22 @@
 from __future__ import annotations
 
-import unittest
 import json
 import tempfile
+import unittest
 from datetime import datetime, timezone
 from pathlib import Path
+from unittest.mock import patch
 
 from scraper.scheduler import (
     build_jobs,
+    coalesce_due_jobs,
     is_job_due,
     record_job_state,
+    run_job,
     scheduler_status,
     summarize_orchestrator_output,
 )
+from scraper.shared.runtime import AlreadyRunningError, FileLock
 from scraper.shared.config import DEFAULT_CONFIG_PATH, load_config
 
 
@@ -43,6 +47,38 @@ def sample_config():
 
 
 class SchedulerTests(unittest.TestCase):
+    def test_scheduler_lock_blocks_a_second_scheduler_instance(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            lock_path = Path(tmpdir) / "scheduler.lock"
+            with FileLock(lock_path, stale_seconds=60):
+                with self.assertRaises(AlreadyRunningError):
+                    with FileLock(lock_path, stale_seconds=60):
+                        pass
+
+    def test_run_job_keeps_database_url_out_of_process_arguments_and_logs(self):
+        fixture_url = "postgresql://scraper:test-placeholder-123@postgres:5432/recon"
+        [job] = [item for item in build_jobs(sample_config()) if item.id == "reddit"]
+
+        with patch("scraper.scheduler.subprocess.run") as runner:
+            runner.return_value.returncode = 0
+            runner.return_value.stdout = '{"ok":true,"summary":{"listings":0},"connectors":[]}'
+            runner.return_value.stderr = ""
+
+            result = run_job(
+                job,
+                config_path="scraper/config/sources.toml",
+                write_db=True,
+                database_url=fixture_url,
+                timeout=30,
+            )
+
+        command = runner.call_args.args[0]
+        child_env = runner.call_args.kwargs["env"]
+        self.assertNotIn("--database-url", command)
+        self.assertNotIn(fixture_url, command)
+        self.assertEqual(child_env["SCRAPER_DATABASE_URL"], fixture_url)
+        self.assertNotIn(fixture_url, result.command)
+
     def test_production_config_checks_all_instagram_accounts_inside_ten_minute_cycle(self):
         config = load_config(DEFAULT_CONFIG_PATH)
         jobs = [job for job in build_jobs(config) if job.connector == "instagram"]
@@ -124,6 +160,19 @@ class SchedulerTests(unittest.TestCase):
 
         self.assertIn("instagram:first.shop", due)
         self.assertNotIn("instagram:second.shop", due)
+
+    def test_restart_coalesces_missed_instagram_jobs_into_staggered_due_times(self):
+        config = load_config(DEFAULT_CONFIG_PATH)
+        jobs = [job for job in build_jobs(config) if job.connector == "instagram"]
+        state = {"startedAt": "2026-07-08T00:00:00+00:00", "jobs": {}}
+        now = datetime(2026, 7, 8, 12, 0, tzinfo=timezone.utc)
+
+        due = coalesce_due_jobs(jobs, state, now)
+
+        self.assertEqual([job.id for job in due], ["instagram:chemicy.consignment"])
+        for index, job in enumerate(jobs[1:], start=1):
+            next_due = datetime.fromisoformat(state["jobs"][job.id]["nextDueAt"])
+            self.assertEqual((next_due - now).total_seconds(), index * 85)
 
     def test_record_job_state_sets_next_due_from_cadence(self):
         [job] = [item for item in build_jobs(sample_config()) if item.id == "reddit"]

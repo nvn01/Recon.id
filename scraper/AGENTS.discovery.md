@@ -28,7 +28,8 @@ User journeys:
 | Facebook Relay records preserve exact price, status, seller, location, and image | `scraper.tests.test_facebook_discovery` | PASS |
 | Facebook scheduled discovery defaults to a fresh logged-out context | `scraper.tests.test_facebook_discovery` | PASS |
 | Seven Instagram jobs fit in one 600-second ring at 85-second offsets | `scraper.tests.test_scheduler` | PASS |
-| Full scraper regression suite | `python -m unittest discover scraper.tests` | 42 PASS |
+| Restarted schedulers coalesce missed jobs and restore configured rolling offsets | `scraper.tests.test_scheduler` | PASS |
+| Full scraper regression suite | `python -m unittest discover scraper.tests` | 51 PASS |
 | New pure embedded parsers | `python -m coverage ...` | 91% branch coverage |
 | Static checks | `python -m ruff check scraper` and `python -m py_compile ...` | PASS |
 | Instagram live no-state proof | Chrome channel, one account, limit 1 | 12 posts returned; 1 normalized |
@@ -37,3 +38,5 @@ User journeys:
 RED checkpoints were confirmed before implementation: missing embedded modules, missing anonymous-session decision, old one-hour Instagram cadence, and old Chromium configuration each failed for the intended reason.
 
 Known gap: the Chrome-channel Docker image still needs the normal GitHub Actions build and staging burn-in before this branch can be called production-ready. Do not restore API-first Instagram fetching if staging fails; inspect the Chrome package/runtime first.
+
+Operational note: the scheduler owns a lock file and, after downtime, runs only the first due job per connector immediately. Other missed Instagram accounts and Facebook targets are deferred to their configured stagger offsets so a restart does not create a burst.

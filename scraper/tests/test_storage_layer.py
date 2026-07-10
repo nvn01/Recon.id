@@ -51,14 +51,14 @@ class StorageLayerTests(unittest.TestCase):
         with patch.dict(
             os.environ,
             {
-                "DATABASE_URL": "postgresql://web:secret@localhost:5432/recon",
-                "SCRAPER_DATABASE_URL": "postgresql://scraper:secret@postgres:5432/recon",
+                "DATABASE_URL": "postgresql://web:test-placeholder-123@localhost:5432/recon",
+                "SCRAPER_DATABASE_URL": "postgresql://scraper:test-placeholder-123@postgres:5432/recon",
             },
             clear=True,
         ):
             self.assertEqual(
                 require_database_url(None),
-                "postgresql://scraper:secret@postgres:5432/recon",
+                "postgresql://scraper:test-placeholder-123@postgres:5432/recon",
             )
 
     def test_require_database_url_rejects_missing_url(self):
@@ -68,9 +68,18 @@ class StorageLayerTests(unittest.TestCase):
 
     def test_safe_database_url_redacts_password(self):
         self.assertEqual(
-            safe_database_url("postgresql://recon:secret@postgres:5432/recon_dev"),
+            safe_database_url("postgresql://recon:test-placeholder-123@postgres:5432/recon_dev"),
             "postgresql://recon:***@postgres:5432/recon_dev",
         )
+
+    def test_safe_database_url_redacts_sensitive_query_values(self):
+        redacted = safe_database_url(
+            "postgresql://recon@postgres:5432/recon_dev?sslpassword=test-placeholder-123&application_name=recon"
+        )
+
+        self.assertNotIn("test-placeholder-123", redacted or "")
+        self.assertIn("sslpassword=%2A%2A%2A", redacted or "")
+        self.assertIn("application_name=recon", redacted or "")
 
     def test_deduplicate_listings_keeps_last_by_source_url(self):
         first = sample_listing(title="old title")
@@ -109,7 +118,7 @@ class StorageLayerTests(unittest.TestCase):
                 {
                     "source": "orchestrator",
                     "status": "success",
-                    "databaseUrl": "postgresql://recon:secret@postgres:5432/recon_dev",
+                    "databaseUrl": "postgresql://recon:test-placeholder-123@postgres:5432/recon_dev",
                     "counts": {"inserted": 1},
                 },
             )

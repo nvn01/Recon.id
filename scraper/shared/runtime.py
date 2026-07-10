@@ -13,12 +13,25 @@ from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import Any, TypeVar
-from urllib.parse import urlsplit, urlunsplit
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 
 T = TypeVar("T")
 TRUE_VALUES = {"1", "true", "yes", "on"}
 PROXY_SCHEMES = {"http", "https"}
+SENSITIVE_QUERY_KEYS = frozenset(
+    {
+        "access_token",
+        "api_key",
+        "apikey",
+        "key",
+        "password",
+        "passphrase",
+        "pwd",
+        "secret",
+        "token",
+    }
+)
 
 
 class AlreadyRunningError(RuntimeError):
@@ -254,9 +267,12 @@ def resolve_egress_config(env: Mapping[str, str] | None = None) -> EgressConfig:
 
 
 def configure_urllib_egress(config: EgressConfig, environ: MutableMapping[str, str] | None = None) -> None:
-    if config.mode != "proxy" or not config.proxy_url:
-        return
     target = environ if environ is not None else os.environ
+    proxy_keys = ("HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy")
+    if config.mode != "proxy" or not config.proxy_url:
+        for key in proxy_keys:
+            target.pop(key, None)
+        return
     target["HTTP_PROXY"] = config.proxy_url
     target["HTTPS_PROXY"] = config.proxy_url
     target["http_proxy"] = config.proxy_url
@@ -290,14 +306,27 @@ def redact_url(url: str | None) -> str | None:
     if not url:
         return url
     parts = urlsplit(url)
-    if parts.password is None:
+    query = parts.query
+    query_pairs = parse_qsl(query, keep_blank_values=True)
+    if query_pairs and any(key.lower() in SENSITIVE_QUERY_KEYS for key, _ in query_pairs):
+        query = urlencode(
+            [
+                (key, "***" if key.lower() in SENSITIVE_QUERY_KEYS else value)
+                for key, value in query_pairs
+            ]
+        )
+    fragment = "***" if parts.fragment else ""
+    if parts.password is None and query == parts.query and fragment == parts.fragment:
         return url
 
-    host = parts.hostname or ""
-    if ":" in host and not host.startswith("["):
-        host = f"[{host}]"
+    netloc = parts.netloc
+    if parts.password is not None:
+        host = parts.hostname or ""
+        if ":" in host and not host.startswith("["):
+            host = f"[{host}]"
 
-    username = parts.username or ""
-    auth = f"{username}:***@" if username else ""
-    port = f":{parts.port}" if parts.port else ""
-    return urlunsplit((parts.scheme, f"{auth}{host}{port}", parts.path, parts.query, parts.fragment))
+        username = parts.username or ""
+        auth = f"{username}:***@" if username else ""
+        port = f":{parts.port}" if parts.port else ""
+        netloc = f"{auth}{host}{port}"
+    return urlunsplit((parts.scheme, netloc, parts.path, query, fragment))
