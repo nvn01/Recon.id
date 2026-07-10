@@ -7,11 +7,25 @@ import uuid
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from typing import Any
-from urllib.parse import urlsplit, urlunsplit
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 
 VALID_PLATFORMS = {"REDDIT", "INSTAGRAM", "FACEBOOK"}
 VALID_STATUSES = {"AVAILABLE", "SOLD", "UNKNOWN"}
+SENSITIVE_QUERY_KEYS = frozenset(
+    {
+        "access_token",
+        "api_key",
+        "apikey",
+        "key",
+        "password",
+        "passphrase",
+        "pwd",
+        "secret",
+        "sslpassword",
+        "token",
+    }
+)
 
 
 class StorageError(RuntimeError):
@@ -128,19 +142,33 @@ def safe_database_url(url: str | None) -> str | None:
     if not url:
         return url
     parts = urlsplit(url)
-    if parts.password is None:
+    query = parts.query
+    query_pairs = parse_qsl(query, keep_blank_values=True)
+    if query_pairs and any(key.lower() in SENSITIVE_QUERY_KEYS for key, _ in query_pairs):
+        query = urlencode(
+            [
+                (key, "***" if key.lower() in SENSITIVE_QUERY_KEYS else value)
+                for key, value in query_pairs
+            ]
+        )
+    fragment = "***" if parts.fragment else ""
+    if parts.password is None and query == parts.query and fragment == parts.fragment:
         return url
 
-    host = parts.hostname or ""
-    if ":" in host and not host.startswith("["):
-        host = f"[{host}]"
+    netloc = parts.netloc
+    if parts.password is not None:
+        host = parts.hostname or ""
+        if ":" in host and not host.startswith("["):
+            host = f"[{host}]"
 
-    auth = parts.username or ""
-    if auth:
-        auth = f"{auth}:***@"
+        auth = parts.username or ""
+        if auth:
+            auth = f"{auth}:***@"
 
-    port = f":{parts.port}" if parts.port else ""
-    return urlunsplit((parts.scheme, f"{auth}{host}{port}", parts.path, parts.query, parts.fragment))
+        port = f":{parts.port}" if parts.port else ""
+        netloc = f"{auth}{host}{port}"
+
+    return urlunsplit((parts.scheme, netloc, parts.path, query, fragment))
 
 
 def deduplicate_listings(listings: list[dict[str, Any]]) -> DeduplicatedListings:
@@ -206,8 +234,11 @@ def upsert_listings(database_url: str | None, listings: list[dict[str, Any]]) ->
     except ImportError as exc:  # pragma: no cover - covered by runtime verification.
         raise StorageError("Install scraper database dependencies with: python -m pip install -r scraper/requirements.txt") from exc
 
-    with psycopg.connect(url, connect_timeout=15) as connection:
-        return upsert_listings_with_connection(connection, listings)
+    try:
+        with psycopg.connect(url, connect_timeout=15) as connection:
+            return upsert_listings_with_connection(connection, listings)
+    except psycopg.Error as exc:
+        raise StorageError(f"Database write failed: {type(exc).__name__}") from exc
 
 
 def upsert_listings_with_connection(connection: Any, listings: list[dict[str, Any]]) -> UpsertSummary:

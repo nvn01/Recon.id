@@ -7,6 +7,13 @@ from scraper.reddit import reddit
 
 
 class RedditFetchTests(unittest.TestCase):
+    def test_canonical_url_rejects_non_reddit_hosts(self):
+        self.assertEqual(reddit.canonical_url("https://evil.example/comments/abc/"), "")
+        self.assertEqual(
+            reddit.build_post_json_urls("https://evil.example/comments/abc/", None),
+            [],
+        )
+
     def test_fetch_text_retries_transient_url_error(self):
         responses = [
             urllib.error.URLError(TimeoutError("The handshake operation timed out")),

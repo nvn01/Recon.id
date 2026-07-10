@@ -317,13 +317,14 @@ def run_reddit(args: argparse.Namespace, config: dict[str, Any]) -> dict[str, An
         ai_timeout=45,
         user_agent=reddit.DEFAULT_USER_AGENT,
     )
-    code, listings = reddit.guarded_run_once(reddit_args)
+    code, listings, source_status = reddit.guarded_run_once(reddit_args, include_status=True)
     valid, invalid = validate_listings(listings)
     ok = code == 0 and not invalid
+    status = source_status if source_status == "cooldown_skip" else connector_result_status(ok, len(valid))
     return {
         "connector": "reddit",
         "ok": ok,
-        "status": connector_result_status(ok, len(valid)),
+        "status": status,
         "exitCode": code,
         "httpStatus": 200 if code == 0 else None,
         "httpStatusSource": "inferred from successful urllib fetch",
@@ -604,6 +605,9 @@ def run_facebook(args: argparse.Namespace, config: dict[str, Any], egress: Egres
         browser=str(args.facebook_browser or facebook_config.get("browser") or "chrome"),
         access_mode="browser",
         profile_dir=str(facebook.DEFAULT_PROFILE_DIR),
+        session_mode=str(facebook_config.get("session_mode") or "ephemeral"),
+        block_assets=bool_value(facebook_config.get("block_assets"), default=True),
+        load_assets=False,
         include_keyword=None,
         no_relevance_filter=False,
         timeout=int_value(facebook_config.get("timeout_seconds"), int_value(run_config.get("timeout_seconds"), 30)),
@@ -636,8 +640,8 @@ def run_facebook(args: argparse.Namespace, config: dict[str, Any], egress: Egres
         "status": connector_result_status(ok, len(valid)),
         "exitCode": code,
         "httpStatus": None,
-        "httpStatusSource": "not available from browser card extraction",
-        "transport": "playwright_browser",
+        "httpStatusSource": "initial logged-out Marketplace document",
+        "transport": "playwright_embedded_relay",
         "targetsFile": str(targets_file),
         "targetIds": target_ids,
         "targetGroups": target_groups,
@@ -671,6 +675,15 @@ def write_storage(args: argparse.Namespace, listings: list[dict[str, Any]]) -> d
             "databaseUrl": safe_database_url(database_url),
             "summary": None,
             "error": str(exc),
+        }
+    except Exception as exc:
+        return {
+            "enabled": True,
+            "ok": False,
+            "attempted": True,
+            "databaseUrl": safe_database_url(database_url),
+            "summary": None,
+            "error": f"{type(exc).__name__}: database write failed",
         }
 
     return {

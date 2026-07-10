@@ -21,6 +21,8 @@ loop_sleep_seconds = 60
 job_timeout_seconds = 300
 state_file = ".state/scheduler.json"
 log_file = ".logs/scheduler_runs.jsonl"
+lock_file = ".state/scheduler.lock"
+lock_stale_seconds = 7200
 
 [scheduler.reddit]
 enabled = true
@@ -30,12 +32,12 @@ limit = 15
 
 [scheduler.instagram]
 enabled = true
-# Instagram remains slow/staggered until the browser-backed public fallback
-# proves stable on staging. Pace one account at a time and persist cooldowns.
-cadence_seconds = 3600
-stagger_seconds = 600
-jitter_seconds = 60
-limit = 2
+# Seven public profiles share one ten-minute cycle: one profile starts roughly
+# every 85 seconds and each profile repeats every 600 seconds.
+cadence_seconds = 600
+stagger_seconds = 85
+jitter_seconds = 10
+limit = 10
 per_account = true
 
 [scheduler.facebook]
@@ -47,9 +49,9 @@ cadence_seconds = 600
 target_cadence_seconds = 600
 target_stagger_seconds = 60
 jitter_seconds = 30
-limit = 3
+limit = 10
 headless = true
-browser = "chromium"
+browser = "chrome"
 split_targets = true
 target_groups = ["hot"]
 
@@ -83,18 +85,18 @@ names = [
   "consigngaming",
   "ggsconsign",
 ]
-max_posts_per_account = 10
-delay_seconds = 1.0
+max_posts_per_account = 12
+delay_seconds = 0.0
 retries = 1
 retry_base_seconds = 2.0
 retry_max_seconds = 30.0
 retry_jitter_seconds = 1.0
 timeout_seconds = 30
 cooldown_seconds = 3600
-fetch_mode = "auto"
+fetch_mode = "browser"
 headless = true
-browser = "chromium"
-browser_wait_ms = 2500
+browser = "chrome"
+browser_wait_ms = 750
 
 [facebook.marketplace]
 enabled = true
@@ -102,11 +104,14 @@ enabled = true
 # then reference target IDs or target groups here.
 targets_file = "../facebook/source_targets.json"
 target_groups = ["hot"]
-limit = 3
-candidate_limit = 12
-max_scrolls = 1
+limit = 10
+candidate_limit = 24
+max_scrolls = 0
+wait_ms = 0
 timeout_seconds = 30
 cooldown_seconds = 300
 headless = true
-browser = "chromium"
+browser = "chrome"
+session_mode = "ephemeral"
+block_assets = true
 details = false

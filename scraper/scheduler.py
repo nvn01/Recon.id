@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import random
 import subprocess
 import sys
@@ -19,13 +20,16 @@ from pathlib import Path
 from typing import Any
 
 from scraper.shared.config import DEFAULT_CONFIG_PATH, float_value, int_value, load_config, string_list, table
-from scraper.shared.runtime import parse_iso_datetime
+from scraper.shared.runtime import AlreadyRunningError, FileLock, parse_iso_datetime
 from scraper.storage.run_log import write_run_log
 
 
 SCRAPER_DIR = Path(__file__).resolve().parent
 DEFAULT_SCHEDULER_STATE_FILE = SCRAPER_DIR / ".state" / "scheduler.json"
 DEFAULT_SCHEDULER_LOG_FILE = SCRAPER_DIR / ".logs" / "scheduler_runs.jsonl"
+DEFAULT_SCHEDULER_LOCK_FILE = SCRAPER_DIR / ".state" / "scheduler.lock"
+DEFAULT_SCHEDULER_LOCK_STALE_SECONDS = 7200
+DEFAULT_CATCH_UP_SPACING_SECONDS = 60
 
 
 @dataclass(frozen=True)
@@ -66,21 +70,50 @@ def main() -> int:
     scheduler_config = table(config, "scheduler")
     state_path = resolve_path(args.state_file or scheduler_config.get("state_file"), DEFAULT_SCHEDULER_STATE_FILE)
     log_path = resolve_path(args.log_file or scheduler_config.get("log_file"), DEFAULT_SCHEDULER_LOG_FILE)
+    lock_path = resolve_path(args.lock_file or scheduler_config.get("lock_file"), DEFAULT_SCHEDULER_LOCK_FILE)
+    lock_stale_seconds = max(
+        60,
+        int_value(scheduler_config.get("lock_stale_seconds"), DEFAULT_SCHEDULER_LOCK_STALE_SECONDS),
+    )
     loop_sleep_seconds = max(1.0, float_value(scheduler_config.get("loop_sleep_seconds"), 30.0))
     job_timeout_seconds = max(30, int_value(scheduler_config.get("job_timeout_seconds"), 300))
 
-    state = load_scheduler_state(state_path)
     jobs = filter_jobs(build_jobs(config), args.connector, args.exclude_connector)
     if not jobs:
         print("No scheduler jobs are enabled.", flush=True)
         return 0
 
+    try:
+        with FileLock(lock_path, lock_stale_seconds):
+            return run_scheduler_loop(
+                args,
+                jobs,
+                state_path=state_path,
+                log_path=log_path,
+                loop_sleep_seconds=loop_sleep_seconds,
+                job_timeout_seconds=job_timeout_seconds,
+            )
+    except AlreadyRunningError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+
+
+def run_scheduler_loop(
+    args: argparse.Namespace,
+    jobs: list[ScheduleJob],
+    *,
+    state_path: Path,
+    log_path: Path,
+    loop_sleep_seconds: float,
+    job_timeout_seconds: int,
+) -> int:
+    state = load_scheduler_state(state_path)
     cycle = 0
     while True:
         cycle += 1
         now = now_utc()
         ensure_scheduler_started(state, now)
-        due_jobs = [job for job in jobs if is_job_due(job, state, now, run_due_now=args.run_due_now)]
+        due_jobs = coalesce_due_jobs(jobs, state, now, run_due_now=args.run_due_now)
 
         if not due_jobs:
             print_no_due(jobs, state, now)
@@ -112,11 +145,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--config", default=str(DEFAULT_CONFIG_PATH), help="Path to scraper source TOML config.")
     parser.add_argument("--state-file", default=None, help="Scheduler state JSON path.")
     parser.add_argument("--log-file", default=None, help="Scheduler JSONL summary log path.")
+    parser.add_argument("--lock-file", default=None, help="Scheduler lock file path.")
     parser.add_argument("--once", action="store_true", help="Run currently due jobs once, then exit.")
     parser.add_argument("--max-cycles", type=int, default=0, help="Stop after this many scheduler cycles.")
     parser.add_argument("--run-due-now", action="store_true", help="Treat jobs without prior attempts as due immediately.")
     parser.add_argument("--write-db", action="store_true", help="Pass --write-db to each orchestrator command.")
-    parser.add_argument("--database-url", default=None, help="Database URL override passed to scraper.main.")
+    parser.add_argument(
+        "--database-url",
+        default=None,
+        help="Database URL override passed to scraper.main through SCRAPER_DATABASE_URL.",
+    )
     parser.add_argument("--connector", action="append", choices=("reddit", "instagram", "facebook"), help="Only run this connector.")
     parser.add_argument("--exclude-connector", action="append", choices=("reddit", "instagram", "facebook"), help="Skip this connector.")
     return parser.parse_args()
@@ -410,6 +448,53 @@ def is_job_due(job: ScheduleJob, state: dict[str, Any], now: datetime, *, run_du
     return now >= initial_due
 
 
+def coalesce_due_jobs(
+    jobs: list[ScheduleJob],
+    state: dict[str, Any],
+    now: datetime,
+    *,
+    run_due_now: bool = False,
+    catch_up_spacing_seconds: int = DEFAULT_CATCH_UP_SPACING_SECONDS,
+) -> list[ScheduleJob]:
+    """Keep missed jobs from a connector from running in one burst.
+
+    A stopped scheduler can come back with several jobs whose due times are all
+    in the past.  Run the first due job for each connector now, then move the
+    remaining due jobs into the future using their configured initial offsets.
+    This preserves the rolling account/target cadence after a restart while
+    still allowing different connectors to make progress in the same cycle.
+    """
+    due_jobs = [job for job in jobs if is_job_due(job, state, now, run_due_now=run_due_now)]
+    if len(due_jobs) <= 1:
+        return due_jobs
+
+    spacing = max(1, int(catch_up_spacing_seconds))
+    due_by_connector: dict[str, list[ScheduleJob]] = {}
+    for job in due_jobs:
+        due_by_connector.setdefault(job.connector, []).append(job)
+
+    selected_ids: set[str] = set()
+    scheduler_jobs = state.setdefault("jobs", {})
+    for connector_jobs in due_by_connector.values():
+        ordered = sorted(connector_jobs, key=lambda job: (job.initial_delay_seconds, job.id))
+        first = ordered[0]
+        selected_ids.add(first.id)
+        previous_offset = 0
+        for job in ordered[1:]:
+            offset = job.initial_delay_seconds - first.initial_delay_seconds
+            if offset <= previous_offset:
+                offset = previous_offset + spacing
+            previous_offset = offset
+            job_state = scheduler_jobs.get(job.id)
+            if not isinstance(job_state, dict):
+                job_state = {"connector": job.connector}
+                scheduler_jobs[job.id] = job_state
+            job_state["nextDueAt"] = (now + timedelta(seconds=offset)).isoformat()
+
+    # Keep the original config order so connector logs stay deterministic.
+    return [job for job in due_jobs if job.id in selected_ids]
+
+
 def record_job_state(state: dict[str, Any], job: ScheduleJob, run: JobRun, now: datetime) -> None:
     jitter = random.randint(0, job.jitter_seconds) if job.jitter_seconds > 0 else 0
     next_due = now + timedelta(seconds=job.cadence_seconds + jitter)
@@ -459,8 +544,10 @@ def run_job(
     command = [sys.executable, "-m", "scraper.main", "--config", config_path, *job.args, "--format", "json"]
     if write_db:
         command.append("--write-db")
+    child_env = None
     if database_url:
-        command.extend(["--database-url", database_url])
+        child_env = os.environ.copy()
+        child_env["SCRAPER_DATABASE_URL"] = database_url
 
     started_at = now_utc()
     try:
@@ -470,6 +557,7 @@ def run_job(
             text=True,
             timeout=timeout,
             check=False,
+            env=child_env,
         )
         output = parse_json_output(completed.stdout)
         summary = summarize_orchestrator_output(output)
@@ -491,7 +579,7 @@ def run_job(
     return JobRun(
         job_id=job.id,
         connector=job.connector,
-        command=safe_command(command),
+        command=list(command),
         status=status,
         exit_code=exit_code,
         started_at=started_at.isoformat(),
@@ -597,14 +685,6 @@ def print_no_due(jobs: list[ScheduleJob], state: dict[str, Any], now: datetime) 
     due_at, job_id = min(next_due, key=lambda item: item[0])
     remaining = max(0, int((due_at - now).total_seconds()))
     print(f"{now.isoformat()} no_due next={job_id} in={remaining}s", flush=True)
-
-
-def safe_command(command: list[str]) -> list[str]:
-    safe = list(command)
-    for index, value in enumerate(safe):
-        if value == "--database-url" and index + 1 < len(safe):
-            safe[index + 1] = "***"
-    return safe
 
 
 def tail_text(value: str, max_chars: int = 1200) -> str | None:
