@@ -13,6 +13,7 @@ from scraper.scheduler import (
     scheduler_status,
     summarize_orchestrator_output,
 )
+from scraper.shared.config import DEFAULT_CONFIG_PATH, load_config
 
 
 def sample_config():
@@ -42,6 +43,14 @@ def sample_config():
 
 
 class SchedulerTests(unittest.TestCase):
+    def test_production_config_checks_all_instagram_accounts_inside_ten_minute_cycle(self):
+        jobs = [job for job in build_jobs(load_config(DEFAULT_CONFIG_PATH)) if job.connector == "instagram"]
+
+        self.assertEqual(len(jobs), 7)
+        self.assertTrue(all(job.cadence_seconds == 600 for job in jobs))
+        self.assertEqual([job.initial_delay_seconds for job in jobs], [0, 85, 170, 255, 340, 425, 510])
+        self.assertTrue(all(job.args[-2:] == ("--limit", "10") for job in jobs))
+
     def test_build_jobs_splits_instagram_accounts_and_uses_connector_specific_args(self):
         jobs = build_jobs(sample_config())
 
