@@ -8,8 +8,8 @@ WORKDIR /app
 COPY requirements.txt /tmp/recon-scraper-requirements.txt
 RUN python -m pip install --no-cache-dir --upgrade pip \
     && python -m pip install --no-cache-dir -r /tmp/recon-scraper-requirements.txt \
-    && python -m playwright install --with-deps chromium
+    && python -m playwright install --with-deps chrome
 
 COPY . ./scraper
 
-CMD ["python", "-m", "scraper.main", "--all", "--write-db", "--headless", "--facebook-browser", "chromium"]
+CMD ["python", "-m", "scraper.main", "--all", "--write-db", "--headless", "--facebook-browser", "chrome"]

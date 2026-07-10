@@ -40,6 +40,12 @@ from playwright.sync_api import Error as PlaywrightError
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import sync_playwright
 
+try:
+    from scraper.facebook.embedded import extract_marketplace_records
+except ImportError:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+    from scraper.facebook.embedded import extract_marketplace_records
+
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -224,6 +230,12 @@ class MarketplaceCard:
     image_url: str
     image_alt: str
     raw_text: str
+    price_amount: int | None = None
+    seller_name: str = ""
+    is_live: bool | None = None
+    is_sold: bool | None = None
+    is_pending: bool | None = None
+    is_hidden: bool | None = None
 
 
 @dataclass(frozen=True)
@@ -590,7 +602,32 @@ def parse_card(raw: dict[str, str]) -> MarketplaceCard:
     )
 
 
-def extract_cards(page, limit: int) -> list[MarketplaceCard]:
+def card_from_embedded_record(raw: dict[str, Any]) -> MarketplaceCard:
+    return MarketplaceCard(
+        item_id=str(raw.get("itemId") or ""),
+        url=str(raw.get("href") or ""),
+        price=str(raw.get("price") or ""),
+        title=str(raw.get("title") or ""),
+        location=str(raw.get("location") or ""),
+        is_newly_listed=bool(raw.get("isNewlyListed")),
+        image_url=str(raw.get("image") or ""),
+        image_alt=str(raw.get("imageAlt") or raw.get("title") or ""),
+        raw_text=clean_text(str(raw.get("text") or "")),
+        price_amount=raw.get("priceAmount") if isinstance(raw.get("priceAmount"), int) else None,
+        seller_name=str(raw.get("sellerName") or ""),
+        is_live=raw.get("isLive") if isinstance(raw.get("isLive"), bool) else None,
+        is_sold=raw.get("isSold") if isinstance(raw.get("isSold"), bool) else None,
+        is_pending=raw.get("isPending") if isinstance(raw.get("isPending"), bool) else None,
+        is_hidden=raw.get("isHidden") if isinstance(raw.get("isHidden"), bool) else None,
+    )
+
+
+def extract_embedded_cards(page, limit: int) -> list[MarketplaceCard]:
+    script_texts = page.locator('script[type="application/json"]').all_text_contents()
+    return [card_from_embedded_record(record) for record in extract_marketplace_records(script_texts, limit=limit)]
+
+
+def extract_dom_cards(page, limit: int) -> list[MarketplaceCard]:
     raw_cards = page.evaluate(
         """
         (limit) => {
@@ -776,17 +813,20 @@ def scrape_target(page, target: SourceTarget, args: argparse.Namespace, keywords
     print(f"URL: {url}", file=sys.stderr)
 
     open_marketplace(page, url, args.wait_ms, args.timeout * 1000)
+    candidates = extract_embedded_cards(page, candidate_limit)
+    if candidates:
+        print(f"Parsed {len(candidates)} Marketplace listings from embedded Relay data.", file=sys.stderr)
+    else:
+        try:
+            page.wait_for_selector('a[href*="/marketplace/item/"]', timeout=args.timeout * 1000)
+        except PlaywrightTimeoutError as exc:
+            page_text = extract_page_text(page, max_chars=1500)
+            if looks_login_blocked(page_text):
+                raise LoginBlockedError("Facebook Marketplace page is login-gated") from exc
+            raise ConnectorBlockedError(f"No Marketplace item cards appeared. Page sample: {page_text[:800]}") from exc
 
-    try:
-        page.wait_for_selector('a[href*="/marketplace/item/"]', timeout=args.timeout * 1000)
-    except PlaywrightTimeoutError as exc:
-        page_text = extract_page_text(page, max_chars=1500)
-        if looks_login_blocked(page_text):
-            raise LoginBlockedError("Facebook Marketplace page is login-gated") from exc
-        raise ConnectorBlockedError(f"No Marketplace item cards appeared. Page sample: {page_text[:800]}") from exc
-
-    load_candidate_window(page, candidate_limit, effective_max_scrolls(target, args), args.scroll_wait_ms)
-    candidates = extract_cards(page, candidate_limit)
+        load_candidate_window(page, candidate_limit, effective_max_scrolls(target, args), args.scroll_wait_ms)
+        candidates = extract_dom_cards(page, candidate_limit)
     result = select_target_cards(target, candidates, args, keywords, target_limit, url)
     if result.skipped_count or result.blocked_count:
         print(
@@ -942,16 +982,24 @@ def normalize_card(
         "description": description,
         "category": extract_category(combined_text),
         "brand": extract_brand(combined_text),
-        "price": extract_price(detail.description, card.price),
+        "price": card.price_amount if card.price_amount is not None else extract_price(detail.description, card.price),
         "locationTexts": locations,
         "conditionText": detail.condition or extract_condition(description),
-        "sellerName": detail.seller or None,
-        "status": extract_status(combined_text),
+        "sellerName": detail.seller or card.seller_name or None,
+        "status": structured_card_status(card, combined_text),
         "postedAt": parse_posted_at(detail.posted, fetched_at),
         "firstFetchedAt": fetched_at.isoformat(),
         "lastFetchedAt": fetched_at.isoformat(),
         "images": build_images(card),
     }
+
+
+def structured_card_status(card: MarketplaceCard, fallback_text: str) -> str:
+    if card.is_sold:
+        return "SOLD"
+    if card.is_hidden or card.is_pending or card.is_live is False:
+        return "UNKNOWN"
+    return extract_status(fallback_text)
 
 
 def normalize_listing_title(card: MarketplaceCard) -> str:
@@ -1393,6 +1441,56 @@ def run_login(page) -> None:
     input("Press Enter here after the browser session is ready...")
 
 
+def uses_persistent_profile(args: argparse.Namespace) -> bool:
+    return bool(getattr(args, "login", False)) or str(getattr(args, "session_mode", "ephemeral")) == "persistent"
+
+
+def launch_facebook_context(playwright: Any, args: argparse.Namespace) -> tuple[Any | None, Any]:
+    proxy_url = getattr(args, "proxy_url", None)
+    channel = "chrome" if args.browser == "chrome" else None
+
+    if uses_persistent_profile(args):
+        profile_dir = Path(args.profile_dir).resolve()
+        profile_dir.mkdir(parents=True, exist_ok=True)
+        launch_options: dict[str, Any] = {
+            "user_data_dir": str(profile_dir),
+            "headless": args.headless,
+            "locale": "id-ID",
+            "viewport": {"width": 1440, "height": 900},
+        }
+        if proxy_url:
+            launch_options["proxy"] = {"server": proxy_url}
+        if channel:
+            launch_options["channel"] = channel
+        return None, playwright.chromium.launch_persistent_context(**launch_options)
+
+    launch_options = {"headless": args.headless}
+    if proxy_url:
+        launch_options["proxy"] = {"server": proxy_url}
+    if channel:
+        launch_options["channel"] = channel
+    browser_instance = playwright.chromium.launch(**launch_options)
+    context = browser_instance.new_context(
+        locale="id-ID",
+        viewport={"width": 1440, "height": 900},
+    )
+    return browser_instance, context
+
+
+def configure_discovery_page(page: Any, args: argparse.Namespace) -> None:
+    block_assets = bool(getattr(args, "block_assets", not bool(getattr(args, "load_assets", False))))
+    if not block_assets or getattr(args, "login", False):
+        return
+
+    def block_heavy_assets(route: Any) -> None:
+        if route.request.resource_type in {"image", "media", "font", "stylesheet"}:
+            route.abort()
+        else:
+            route.continue_()
+
+    page.route("**/*", block_heavy_assets)
+
+
 def run_calibration(args: argparse.Namespace) -> tuple[int, list[dict[str, Any]]]:
     state_path = Path(args.state_file)
     log_path = None if args.no_state else Path(args.log_file)
@@ -1460,24 +1558,11 @@ def run_browser_calibration(args: argparse.Namespace) -> list[dict[str, Any]]:
     if args.include_keyword:
         keywords.extend(args.include_keyword)
 
-    profile_dir = Path(args.profile_dir).resolve()
-    profile_dir.mkdir(parents=True, exist_ok=True)
-
     with sync_playwright() as playwright:
-        launch_options: dict[str, Any] = {
-            "user_data_dir": str(profile_dir),
-            "headless": args.headless,
-            "locale": "id-ID",
-            "viewport": {"width": 1440, "height": 900},
-        }
-        if getattr(args, "proxy_url", None):
-            launch_options["proxy"] = {"server": args.proxy_url}
-        if args.browser == "chrome":
-            launch_options["channel"] = "chrome"
-
-        context = playwright.chromium.launch_persistent_context(**launch_options)
+        browser_instance, context = launch_facebook_context(playwright, args)
         try:
             page = context.pages[0] if context.pages else context.new_page()
+            configure_discovery_page(page, args)
 
             if args.login:
                 run_login(page)
@@ -1494,6 +1579,8 @@ def run_browser_calibration(args: argparse.Namespace) -> list[dict[str, Any]]:
             return records
         finally:
             context.close()
+            if browser_instance is not None:
+                browser_instance.close()
 
 
 def calibration_record(result: MarketplaceTargetResult) -> dict[str, Any]:
@@ -1620,24 +1707,11 @@ def run_browser_fetch(args: argparse.Namespace, state: dict[str, Any]) -> list[d
     if args.include_keyword:
         keywords.extend(args.include_keyword)
 
-    profile_dir = Path(args.profile_dir).resolve()
-    profile_dir.mkdir(parents=True, exist_ok=True)
-
     with sync_playwright() as playwright:
-        launch_options: dict[str, Any] = {
-            "user_data_dir": str(profile_dir),
-            "headless": args.headless,
-            "locale": "id-ID",
-            "viewport": {"width": 1440, "height": 900},
-        }
-        if getattr(args, "proxy_url", None):
-            launch_options["proxy"] = {"server": args.proxy_url}
-        if args.browser == "chrome":
-            launch_options["channel"] = "chrome"
-
-        context = playwright.chromium.launch_persistent_context(**launch_options)
+        browser_instance, context = launch_facebook_context(playwright, args)
         try:
             page = context.pages[0] if context.pages else context.new_page()
+            configure_discovery_page(page, args)
 
             if args.login:
                 run_login(page)
@@ -1661,6 +1735,8 @@ def run_browser_fetch(args: argparse.Namespace, state: dict[str, Any]) -> list[d
             return listings
         finally:
             context.close()
+            if browser_instance is not None:
+                browser_instance.close()
 
 
 def enrich_listings_with_ai(
@@ -1913,8 +1989,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--profile-dir",
         default=str(DEFAULT_PROFILE_DIR),
-        help="Persistent browser profile directory used for Facebook session cookies.",
+        help="Persistent browser profile directory used only with --login or --session-mode persistent.",
     )
+    parser.add_argument(
+        "--session-mode",
+        choices=("ephemeral", "persistent"),
+        default="ephemeral",
+        help="Use a fresh logged-out browser context by default; persistent is explicit legacy/session mode.",
+    )
+    parser.add_argument("--load-assets", action="store_true", help="Load images, media, fonts, and styles during discovery.")
     parser.add_argument(
         "--include-keyword",
         action="append",

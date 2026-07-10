@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import unittest
 from unittest.mock import patch
 
@@ -79,7 +80,7 @@ class InstagramFetchTests(unittest.TestCase):
             }
         }
 
-        posts = extract_profile_posts(["{}", __import__("json").dumps(payload)])
+        posts = extract_profile_posts(["{}", json.dumps(payload)])
 
         self.assertEqual([post["shortcode"] for post in posts], ["NEWER", "OLDER"])
         self.assertEqual(posts[0]["edge_media_to_caption"]["edges"][0]["node"]["text"], "Harga Rp2.000.000\nKondisi mulus")
@@ -94,9 +95,47 @@ class InstagramFetchTests(unittest.TestCase):
             }
         }
 
-        posts = extract_profile_posts([__import__("json").dumps(connection), __import__("json").dumps(connection)])
+        posts = extract_profile_posts([json.dumps(connection), json.dumps(connection)])
 
         self.assertEqual([post["shortcode"] for post in posts], ["SAME"])
+
+    def test_embedded_parser_supports_legacy_edges_timestamps_and_carousels(self):
+        payload = {
+            "edge_owner_to_timeline_media": {
+                "edges": [
+                    None,
+                    {"node": "invalid"},
+                    {"node": {"pk": "missing-shortcode"}},
+                    {
+                        "node": {
+                            "shortcode": "LEGACY",
+                            "id": "400",
+                            "taken_at_timestamp": 1_700_000_000,
+                            "edge_media_to_caption": {"edges": [{"node": {"text": "Harga Rp4.000.000"}}]},
+                            "image_versions2": {
+                                "candidates": [None, {"url": "https://cdn.example/primary.jpg"}]
+                            },
+                            "carousel_media": [
+                                None,
+                                {"display_url": "https://cdn.example/sidecar.jpg"},
+                                {"image_versions2": {"candidates": [{"url": "https://cdn.example/sidecar-2.jpg"}]}},
+                            ],
+                        }
+                    },
+                ]
+            },
+            "ignored": {"polaris_ordered_timeline_connection": {"edges": "not-a-list"}},
+        }
+
+        posts = extract_profile_posts(["not-json", json.dumps(payload)])
+
+        self.assertEqual([post["shortcode"] for post in posts], ["LEGACY"])
+        self.assertEqual(posts[0]["taken_at_timestamp"], 1_700_000_000)
+        self.assertEqual(posts[0]["display_url"], "https://cdn.example/primary.jpg")
+        self.assertEqual(
+            [edge["node"]["display_url"] for edge in posts[0]["edge_sidecar_to_children"]["edges"]],
+            ["https://cdn.example/sidecar.jpg", "https://cdn.example/sidecar-2.jpg"],
+        )
 
 
 if __name__ == "__main__":

@@ -16,10 +16,12 @@ from pathlib import Path
 from typing import Any
 
 try:
+    from scraper.instagram.embedded import extract_profile_posts
     from scraper.reddit import reddit as rule_parser
     from scraper.shared.runtime import RetryPolicy, retry_after_seconds_from_headers, retry_call
 except ImportError:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from instagram.embedded import extract_profile_posts
     from reddit import reddit as rule_parser
     from shared.runtime import RetryPolicy, retry_after_seconds_from_headers, retry_call
 
@@ -183,12 +185,8 @@ def run_accounts(
 
 def transport_name(fetch_mode: str, status: int | None) -> str:
     mode = (fetch_mode or "direct").strip().lower()
-    if mode == "auto" and status in {403, 429}:
-        return "instagram_web_profile_info_auto"
-    if mode == "browser":
-        return "instagram_web_profile_info_browser"
-    if mode == "auto":
-        return "instagram_web_profile_info_auto"
+    if mode in {"auto", "browser"}:
+        return "instagram_profile_html_browser"
     return "instagram_web_profile_info"
 
 
@@ -206,7 +204,7 @@ def fetch_profile_resilient(
     if mode not in {"direct", "browser", "auto"}:
         raise InstagramFetchError(f"unsupported Instagram fetch_mode: {fetch_mode}")
 
-    if mode == "browser":
+    if mode in {"browser", "auto"}:
         return fetch_profile_browser(
             username,
             timeout=timeout,
@@ -217,20 +215,7 @@ def fetch_profile_resilient(
         )
     if mode == "direct":
         return fetch_profile(username, timeout=timeout, user_agent=user_agent)
-
-    try:
-        return fetch_profile(username, timeout=timeout, user_agent=user_agent)
-    except InstagramFetchError as exc:
-        if exc.status not in {403, 429}:
-            raise
-        return fetch_profile_browser(
-            username,
-            timeout=timeout,
-            user_agent=user_agent,
-            browser=browser,
-            headless=headless,
-            wait_ms=browser_wait_ms,
-        )
+    raise InstagramFetchError(f"unsupported Instagram fetch_mode: {fetch_mode}")
 
 
 def fetch_profile(username: str, *, timeout: int, user_agent: str) -> tuple[int, dict[str, Any]]:
@@ -277,10 +262,6 @@ def fetch_profile_browser(
         raise InstagramFetchError("Instagram browser fallback unavailable: playwright is not installed") from exc
 
     timeout_ms = max(5000, int(timeout * 1000))
-    captured_status: int | None = None
-    captured_payload: dict[str, Any] | None = None
-    query = {"username": username}
-
     try:
         with sync_playwright() as playwright:
             launch_options: dict[str, Any] = {"headless": headless}
@@ -288,57 +269,46 @@ def fetch_profile_browser(
                 launch_options["channel"] = "chrome"
             browser_instance = playwright.chromium.launch(**launch_options)
             context = browser_instance.new_context(
-                user_agent=user_agent,
                 locale="id-ID",
                 viewport={"width": 1365, "height": 768},
             )
             try:
                 page = context.new_page()
 
-                def capture_response(response: Any) -> None:
-                    nonlocal captured_status, captured_payload
-                    if WEB_PROFILE_INFO_URL not in str(response.url):
-                        return
-                    try:
-                        payload = response.json()
-                    except Exception:
-                        return
-                    if isinstance(payload, dict):
-                        captured_status = int(response.status)
-                        captured_payload = payload
+                def block_non_document_assets(route: Any) -> None:
+                    if route.request.resource_type in {"image", "media", "font", "stylesheet"}:
+                        route.abort()
+                    else:
+                        route.continue_()
 
-                page.on("response", capture_response)
-                try:
-                    page.goto(
-                        f"https://www.instagram.com/{username}/",
-                        wait_until="domcontentloaded",
-                        timeout=timeout_ms,
-                    )
-                    page.wait_for_timeout(max(0, wait_ms))
-                except (PlaywrightError, PlaywrightTimeoutError):
-                    pass
-
-                if captured_payload is not None:
-                    if captured_status is not None and captured_status >= 400:
-                        raise InstagramFetchError(f"Instagram browser HTTP {captured_status}", status=captured_status)
-                    return captured_status or 200, captured_payload
-
-                response = context.request.get(
-                    WEB_PROFILE_INFO_URL,
-                    params=query,
-                    headers={
-                        "X-IG-App-ID": INSTAGRAM_APP_ID,
-                        "Accept": "application/json,text/plain,*/*",
-                        "Referer": f"https://www.instagram.com/{username}/",
-                    },
+                page.route("**/*", block_non_document_assets)
+                response = page.goto(
+                    f"https://www.instagram.com/{username}/",
+                    wait_until="domcontentloaded",
                     timeout=timeout_ms,
                 )
-                status = int(response.status)
+                status = int(response.status) if response is not None else 200
                 if status >= 400:
                     raise InstagramFetchError(f"Instagram browser HTTP {status}", status=status)
-                payload = response.json()
-                if not isinstance(payload, dict):
-                    raise InstagramFetchError("Instagram browser returned invalid JSON")
+
+                script_texts = page.locator('script[type="application/json"]').all_text_contents()
+                posts = extract_profile_posts(script_texts)
+                if not posts and wait_ms > 0:
+                    page.wait_for_timeout(wait_ms)
+                    script_texts = page.locator('script[type="application/json"]').all_text_contents()
+                    posts = extract_profile_posts(script_texts)
+                if not posts:
+                    raise InstagramFetchError("Instagram profile HTML did not expose timeline posts", status=status)
+
+                payload = {
+                    "data": {
+                        "user": {
+                            "edge_owner_to_timeline_media": {
+                                "edges": [{"node": post} for post in posts]
+                            }
+                        }
+                    }
+                }
                 return status, payload
             finally:
                 context.close()
@@ -362,8 +332,23 @@ def extract_posts(payload: dict[str, Any]) -> list[dict[str, Any]]:
     edges = user.get("edge_owner_to_timeline_media", {}).get("edges", [])
     posts = [edge.get("node", {}) for edge in edges if isinstance(edge, dict)]
     posts = [post for post in posts if isinstance(post, dict) and post.get("shortcode")]
-    posts.sort(key=lambda post: int(post.get("taken_at_timestamp") or 0), reverse=True)
+    posts.sort(key=instagram_post_sort_key, reverse=True)
     return posts
+
+
+def instagram_post_sort_key(post: dict[str, Any]) -> tuple[int, int, int]:
+    timestamp = integer_or_zero(post.get("taken_at_timestamp"))
+    pk = integer_or_zero(post.get("pk"))
+    return (1 if timestamp else 0, timestamp, pk)
+
+
+def integer_or_zero(value: Any) -> int:
+    if isinstance(value, bool) or value in (None, ""):
+        return 0
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
 
 
 def is_listing_post(post: dict[str, Any]) -> bool:
@@ -381,7 +366,8 @@ def normalize_post(account: str, post: dict[str, Any], fetched_at: datetime) -> 
     shortcode = str(post.get("shortcode") or "")
     source_url = f"https://www.instagram.com/p/{shortcode}/"
     title = extract_title(caption) or shortcode
-    posted_at = datetime.fromtimestamp(int(post.get("taken_at_timestamp") or 0), timezone.utc).isoformat()
+    timestamp = integer_or_zero(post.get("taken_at_timestamp"))
+    posted_at = datetime.fromtimestamp(timestamp, timezone.utc).isoformat() if timestamp else None
     images = extract_images(post, title)
     combined = "\n".join(part for part in (title, caption) if part)
 
