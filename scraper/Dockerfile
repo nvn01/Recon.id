@@ -8,7 +8,7 @@ WORKDIR /app
 
 COPY requirements.txt /tmp/recon-scraper-requirements.txt
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends xvfb xauth \
+    && apt-get install -y --no-install-recommends tini xvfb xauth \
     && rm -rf /var/lib/apt/lists/* \
     && python -m pip install --no-cache-dir --upgrade pip \
     && python -m pip install --no-cache-dir -r /tmp/recon-scraper-requirements.txt \
@@ -23,5 +23,5 @@ COPY --chown=scraper:scraper . ./scraper
 
 USER scraper
 
-ENTRYPOINT ["xvfb-run", "-a", "--server-args=-screen 0 1365x768x24"]
+ENTRYPOINT ["tini", "--", "xvfb-run", "-a", "--server-args=-screen 0 1365x768x24"]
 CMD ["python", "-m", "scraper.main", "--all", "--write-db", "--headless", "--facebook-browser", "chrome"]
