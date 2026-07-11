@@ -89,6 +89,7 @@ class SchedulerTests(unittest.TestCase):
         self.assertTrue(all(job.args[-2:] == ("--limit", "10") for job in jobs))
         self.assertEqual(config["instagram"]["accounts"]["browser"], "chrome")
         self.assertEqual(config["instagram"]["accounts"]["browser_mode"], "headed")
+        self.assertEqual(config["instagram"]["accounts"]["browser_wait_ms"], 8_000)
         self.assertEqual(config["scheduler"]["facebook"]["browser"], "chrome")
         self.assertEqual(config["facebook"]["marketplace"]["browser"], "chrome")
 
