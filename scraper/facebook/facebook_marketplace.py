@@ -458,12 +458,12 @@ def source_target_from_record(record: dict[str, Any], index: int) -> SourceTarge
     if not query and not category_slug:
         raise ValueError(f"source target #{index} is missing query or categorySlug")
 
-    target_name = query or category_slug
+    target_name = query or category_slug or f"target-{index}"
     target_id = string_value(record.get("id")) or f"target-{index}-{slugify(target_name)}"
     return SourceTarget(
         id=target_id,
         label=string_value(record.get("label")),
-        query=query or category_slug,
+        query=query or category_slug or "",
         groups=tuple(as_string_list(record.get("groups") or record.get("group"))),
         location=string_value(record.get("location")) or DEFAULT_LOCATION,
         category_id=string_value(first_present(record, "categoryId", "category_id")) or DEFAULT_CATEGORY_ID,
