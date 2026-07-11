@@ -270,18 +270,13 @@ def fetch_profile_browser(
             browser_instance = playwright.chromium.launch(**launch_options)
             context = browser_instance.new_context(
                 locale="id-ID",
+                user_agent=user_agent,
                 viewport={"width": 1365, "height": 768},
             )
             try:
                 page = context.new_page()
-
-                def block_non_document_assets(route: Any) -> None:
-                    if route.request.resource_type in {"image", "media", "font", "stylesheet"}:
-                        route.abort()
-                    else:
-                        route.continue_()
-
-                page.route("**/*", block_non_document_assets)
+                timeline_payloads: list[dict[str, Any]] = []
+                page.on("response", lambda candidate: capture_timeline_response(candidate, timeline_payloads))
                 response = page.goto(
                     f"https://www.instagram.com/{username}/",
                     wait_until="domcontentloaded",
@@ -291,14 +286,21 @@ def fetch_profile_browser(
                 if status >= 400:
                     raise InstagramFetchError(f"Instagram browser HTTP {status}", status=status)
 
+                remaining_wait_ms = max(0, wait_ms)
+                while remaining_wait_ms > 0:
+                    interval_ms = min(250, remaining_wait_ms)
+                    page.wait_for_timeout(interval_ms)
+                    remaining_wait_ms -= interval_ms
+
                 script_texts = page.locator('script[type="application/json"]').all_text_contents()
-                posts = extract_profile_posts(script_texts)
-                if not posts and wait_ms > 0:
-                    page.wait_for_timeout(wait_ms)
-                    script_texts = page.locator('script[type="application/json"]').all_text_contents()
-                    posts = extract_profile_posts(script_texts)
+                network_texts = [json.dumps(payload) for payload in timeline_payloads]
+                posts = extract_profile_posts([*script_texts, *network_texts])
                 if not posts:
-                    raise InstagramFetchError("Instagram profile HTML did not expose timeline posts", status=status)
+                    raise InstagramFetchError(
+                        "Instagram profile browser did not expose timeline posts "
+                        f"(scripts={len(script_texts)}, timelineResponses={len(timeline_payloads)})",
+                        status=status,
+                    )
 
                 payload = {
                     "data": {
@@ -317,6 +319,27 @@ def fetch_profile_browser(
         raise
     except (PlaywrightError, PlaywrightTimeoutError) as exc:
         raise InstagramFetchError(f"Instagram browser fetch failed: {exc}") from exc
+
+
+def capture_timeline_response(response: Any, captured: list[dict[str, Any]]) -> None:
+    """Keep supported logged-out timeline JSON without binding to a rotating doc id."""
+    try:
+        parsed_url = urllib.parse.urlparse(str(response.url or ""))
+        if parsed_url.hostname not in {"instagram.com", "www.instagram.com"}:
+            return
+        if int(response.status) != 200:
+            return
+        content_type = str((response.headers or {}).get("content-type") or "").lower()
+        if "json" not in content_type and "javascript" not in content_type:
+            return
+        payload = response.json()
+        if not isinstance(payload, dict):
+            return
+        if not extract_profile_posts([json.dumps(payload)]):
+            return
+        captured.append(payload)
+    except (AttributeError, TypeError, ValueError, json.JSONDecodeError):
+        return
 
 
 def is_retryable_fetch_error(exc: Exception) -> bool:

@@ -35,10 +35,58 @@ def extract_profile_posts(script_texts: Iterable[str]) -> list[dict[str, Any]]:
                 if not shortcode:
                     continue
                 current = by_shortcode.get(shortcode)
-                if current is None or post_sort_key(post) > post_sort_key(current):
-                    by_shortcode[shortcode] = post
+                by_shortcode[shortcode] = post if current is None else merge_posts(current, post)
 
     return sorted(by_shortcode.values(), key=post_sort_key, reverse=True)
+
+
+def merge_posts(current: dict[str, Any], incoming: dict[str, Any]) -> dict[str, Any]:
+    """Merge complementary embedded/network fields for one Instagram shortcode."""
+    merged = dict(current)
+    for key, value in incoming.items():
+        if is_empty_value(merged.get(key)) and not is_empty_value(value):
+            merged[key] = value
+
+    current_timestamp = integer_value(current.get("taken_at_timestamp"))
+    incoming_timestamp = integer_value(incoming.get("taken_at_timestamp"))
+    if incoming_timestamp > current_timestamp:
+        merged["taken_at_timestamp"] = incoming_timestamp
+
+    current_pk = integer_value(current.get("pk"))
+    incoming_pk = integer_value(incoming.get("pk"))
+    if incoming_pk > current_pk:
+        merged["pk"] = str(incoming.get("pk"))
+
+    caption = caption_value(current) or caption_value(incoming)
+    if caption:
+        merged["edge_media_to_caption"] = {"edges": [{"node": {"text": caption}}]}
+
+    child_edges = merge_child_edges(current, incoming)
+    if child_edges:
+        merged["edge_sidecar_to_children"] = {"edges": child_edges}
+    return merged
+
+
+def merge_child_edges(*posts: dict[str, Any]) -> list[dict[str, Any]]:
+    edges: list[dict[str, Any]] = []
+    seen_urls: set[str] = set()
+    for post in posts:
+        connection = post.get("edge_sidecar_to_children")
+        candidates = connection.get("edges") if isinstance(connection, dict) else None
+        if not isinstance(candidates, list):
+            continue
+        for edge in candidates:
+            node = edge.get("node") if isinstance(edge, dict) else None
+            url = first_image_url(node) if isinstance(node, dict) else ""
+            if not url or url in seen_urls:
+                continue
+            seen_urls.add(url)
+            edges.append({"node": {"display_url": url}})
+    return edges
+
+
+def is_empty_value(value: Any) -> bool:
+    return value is None or value == "" or value == [] or value == {}
 
 
 def timeline_connections(payload: Any) -> Iterator[dict[str, Any]]:
