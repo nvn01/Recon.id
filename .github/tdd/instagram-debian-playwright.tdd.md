@@ -63,3 +63,23 @@ Checkpoint: `fcbc561 fix(instagram): run browser discovery under Xvfb`
 - Local, staging, and production Compose rendering: passed with non-secret verification image tags for production interpolation.
 - Changed-file credential-pattern scan: no findings.
 - Local Dockerfile build check: not executed because the Docker Desktop Linux engine was unavailable; GitHub Actions remains the image-build gate.
+
+## Debian PID 1 hotfix
+
+The first deployed Xvfb image exposed a container-only startup failure: when
+`xvfb-run` was PID 1, it remained blocked waiting for Xvfb's readiness signal
+and never launched Python. Two staging runs stayed alive with empty logs and an
+empty database.
+
+The staging image itself proved the fix with Docker's init shim:
+
+```text
+docker run --rm --init novn01/recon-scraper:stagging python -V
+Python 3.12.13
+```
+
+The permanent image now installs `tini` and starts
+`tini -- xvfb-run ...`, preserving the virtual display while ensuring
+`xvfb-run` is not PID 1. The Dockerfile regression test requires that exact
+entrypoint order. Local, staging, and production Compose files also set
+`init: true` as a runtime-level safeguard for older scraper images.
