@@ -94,9 +94,10 @@ retry_jitter_seconds = 1.0
 timeout_seconds = 30
 cooldown_seconds = 3600
 fetch_mode = "browser"
-headless = true
+browser_mode = "headed"
+headless = false
 browser = "chrome"
-browser_wait_ms = 750
+browser_wait_ms = 2500
 
 [facebook.marketplace]
 enabled = true

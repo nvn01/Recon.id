@@ -7,7 +7,10 @@ ENV HOME=/home/scraper
 WORKDIR /app
 
 COPY requirements.txt /tmp/recon-scraper-requirements.txt
-RUN python -m pip install --no-cache-dir --upgrade pip \
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends xvfb xauth \
+    && rm -rf /var/lib/apt/lists/* \
+    && python -m pip install --no-cache-dir --upgrade pip \
     && python -m pip install --no-cache-dir -r /tmp/recon-scraper-requirements.txt \
     && python -m playwright install --with-deps chrome
 
@@ -20,4 +23,5 @@ COPY --chown=scraper:scraper . ./scraper
 
 USER scraper
 
+ENTRYPOINT ["xvfb-run", "-a", "--server-args=-screen 0 1365x768x24"]
 CMD ["python", "-m", "scraper.main", "--all", "--write-db", "--headless", "--facebook-browser", "chrome"]

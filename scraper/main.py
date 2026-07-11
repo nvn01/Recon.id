@@ -146,6 +146,12 @@ def parse_args() -> argparse.Namespace:
         help="Instagram public fetch path. auto falls back to a non-persistent browser context on 403/429.",
     )
     parser.add_argument("--instagram-browser", choices=("chrome", "chromium"), default=None, help="Instagram browser fallback engine.")
+    parser.add_argument(
+        "--instagram-browser-mode",
+        choices=("headless", "headed"),
+        default=None,
+        help="Run Instagram Chrome headless or headed inside the container virtual display.",
+    )
     parser.add_argument("--instagram-visible-browser", action="store_true", help="Run Instagram browser fallback visibly for diagnostics.")
     return parser.parse_args()
 
@@ -417,8 +423,7 @@ def run_instagram(args: argparse.Namespace, config: dict[str, Any]) -> dict[str,
         retry_policy=retry_policy,
         fetch_mode=str(getattr(args, "instagram_fetch_mode", None) or instagram_config.get("fetch_mode") or "direct"),
         browser=str(getattr(args, "instagram_browser", None) or instagram_config.get("browser") or "chromium"),
-        headless=not bool(getattr(args, "instagram_visible_browser", False))
-        and bool_value(instagram_config.get("headless"), default=True),
+        headless=resolve_instagram_headless(args, instagram_config),
         browser_wait_ms=int_value(instagram_config.get("browser_wait_ms"), 2500),
     )
     account_results = skipped_accounts + account_results
@@ -513,6 +518,17 @@ def run_instagram(args: argparse.Namespace, config: dict[str, Any]) -> dict[str,
         "validationErrors": invalid,
         "listings": valid,
     }
+
+
+def resolve_instagram_headless(args: argparse.Namespace, instagram_config: dict[str, Any]) -> bool:
+    if bool(getattr(args, "instagram_visible_browser", False)):
+        return False
+    mode = str(getattr(args, "instagram_browser_mode", None) or instagram_config.get("browser_mode") or "").strip().lower()
+    if mode:
+        if mode not in {"headless", "headed"}:
+            raise ValueError(f"unsupported Instagram browser_mode: {mode}")
+        return mode == "headless"
+    return bool_value(instagram_config.get("headless"), default=True)
 
 
 def instagram_account_state_map(state: dict[str, Any]) -> dict[str, Any]:

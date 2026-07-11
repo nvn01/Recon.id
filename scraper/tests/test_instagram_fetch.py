@@ -5,7 +5,11 @@ import unittest
 from unittest.mock import patch
 
 from scraper.instagram.embedded import extract_profile_posts
-from scraper.instagram.instagram import InstagramFetchError, fetch_profile_resilient
+from scraper.instagram.instagram import (
+    InstagramFetchError,
+    capture_timeline_response,
+    fetch_profile_resilient,
+)
 
 
 class InstagramFetchTests(unittest.TestCase):
@@ -98,6 +102,106 @@ class InstagramFetchTests(unittest.TestCase):
         posts = extract_profile_posts([json.dumps(connection), json.dumps(connection)])
 
         self.assertEqual([post["shortcode"] for post in posts], ["SAME"])
+
+    def test_embedded_and_network_posts_merge_complementary_fields_by_shortcode(self):
+        embedded = {
+            "polaris_ordered_timeline_connection": {
+                "edges": [
+                    {
+                        "node": {
+                            "code": "SAME",
+                            "pk": "500",
+                            "caption": {"text": "Harga Rp5.000.000"},
+                            "display_uri": "https://cdn.example/primary.jpg",
+                            "media_type": 8,
+                            "product_type": "carousel_container",
+                        }
+                    }
+                ]
+            }
+        }
+        network = {
+            "data": {
+                "user": {
+                    "edge_owner_to_timeline_media": {
+                        "edges": [
+                            {
+                                "node": {
+                                    "shortcode": "SAME",
+                                    "id": "500",
+                                    "taken_at_timestamp": 1_800_000_000,
+                                    "edge_media_to_caption": {"edges": []},
+                                    "edge_sidecar_to_children": {
+                                        "edges": [
+                                            {"node": {"display_url": "https://cdn.example/sidecar.jpg"}}
+                                        ]
+                                    },
+                                }
+                            }
+                        ]
+                    }
+                }
+            }
+        }
+
+        [post] = extract_profile_posts([json.dumps(embedded), json.dumps(network)])
+
+        self.assertEqual(post["shortcode"], "SAME")
+        self.assertEqual(post["taken_at_timestamp"], 1_800_000_000)
+        self.assertEqual(post["product_type"], "carousel_container")
+        self.assertEqual(post["display_url"], "https://cdn.example/primary.jpg")
+        self.assertEqual(post["edge_media_to_caption"]["edges"][0]["node"]["text"], "Harga Rp5.000.000")
+        self.assertEqual(
+            [edge["node"]["display_url"] for edge in post["edge_sidecar_to_children"]["edges"]],
+            ["https://cdn.example/sidecar.jpg"],
+        )
+
+    def test_timeline_response_capture_accepts_shape_not_document_id(self):
+        class FakeResponse:
+            status = 200
+            url = "https://www.instagram.com/some/future/bootstrap/path"
+            headers = {"content-type": "application/json; charset=utf-8"}
+
+            @staticmethod
+            def json():
+                return {
+                    "data": {
+                        "user": {
+                            "edge_owner_to_timeline_media": {
+                                "edges": [{"node": {"shortcode": "NETWORK", "id": "600"}}]
+                            }
+                        }
+                    }
+                }
+
+        captured: list[dict] = []
+
+        capture_timeline_response(FakeResponse(), captured)
+
+        self.assertEqual(len(captured), 1)
+        self.assertEqual(
+            captured[0]["data"]["user"]["edge_owner_to_timeline_media"]["edges"][0]["node"]["shortcode"],
+            "NETWORK",
+        )
+
+    def test_timeline_response_capture_rejects_unrelated_or_cross_origin_json(self):
+        class FakeResponse:
+            status = 200
+            headers = {"content-type": "application/json"}
+
+            def __init__(self, url: str, payload: dict):
+                self.url = url
+                self.payload = payload
+
+            def json(self):
+                return self.payload
+
+        captured: list[dict] = []
+
+        capture_timeline_response(FakeResponse("https://example.test/graphql", {"data": {}}), captured)
+        capture_timeline_response(FakeResponse("https://www.instagram.com/graphql/query", {"data": {}}), captured)
+
+        self.assertEqual(captured, [])
 
     def test_embedded_parser_supports_legacy_edges_timestamps_and_carousels(self):
         payload = {

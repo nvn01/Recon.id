@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import os
 import tempfile
 import time
@@ -9,7 +10,14 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from scraper.main import run_facebook, run_instagram, run_reddit, should_lock_orchestrator, write_storage
+from scraper.main import (
+    resolve_instagram_headless,
+    run_facebook,
+    run_instagram,
+    run_reddit,
+    should_lock_orchestrator,
+    write_storage,
+)
 from scraper.shared.runtime import (
     AlreadyRunningError,
     EgressConfig,
@@ -27,6 +35,15 @@ from scraper.shared.runtime import (
 
 
 class RuntimeGuardrailTests(unittest.TestCase):
+    def test_instagram_browser_mode_defaults_to_configured_headed_chrome(self):
+        args = argparse.Namespace(instagram_browser_mode=None, instagram_visible_browser=False)
+
+        self.assertFalse(resolve_instagram_headless(args, {"browser_mode": "headed", "headless": True}))
+
+    def test_instagram_browser_mode_cli_can_force_headless_for_ab_probe(self):
+        args = argparse.Namespace(instagram_browser_mode="headless", instagram_visible_browser=False)
+
+        self.assertTrue(resolve_instagram_headless(args, {"browser_mode": "headed", "headless": False}))
     def test_file_lock_blocks_duplicate_run_and_releases_on_exit(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             lock_path = Path(tmpdir) / "scraper.lock"

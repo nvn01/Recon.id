@@ -88,8 +88,15 @@ class SchedulerTests(unittest.TestCase):
         self.assertEqual([job.initial_delay_seconds for job in jobs], [0, 85, 170, 255, 340, 425, 510])
         self.assertTrue(all(job.args[-2:] == ("--limit", "10") for job in jobs))
         self.assertEqual(config["instagram"]["accounts"]["browser"], "chrome")
+        self.assertEqual(config["instagram"]["accounts"]["browser_mode"], "headed")
         self.assertEqual(config["scheduler"]["facebook"]["browser"], "chrome")
         self.assertEqual(config["facebook"]["marketplace"]["browser"], "chrome")
+
+    def test_scraper_image_runs_commands_inside_virtual_display(self):
+        dockerfile = (Path(__file__).parents[1] / "Dockerfile").read_text(encoding="utf-8")
+
+        self.assertIn("xvfb", dockerfile.lower())
+        self.assertIn('ENTRYPOINT ["xvfb-run"', dockerfile)
 
     def test_build_jobs_splits_instagram_accounts_and_uses_connector_specific_args(self):
         jobs = build_jobs(sample_config())
