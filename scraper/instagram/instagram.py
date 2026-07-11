@@ -114,7 +114,7 @@ def run_accounts(
     fetch_mode: str = "direct",
     browser: str = "chromium",
     headless: bool = True,
-    browser_wait_ms: int = 2500,
+    browser_wait_ms: int = 8000,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     listings: list[dict[str, Any]] = []
     results: list[dict[str, Any]] = []
@@ -286,19 +286,15 @@ def fetch_profile_browser(
                 if status >= 400:
                     raise InstagramFetchError(f"Instagram browser HTTP {status}", status=status)
 
-                remaining_wait_ms = max(0, wait_ms)
-                while remaining_wait_ms > 0:
-                    interval_ms = min(250, remaining_wait_ms)
-                    page.wait_for_timeout(interval_ms)
-                    remaining_wait_ms -= interval_ms
-
-                script_texts = page.locator('script[type="application/json"]').all_text_contents()
-                network_texts = [json.dumps(payload) for payload in timeline_payloads]
-                posts = extract_profile_posts([*script_texts, *network_texts])
+                posts, script_count = wait_for_profile_posts(
+                    page,
+                    timeline_payloads,
+                    wait_ms=wait_ms,
+                )
                 if not posts:
                     raise InstagramFetchError(
                         "Instagram profile browser did not expose timeline posts "
-                        f"(scripts={len(script_texts)}, timelineResponses={len(timeline_payloads)})",
+                        f"(scripts={script_count}, timelineResponses={len(timeline_payloads)})",
                         status=status,
                     )
 
@@ -319,6 +315,28 @@ def fetch_profile_browser(
         raise
     except (PlaywrightError, PlaywrightTimeoutError) as exc:
         raise InstagramFetchError(f"Instagram browser fetch failed: {exc}") from exc
+
+
+def wait_for_profile_posts(
+    page: Any,
+    timeline_payloads: list[dict[str, Any]],
+    *,
+    wait_ms: int,
+    poll_interval_ms: int = 250,
+) -> tuple[list[dict[str, Any]], int]:
+    """Pump browser events until timeline data arrives or the bounded budget expires."""
+    remaining_wait_ms = max(0, int(wait_ms))
+    interval_limit_ms = max(1, int(poll_interval_ms))
+    while True:
+        script_texts = page.locator('script[type="application/json"]').all_text_contents()
+        network_texts = [json.dumps(payload) for payload in timeline_payloads]
+        posts = extract_profile_posts([*script_texts, *network_texts])
+        if posts or remaining_wait_ms <= 0:
+            return posts, len(script_texts)
+
+        interval_ms = min(interval_limit_ms, remaining_wait_ms)
+        page.wait_for_timeout(interval_ms)
+        remaining_wait_ms -= interval_ms
 
 
 def capture_timeline_response(response: Any, captured: list[dict[str, Any]]) -> None:

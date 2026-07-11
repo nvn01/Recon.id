@@ -9,10 +9,73 @@ from scraper.instagram.instagram import (
     InstagramFetchError,
     capture_timeline_response,
     fetch_profile_resilient,
+    wait_for_profile_posts,
 )
 
 
 class InstagramFetchTests(unittest.TestCase):
+    def test_profile_wait_keeps_pumping_until_delayed_timeline_response(self):
+        timeline_payloads: list[dict] = []
+        delayed_payload = {
+            "data": {
+                "user": {
+                    "edge_owner_to_timeline_media": {
+                        "edges": [{"node": {"shortcode": "DELAYED", "id": "700"}}]
+                    }
+                }
+            }
+        }
+
+        class FakeLocator:
+            @staticmethod
+            def all_text_contents():
+                return []
+
+        class FakePage:
+            waited_ms = 0
+
+            @staticmethod
+            def locator(selector: str):
+                self.assertEqual(selector, 'script[type="application/json"]')
+                return FakeLocator()
+
+            def wait_for_timeout(self, interval_ms: int):
+                self.waited_ms += interval_ms
+                if self.waited_ms == 2_750:
+                    timeline_payloads.append(delayed_payload)
+
+        page = FakePage()
+
+        posts, script_count = wait_for_profile_posts(page, timeline_payloads, wait_ms=8_000)
+
+        self.assertEqual([post["shortcode"] for post in posts], ["DELAYED"])
+        self.assertEqual(script_count, 0)
+        self.assertEqual(page.waited_ms, 2_750)
+
+    def test_profile_wait_stops_after_bounded_budget_when_timeline_is_missing(self):
+        class FakeLocator:
+            @staticmethod
+            def all_text_contents():
+                return []
+
+        class FakePage:
+            waited_ms = 0
+
+            @staticmethod
+            def locator(_selector: str):
+                return FakeLocator()
+
+            def wait_for_timeout(self, interval_ms: int):
+                self.waited_ms += interval_ms
+
+        page = FakePage()
+
+        posts, script_count = wait_for_profile_posts(page, [], wait_ms=750)
+
+        self.assertEqual(posts, [])
+        self.assertEqual(script_count, 0)
+        self.assertEqual(page.waited_ms, 750)
+
     def test_auto_fetch_uses_embedded_browser_profile_without_direct_api_request(self):
         payload = {"data": {"user": {"edge_owner_to_timeline_media": {"edges": []}}}}
 

@@ -424,7 +424,7 @@ def run_instagram(args: argparse.Namespace, config: dict[str, Any]) -> dict[str,
         fetch_mode=str(getattr(args, "instagram_fetch_mode", None) or instagram_config.get("fetch_mode") or "direct"),
         browser=str(getattr(args, "instagram_browser", None) or instagram_config.get("browser") or "chromium"),
         headless=resolve_instagram_headless(args, instagram_config),
-        browser_wait_ms=int_value(instagram_config.get("browser_wait_ms"), 2500),
+        browser_wait_ms=int_value(instagram_config.get("browser_wait_ms"), 8000),
     )
     account_results = skipped_accounts + account_results
     ai_parse_error = None
