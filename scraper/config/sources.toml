@@ -97,7 +97,7 @@ fetch_mode = "browser"
 browser_mode = "headed"
 headless = false
 browser = "chrome"
-browser_wait_ms = 2500
+browser_wait_ms = 8000
 
 [facebook.marketplace]
 enabled = true
