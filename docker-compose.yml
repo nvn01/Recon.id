@@ -41,6 +41,7 @@ services:
   scraper:
     profiles:
       - scraper
+    init: true
     build:
       context: ./scraper
     command:

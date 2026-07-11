@@ -99,6 +99,10 @@ class SchedulerTests(unittest.TestCase):
         self.assertIn("tini", dockerfile.lower())
         self.assertIn('ENTRYPOINT ["tini", "--", "xvfb-run"', dockerfile)
 
+        compose = (Path(__file__).parents[2] / "docker-compose.yml").read_text(encoding="utf-8")
+        scraper_service = compose.split("  scraper:", maxsplit=1)[1]
+        self.assertIn("    init: true", scraper_service)
+
     def test_build_jobs_splits_instagram_accounts_and_uses_connector_specific_args(self):
         jobs = build_jobs(sample_config())
 
