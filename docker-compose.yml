@@ -41,18 +41,8 @@ services:
   scraper:
     profiles:
       - scraper
-    init: true
     build:
       context: ./scraper
-    command:
-      - python
-      - -m
-      - scraper.main
-      - --all
-      - --write-db
-      - --headless
-      - --facebook-browser
-      - chrome
     env_file:
       - .env
     environment:

@@ -81,5 +81,9 @@ Python 3.12.13
 The permanent image now installs `tini` and starts
 `tini -- xvfb-run ...`, preserving the virtual display while ensuring
 `xvfb-run` is not PID 1. The Dockerfile regression test requires that exact
-entrypoint order. Local, staging, and production Compose files also set
-`init: true` as a runtime-level safeguard for older scraper images.
+entrypoint order.
+
+The container default now runs `scraper.scheduler --once --write-db`. Compose
+does not add a second init process or repeat browser/connector arguments; Tini
+and Xvfb belong to the image, while browser choice and cadence belong to
+`sources.toml`.
