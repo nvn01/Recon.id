@@ -9,10 +9,12 @@ from unittest.mock import patch
 from scraper.facebook.embedded import extract_marketplace_records
 from scraper.facebook.facebook_marketplace import (
     MarketplaceCard,
+    build_search_url,
     card_from_embedded_record,
     extract_brand,
     normalize_card,
     scrape_detail,
+    source_target_from_record,
     uses_persistent_profile,
 )
 
@@ -62,6 +64,24 @@ def marketplace_payload(*, sold: bool = False) -> dict:
 
 
 class FacebookDiscoveryTests(unittest.TestCase):
+    def test_category_target_builds_localized_newest_first_url_without_search_query(self):
+        target = source_target_from_record(
+            {
+                "id": "category-computers",
+                "categorySlug": "computers",
+                "location": "jakarta",
+                "sortBy": "creation_time_descend",
+                "radius": 500,
+            },
+            1,
+        )
+
+        self.assertEqual(
+            build_search_url(target),
+            "https://www.facebook.com/marketplace/jakarta/computers/"
+            "?sortBy=creation_time_descend&radius=500",
+        )
+
     def test_brand_extraction_ignores_negated_competitor_mentions(self):
         titles = (
             "PC Komputer Gaming Set AMD RX 6800 XT High End not RTX not intel 4070 5070",
