@@ -8,10 +8,12 @@ from unittest.mock import patch
 
 from scraper.facebook.embedded import extract_marketplace_records
 from scraper.facebook.facebook_marketplace import (
+    DEFAULT_TARGETS_FILE,
     MarketplaceCard,
     build_search_url,
     card_from_embedded_record,
     extract_brand,
+    load_source_targets,
     normalize_card,
     scrape_detail,
     source_target_from_record,
@@ -64,6 +66,17 @@ def marketplace_payload(*, sold: bool = False) -> dict:
 
 
 class FacebookDiscoveryTests(unittest.TestCase):
+    def test_committed_targets_are_the_three_requested_jakarta_categories(self):
+        targets = load_source_targets(DEFAULT_TARGETS_FILE)
+
+        self.assertEqual(
+            [target.category_slug for target in targets],
+            ["cell-phone-accessories", "video-games-consoles", "computers"],
+        )
+        self.assertTrue(all(target.location == "jakarta" for target in targets))
+        self.assertTrue(all(target.radius == 500 for target in targets))
+        self.assertTrue(all(target.sort_by == "creation_time_descend" for target in targets))
+
     def test_category_target_builds_localized_newest_first_url_without_search_query(self):
         target = source_target_from_record(
             {
