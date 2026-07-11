@@ -8,10 +8,15 @@ from unittest.mock import patch
 
 from scraper.facebook.embedded import extract_marketplace_records
 from scraper.facebook.facebook_marketplace import (
+    DEFAULT_TARGETS_FILE,
     MarketplaceCard,
+    build_search_url,
     card_from_embedded_record,
+    extract_brand,
+    load_source_targets,
     normalize_card,
     scrape_detail,
+    source_target_from_record,
     uses_persistent_profile,
 )
 
@@ -61,6 +66,50 @@ def marketplace_payload(*, sold: bool = False) -> dict:
 
 
 class FacebookDiscoveryTests(unittest.TestCase):
+    def test_committed_targets_are_the_three_requested_jakarta_categories(self):
+        targets = load_source_targets(DEFAULT_TARGETS_FILE)
+
+        self.assertEqual(
+            [target.category_slug for target in targets],
+            ["cell-phone-accessories", "video-games-consoles", "computers"],
+        )
+        self.assertTrue(all(target.location == "jakarta" for target in targets))
+        self.assertTrue(all(target.radius == 500 for target in targets))
+        self.assertTrue(all(target.sort_by == "creation_time_descend" for target in targets))
+
+    def test_category_target_builds_localized_newest_first_url_without_search_query(self):
+        target = source_target_from_record(
+            {
+                "id": "category-computers",
+                "categorySlug": "computers",
+                "location": "jakarta",
+                "sortBy": "creation_time_descend",
+                "radius": 500,
+            },
+            1,
+        )
+
+        self.assertEqual(
+            build_search_url(target),
+            "https://www.facebook.com/marketplace/jakarta/computers/"
+            "?sortBy=creation_time_descend&radius=500",
+        )
+
+    def test_brand_extraction_ignores_negated_competitor_mentions(self):
+        titles = (
+            "PC Komputer Gaming Set AMD RX 6800 XT High End not RTX not intel 4070 5070",
+            "PC AMD Ryzen bukan Intel",
+            "PC AMD Ryzen tanpa Intel",
+            "PC AMD Ryzen non-Intel",
+        )
+
+        for title in titles:
+            with self.subTest(title=title):
+                self.assertEqual(extract_brand(title), "AMD")
+
+    def test_brand_extraction_keeps_positive_intel_mentions(self):
+        self.assertEqual(extract_brand("PC gaming Intel Core i7 RTX 4070"), "Intel")
+
     def test_detail_fetch_uses_canonical_facebook_item_url(self):
         card = MarketplaceCard(
             item_id="123",

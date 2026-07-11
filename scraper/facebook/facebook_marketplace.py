@@ -256,6 +256,7 @@ class SourceTarget:
     groups: tuple[str, ...] = ()
     location: str = DEFAULT_LOCATION
     category_id: str = DEFAULT_CATEGORY_ID
+    category_slug: str | None = None
     sort_by: str = "creation_time_descend"
     exact: bool = False
     radius: int | None = None
@@ -388,12 +389,15 @@ def matched_keywords(card: MarketplaceCard, keywords: list[str]) -> list[str]:
 
 
 def build_search_url(target: SourceTarget) -> str:
-    params: dict[str, str] = {
-        "sortBy": target.sort_by,
-        "query": target.query,
-        "category_id": target.category_id,
-        "exact": "true" if target.exact else "false",
-    }
+    params: dict[str, str] = {"sortBy": target.sort_by}
+    if not target.category_slug:
+        params.update(
+            {
+                "query": target.query,
+                "category_id": target.category_id,
+                "exact": "true" if target.exact else "false",
+            }
+        )
     optional_params = {
         "radius": target.radius,
         "daysSinceListed": target.days_since_listed,
@@ -408,6 +412,8 @@ def build_search_url(target: SourceTarget) -> str:
             params[key] = str(value)
 
     encoded = urllib.parse.urlencode(params)
+    if target.category_slug:
+        return f"https://www.facebook.com/marketplace/{target.location}/{target.category_slug}/?{encoded}"
     return f"https://www.facebook.com/marketplace/{target.location}/search?{encoded}"
 
 
@@ -446,17 +452,22 @@ def load_source_targets(path: Path) -> list[SourceTarget]:
 
 def source_target_from_record(record: dict[str, Any], index: int) -> SourceTarget:
     query = string_value(record.get("query"))
-    if not query:
-        raise ValueError(f"source target #{index} is missing query")
+    category_slug = string_value(first_present(record, "categorySlug", "category_slug"))
+    if category_slug and not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", category_slug):
+        raise ValueError(f"source target #{index} has invalid category slug")
+    if not query and not category_slug:
+        raise ValueError(f"source target #{index} is missing query or categorySlug")
 
-    target_id = string_value(record.get("id")) or f"target-{index}-{slugify(query)}"
+    target_name = query or category_slug or f"target-{index}"
+    target_id = string_value(record.get("id")) or f"target-{index}-{slugify(target_name)}"
     return SourceTarget(
         id=target_id,
         label=string_value(record.get("label")),
-        query=query,
+        query=query or category_slug or "",
         groups=tuple(as_string_list(record.get("groups") or record.get("group"))),
         location=string_value(record.get("location")) or DEFAULT_LOCATION,
         category_id=string_value(first_present(record, "categoryId", "category_id")) or DEFAULT_CATEGORY_ID,
+        category_slug=category_slug or None,
         sort_by=string_value(first_present(record, "sortBy", "sort_by")) or "creation_time_descend",
         exact=bool_value(record.get("exact"), default=False),
         radius=optional_int(record.get("radius")),
@@ -1164,9 +1175,20 @@ def extract_category(text: str) -> str | None:
 def extract_brand(text: str) -> str | None:
     lower = normalize_spaces(text).lower()
     for brand, keywords in BRAND_PATTERNS:
-        if any(keyword_matches(lower, keyword) for keyword in keywords):
+        if any(positive_brand_keyword_matches(lower, keyword) for keyword in keywords):
             return brand
     return None
+
+
+def positive_brand_keyword_matches(text: str, keyword: str) -> bool:
+    keyword_pattern = re.escape(normalize_spaces(keyword).lower()).replace(r"\ ", r"\s+")
+    pattern = re.compile(rf"(?<!\w){keyword_pattern}(?!\w)")
+    for match in pattern.finditer(text):
+        prefix = text[max(0, match.start() - 24) : match.start()]
+        if re.search(r"\b(?:not|no|bukan|tanpa|non)[\s/_-]*$", prefix):
+            continue
+        return True
+    return False
 
 
 def extract_condition(text: str) -> str | None:
@@ -1859,6 +1881,7 @@ def target_summary(target: SourceTarget) -> dict[str, Any]:
         "query": target.query,
         "location": target.location,
         "categoryId": target.category_id,
+        "categorySlug": target.category_slug,
         "exact": target.exact,
         "radius": target.radius,
         "daysSinceListed": target.days_since_listed,
