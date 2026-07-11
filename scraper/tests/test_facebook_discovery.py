@@ -63,9 +63,16 @@ def marketplace_payload(*, sold: bool = False) -> dict:
 
 class FacebookDiscoveryTests(unittest.TestCase):
     def test_brand_extraction_ignores_negated_competitor_mentions(self):
-        title = "PC Komputer Gaming Set AMD RX 6800 XT High End not RTX not intel 4070 5070"
+        titles = (
+            "PC Komputer Gaming Set AMD RX 6800 XT High End not RTX not intel 4070 5070",
+            "PC AMD Ryzen bukan Intel",
+            "PC AMD Ryzen tanpa Intel",
+            "PC AMD Ryzen non-Intel",
+        )
 
-        self.assertEqual(extract_brand(title), "AMD")
+        for title in titles:
+            with self.subTest(title=title):
+                self.assertEqual(extract_brand(title), "AMD")
 
     def test_brand_extraction_keeps_positive_intel_mentions(self):
         self.assertEqual(extract_brand("PC gaming Intel Core i7 RTX 4070"), "Intel")
