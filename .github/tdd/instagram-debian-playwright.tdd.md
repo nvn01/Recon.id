@@ -87,3 +87,38 @@ The container default now runs `scraper.scheduler --once --write-db`. Compose
 does not add a second init process or repeat browser/connector arguments; Tini
 and Xvfb belong to the image, while browser choice and cadence belong to
 `sources.toml`.
+
+## Delayed timeline delivery fix
+
+A staging-only Debian probe compared the production Chrome 126 user agent, the
+native Chrome 150 user agent, and a warmed persistent logged-out context. All
+three rendered 12 public post links and received a successful browser-issued
+`web_profile_info` response containing `edge_owner_to_timeline_media`. The real
+connector then returned 12 posts and normalized three DB-shaped listings with
+full captions and carousel images. No login, proxy, state, or database write was
+used.
+
+The intermittent zero-result failure came from reading scripts and captured
+responses only once after a fixed 2.5-second delay. The connector now polls the
+same page every 250 ms for a maximum of eight seconds, returning immediately
+when supported timeline data appears. It does not navigate again or issue a
+direct API fallback.
+
+RED command:
+
+```text
+python -m unittest scraper.tests.test_instagram_fetch scraper.tests.test_scheduler
+```
+
+RED evidence: `wait_for_profile_posts` was missing and production still used
+`browser_wait_ms = 2500`.
+
+GREEN evidence: the same focused command passed 21 tests, including a timeline
+arriving after 2.5 seconds and a missing-timeline case that stops exactly at the
+configured budget.
+
+Full verification passed 59 scraper tests, Ruff, Python compilation, Prisma
+validation, lint/typecheck, Next build, and local/staging/production Compose
+rendering. `test_instagram_fetch.py` reported 98% coverage; repository-wide
+coverage remains 44% because the existing Facebook and Reddit integration
+surfaces are not comprehensively unit-tested.
