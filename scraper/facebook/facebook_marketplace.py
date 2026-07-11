@@ -1164,9 +1164,20 @@ def extract_category(text: str) -> str | None:
 def extract_brand(text: str) -> str | None:
     lower = normalize_spaces(text).lower()
     for brand, keywords in BRAND_PATTERNS:
-        if any(keyword_matches(lower, keyword) for keyword in keywords):
+        if any(positive_brand_keyword_matches(lower, keyword) for keyword in keywords):
             return brand
     return None
+
+
+def positive_brand_keyword_matches(text: str, keyword: str) -> bool:
+    keyword_pattern = re.escape(normalize_spaces(keyword).lower()).replace(r"\ ", r"\s+")
+    pattern = re.compile(rf"(?<!\w){keyword_pattern}(?!\w)")
+    for match in pattern.finditer(text):
+        prefix = text[max(0, match.start() - 24) : match.start()]
+        if re.search(r"\b(?:not|no|bukan|tanpa|non)[\s/_-]*$", prefix):
+            continue
+        return True
+    return False
 
 
 def extract_condition(text: str) -> str | None:
