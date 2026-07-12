@@ -295,7 +295,10 @@ def fetch_text(
         "Accept": "application/atom+xml,application/xml;q=0.9,*/*;q=0.8",
     }
 
-    for attempt in range(1, retries + 1):
+    max_attempts = retries
+    tls_recovery_added = False
+    attempt = 1
+    while attempt <= max_attempts:
         request = urllib.request.Request(url, headers=headers)
         try:
             with urllib.request.urlopen(request, timeout=timeout) as response:
@@ -305,28 +308,38 @@ def fetch_text(
                 wait = retry_wait_with_jitter(exc, retry_wait, retry_jitter)
                 print(f"Reddit returned 429. Waiting {wait:.1f}s before retry {attempt + 1}/{retries}...", file=sys.stderr)
                 time.sleep(wait)
+                attempt += 1
                 continue
             if exc.code == 429:
                 raise RateLimitedError("Reddit returned HTTP 429", retry_after_seconds(exc)) from exc
             raise
         except urllib.error.URLError as exc:
-            if attempt < retries and is_retryable_transport_error(exc):
+            tls_verification_failed = is_tls_verification_error(exc)
+            if tls_verification_failed and not tls_recovery_added:
+                max_attempts += 1
+                tls_recovery_added = True
+            if attempt < max_attempts and (is_retryable_transport_error(exc) or tls_verification_failed):
                 wait = retry_wait_seconds(retry_wait, retry_jitter)
+                failure_kind = "TLS verification" if tls_verification_failed else "transport"
                 print(
-                    f"Reddit transport error ({exc}). Waiting {wait:.1f}s before retry {attempt + 1}/{retries}...",
+                    f"Reddit {failure_kind} error ({exc}). Waiting {wait:.1f}s before verified retry "
+                    f"{attempt + 1}/{max_attempts}...",
                     file=sys.stderr,
                 )
                 time.sleep(wait)
+                attempt += 1
                 continue
             raise
         except TimeoutError as exc:
-            if attempt < retries:
+            if attempt < max_attempts:
                 wait = retry_wait_seconds(retry_wait, retry_jitter)
                 print(
-                    f"Reddit request timed out ({exc}). Waiting {wait:.1f}s before retry {attempt + 1}/{retries}...",
+                    f"Reddit request timed out ({exc}). Waiting {wait:.1f}s before retry "
+                    f"{attempt + 1}/{max_attempts}...",
                     file=sys.stderr,
                 )
                 time.sleep(wait)
+                attempt += 1
                 continue
             raise
 
