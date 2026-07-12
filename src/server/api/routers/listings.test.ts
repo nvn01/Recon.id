@@ -34,9 +34,11 @@ describe("listingsRouter.feed", () => {
 
   it("does not expose unexpected database error details", async () => {
     const caller = createCaller(
-      vi.fn().mockRejectedValue(
-        new Error("connect ECONNREFUSED postgresql://internal-host/recon"),
-      ),
+      vi
+        .fn()
+        .mockRejectedValue(
+          new Error("connect ECONNREFUSED postgresql://internal-host/recon"),
+        ),
     );
 
     await expect(caller.feed()).rejects.toMatchObject({

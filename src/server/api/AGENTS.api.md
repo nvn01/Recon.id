@@ -43,9 +43,12 @@ readback shape, and never introduce `$queryRawUnsafe`.
   fails closed.
 - The API returns URLs only. It does not proxy, fetch, download, or cache remote
   images.
-- `/api/*` responses receive strict JSON-oriented CSP and `Cache-Control:
-no-store`; the application-wide CSP remains report-only until UI nonce/hash
-  work is implemented.
+- Unexpected feed failures must return the generic error message "Unable to
+  load listing feed." Server diagnostics may record the error class but must
+  not log or return database messages, URLs, SQL, or credentials.
+- `/api/*` responses receive strict JSON-oriented CSP and
+  `Cache-Control: no-store`; the application-wide CSP remains report-only until
+  UI nonce/hash work is implemented.
 - Keep CORS same-origin. Public edge rate limiting belongs in Traefik or another
   shared gateway, not an in-memory Next.js counter.
 - Staging currently uses a shared PostgreSQL superuser. Before public launch,
