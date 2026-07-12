@@ -96,8 +96,42 @@ class RedditFetchTests(unittest.TestCase):
                     timeout=30,
                 )
 
-        self.assertEqual(urlopen.call_count, 2)
-        sleep.assert_called_once_with(20.0)
+        self.assertEqual(urlopen.call_count, 3)
+        self.assertEqual(sleep.call_args_list, [unittest.mock.call(20.0), unittest.mock.call(20.0)])
+
+    def test_fetch_text_gets_one_extra_verified_attempt_after_timeout_then_tls_failure(self):
+        responses = [
+            urllib.error.URLError(TimeoutError("The handshake operation timed out")),
+            urllib.error.URLError(
+                "[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: self-signed certificate"
+            ),
+            io.BytesIO(b"<feed></feed>"),
+        ]
+
+        def fake_urlopen(_request, timeout):
+            self.assertEqual(timeout, 30)
+            result = responses.pop(0)
+            if isinstance(result, Exception):
+                raise result
+            return result
+
+        with (
+            patch("scraper.reddit.reddit.urllib.request.urlopen", side_effect=fake_urlopen) as urlopen,
+            patch("scraper.reddit.reddit.time.sleep") as sleep,
+            patch("scraper.reddit.reddit.random.uniform", return_value=0.0),
+        ):
+            payload = reddit.fetch_text(
+                "https://www.reddit.com/r/jualbeliindonesia/search.rss",
+                reddit.DEFAULT_USER_AGENT,
+                retries=2,
+                retry_wait=20,
+                retry_jitter=1.0,
+                timeout=30,
+            )
+
+        self.assertEqual(payload, "<feed></feed>")
+        self.assertEqual(urlopen.call_count, 3)
+        self.assertEqual(sleep.call_args_list, [unittest.mock.call(20.0), unittest.mock.call(20.0)])
 
     def test_tls_verification_error_is_classified(self):
         self.assertTrue(
