@@ -18,7 +18,14 @@ export const listingsRouter = createTRPCRouter({
             message: "Invalid listing feed cursor",
           });
         }
-        throw error;
+
+        console.error("[listings.feed] unexpected failure", {
+          name: error instanceof Error ? error.name : "UnknownError",
+        });
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Unable to load listing feed",
+        });
       }
     }),
 });
