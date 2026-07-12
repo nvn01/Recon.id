@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import { toListingDto } from "./listing-dto";
+import { toListingDto, type ListingFeedRecord } from "./listing-dto";
 
-const listing = {
+const listing: ListingFeedRecord = {
   id: "listing-1",
   platform: "INSTAGRAM",
   sourceUrl: "https://www.instagram.com/p/example/",
@@ -29,6 +29,11 @@ const listing = {
       sourceUrl: "javascript:alert(1)",
       position: 1,
       altText: "unsafe",
+    },
+    {
+      sourceUrl: "not-a-url",
+      position: 3,
+      altText: "malformed",
     },
     {
       sourceUrl: "https://scontent.example/image-0.jpg",

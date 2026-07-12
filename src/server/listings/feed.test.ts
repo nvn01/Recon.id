@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { decodeListingCursor } from "./cursor";
+import { decodeListingCursor, encodeListingCursor } from "./cursor";
 import { getListingFeed } from "./feed";
 
 const baseListing = {
@@ -78,13 +78,46 @@ describe("getListingFeed", () => {
     const queryRaw = vi.fn().mockResolvedValue([]);
     const db = { $queryRaw: queryRaw, listing: { findMany: vi.fn() } };
 
+    const cursor = encodeListingCursor({
+      statusRank: 1,
+      effectiveAt: new Date("2026-07-12T09:00:00Z"),
+      id: "cursor-id",
+    });
+
     await getListingFeed(db, {
       platforms: ["facebook"],
       statuses: ["available"],
       limit: 5,
+      cursor,
     });
 
     const sql = queryRaw.mock.calls[0]?.[0] as { values?: unknown[] };
-    expect(sql.values).toEqual(expect.arrayContaining(["facebook", "available", 6]));
+    expect(sql.values).toEqual(
+      expect.arrayContaining([
+        "facebook",
+        "available",
+        1,
+        new Date("2026-07-12T09:00:00Z"),
+        "cursor-id",
+        6,
+      ]),
+    );
+  });
+
+  it("fails rather than silently returning a partial page when a ranked row disappears", async () => {
+    const db = {
+      $queryRaw: vi.fn().mockResolvedValue([
+        {
+          id: "missing",
+          statusRank: 0,
+          effectiveAt: new Date("2026-07-12T10:00:00Z"),
+        },
+      ]),
+      listing: { findMany: vi.fn().mockResolvedValue([]) },
+    };
+
+    await expect(getListingFeed(db, { limit: 24 })).rejects.toThrow(
+      "Ranked listing disappeared",
+    );
   });
 });

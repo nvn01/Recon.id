@@ -4,7 +4,7 @@ export const healthRouter = createTRPCRouter({
   status: publicProcedure.query(() => {
     return {
       ok: true,
-      phase: "database",
+      phase: "backend-api",
     };
   }),
 });

@@ -1,4 +1,5 @@
 import { healthRouter } from "~/server/api/routers/health";
+import { listingsRouter } from "~/server/api/routers/listings";
 import { createCallerFactory, createTRPCRouter } from "~/server/api/trpc";
 
 /**
@@ -8,7 +9,7 @@ import { createCallerFactory, createTRPCRouter } from "~/server/api/trpc";
  */
 export const appRouter = createTRPCRouter({
   health: healthRouter,
-  // Listing routes will be added after normalized database rows exist.
+  listings: listingsRouter,
 });
 
 // export type definition of API
