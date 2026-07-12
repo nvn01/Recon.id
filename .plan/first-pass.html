@@ -174,7 +174,7 @@
       <li>Internal name: RECON</li>
       <li>Public placeholder: Recon.co.id</li>
       <li>Created: 2026-07-01</li>
-      <li>Updated: 2026-07-04</li>
+      <li>Updated: 2026-07-13</li>
       <li>Status: first-pass scraper plan active</li>
     </ul>
 
@@ -407,7 +407,7 @@ Backend API / query layer
       <li>Validate 5-minute staging checks without duplicate spam or source lockout.</li>
     </ul>
 
-    <h3>Phase 4: backend API</h3>
+    <h3>Phase 4: backend API (done)</h3>
     <ul class="checklist">
       <li>Done: add the public read-only <code>listings.feed</code> tRPC query with bounded platform/status filters, opaque keyset pagination, and available-first sorting.</li>
       <li>Done: keep connector-health and scrape-run APIs deferred until the product needs them.</li>
@@ -416,13 +416,13 @@ Backend API / query layer
       <li>Done: use the existing homelab CI/CD image-publishing path and add the backend API coverage gate to staging builds.</li>
     </ul>
 
-    <h3>Phase 5: operational hardening</h3>
+    <h3>Phase 5: operational hardening (done)</h3>
     <ul class="checklist">
-      <li>Fixture-backed regression tests for every connector parser.</li>
-      <li>Duplicate-run lock and connector-level cooldown enforcement.</li>
-      <li>Daily data-quality report for missing required fields and low-confidence extractions.</li>
-      <li>Manual review report for ambiguous condition, location, and sold-status parsing.</li>
-      <li>Source-specific notes in nearby <code>AGENTS.override.md</code> files when connectors become brittle.</li>
+      <li>Done: fixture-backed regression tests for every connector parser.</li>
+      <li>Done: duplicate-run lock and connector-level cooldown enforcement, including scheduler, orchestrator, source, and account-scoped coverage.</li>
+      <li>Done: daily data-quality report for missing required fields and low-confidence extraction signals, scheduled through persisted scraper state.</li>
+      <li>Done: separate manual review report for ambiguous condition, location, and sold-status parsing.</li>
+      <li>Done: source-specific notes in nearby <code>AGENTS.override.md</code> files for brittle connector behavior.</li>
     </ul>
 
     <h3>Later, not v1</h3>

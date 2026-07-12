@@ -38,6 +38,7 @@ class ScheduleJob:
     connector: str
     cadence_seconds: int
     args: tuple[str, ...]
+    module: str = "scraper.main"
     initial_delay_seconds: int = 0
     jitter_seconds: int = 0
 
@@ -155,8 +156,8 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Database URL override passed to scraper.main through SCRAPER_DATABASE_URL.",
     )
-    parser.add_argument("--connector", action="append", choices=("reddit", "instagram", "facebook"), help="Only run this connector.")
-    parser.add_argument("--exclude-connector", action="append", choices=("reddit", "instagram", "facebook"), help="Skip this connector.")
+    parser.add_argument("--connector", action="append", choices=("reddit", "instagram", "facebook", "operations"), help="Only run this connector.")
+    parser.add_argument("--exclude-connector", action="append", choices=("reddit", "instagram", "facebook", "operations"), help="Skip this connector.")
     return parser.parse_args()
 
 
@@ -165,7 +166,25 @@ def build_jobs(config: dict[str, Any]) -> list[ScheduleJob]:
     jobs.extend(build_reddit_jobs(config))
     jobs.extend(build_instagram_jobs(config))
     jobs.extend(build_facebook_jobs(config))
+    jobs.extend(build_operational_report_jobs(config))
     return jobs
+
+
+def build_operational_report_jobs(config: dict[str, Any]) -> list[ScheduleJob]:
+    report_config = table(config, "scheduler", "operational_report")
+    if not report_config.get("enabled", False):
+        return []
+    cadence = max(3600, int_value(report_config.get("cadence_seconds"), 86_400))
+    output_dir = str(report_config.get("output_dir") or ".logs/reports")
+    return [
+        ScheduleJob(
+            id="operations:daily-report",
+            connector="operations",
+            cadence_seconds=cadence,
+            args=("--output-dir", output_dir),
+            module="scraper.operational_report",
+        )
+    ]
 
 
 def build_reddit_jobs(config: dict[str, Any]) -> list[ScheduleJob]:
@@ -556,8 +575,11 @@ def run_job(
     database_url: str | None,
     timeout: int,
 ) -> JobRun:
-    command = [sys.executable, "-m", "scraper.main", "--config", config_path, *job.args, "--format", "json"]
-    if write_db:
+    if job.module == "scraper.main":
+        command = [sys.executable, "-m", job.module, "--config", config_path, *job.args, "--format", "json"]
+    else:
+        command = [sys.executable, "-m", job.module, *job.args, "--format", "json"]
+    if write_db and job.module == "scraper.main":
         command.append("--write-db")
     child_env = None
     if database_url:

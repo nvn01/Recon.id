@@ -647,13 +647,13 @@ def run_facebook(args: argparse.Namespace, config: dict[str, Any], egress: Egres
         user_agent=facebook.DEFAULT_USER_AGENT,
         proxy_url=egress.proxy_url if egress.mode == "proxy" else None,
     )
-    code, listings = facebook.guarded_run_once(facebook_args)
+    code, listings, connector_status = facebook.guarded_run_once(facebook_args, include_status=True)
     valid, invalid = validate_listings(listings)
     ok = code == 0 and not invalid
     return {
         "connector": "facebook",
         "ok": ok,
-        "status": connector_result_status(ok, len(valid)),
+        "status": connector_status if connector_status == "cooldown_skip" else connector_result_status(ok, len(valid)),
         "exitCode": code,
         "httpStatus": None,
         "httpStatusSource": "initial logged-out Marketplace document",

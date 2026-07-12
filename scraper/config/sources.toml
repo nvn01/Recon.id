@@ -57,6 +57,13 @@ browser = "chrome"
 split_targets = true
 target_groups = ["hot"]
 
+[scheduler.operational_report]
+enabled = true
+# Persisted scheduler state keeps this report on a daily cadence even when
+# connector collection is invoked more frequently.
+cadence_seconds = 86400
+output_dir = ".logs/reports"
+
 [reddit.wts_computers]
 enabled = true
 # Human-facing source URL. The Reddit connector still uses subreddit + flair

@@ -63,6 +63,9 @@ old probe scripts or historical access experiments.
 - Targets use Jakarta, a 500 km radius, and newest-first ordering. Do not replace
   them with broad `query=` searches.
 - Apply the gaming, PC, and peripherals relevance filter before storage.
+- Treat a parsed Facebook candidate window with zero relevant matches as
+  `no_new_data`; only missing Marketplace candidates or a real access/login
+  failure may set the connector-wide cooldown.
 - Scheduled discovery does not require login, persistent profile state,
   scrolling, detail-page fetches, seller actions, or AI enrichment.
 - Scheduled Facebook jobs use batched NVIDIA enrichment after deterministic
@@ -109,6 +112,20 @@ python -m scraper.main --reddit --limit 1 --no-state
 python -m scraper.main --instagram --instagram-account chemicy.consignment --limit 1 --no-state
 python -m scraper.main --facebook --limit 1 --headless --facebook-browser chrome --no-state
 ```
+
+Phase 5 parser regressions use sanitized fixtures in
+`scraper/tests/fixtures/`. The scheduler also runs the read-only operational
+report job at most once every 24 hours using persisted scheduler state. Reports
+are written to the mounted scraper log volume under `.logs/reports/`:
+
+```powershell
+python -m scraper.operational_report --output-dir .logs/reports
+```
+
+The data-quality report treats missing nullable enrichment and `UNKNOWN`
+status as low-confidence signals because confidence scores intentionally remain
+outside PostgreSQL. The separate manual-review report contains public listing
+identity and review reasons, but never copies full descriptions or credentials.
 
 Do not use repeated live probes as a test loop. Unit tests and captured parser
 fixtures should cover parsing; use one controlled live smoke only when network

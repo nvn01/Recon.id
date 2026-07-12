@@ -320,10 +320,10 @@ class RuntimeGuardrailTests(unittest.TestCase):
     def test_facebook_cli_target_does_not_inherit_config_target_group(self):
         captured_args = None
 
-        def fake_guarded_run_once(args):
+        def fake_guarded_run_once(args, *, include_status=False):
             nonlocal captured_args
             captured_args = args
-            return 0, []
+            return (0, [], "no_new_data") if include_status else (0, [])
 
         args = SimpleNamespace(
             facebook_target=["gpu-rtx"],
@@ -357,6 +357,40 @@ class RuntimeGuardrailTests(unittest.TestCase):
         self.assertIsNotNone(captured_args)
         self.assertEqual(captured_args.target, ["gpu-rtx"])
         self.assertIsNone(captured_args.target_group)
+
+    def test_facebook_cooldown_status_survives_orchestrator_summary(self):
+        args = SimpleNamespace(
+            facebook_target=["category-computers"],
+            facebook_target_group=None,
+            limit=3,
+            facebook_details=False,
+            headless=True,
+            facebook_browser="chrome",
+            ignore_cooldown=False,
+            no_state=False,
+            ai_parse=False,
+            ai_prefer=False,
+        )
+        config = {
+            "run": {},
+            "facebook": {
+                "marketplace": {
+                    "enabled": True,
+                    "limit": 3,
+                    "headless": True,
+                    "browser": "chrome",
+                }
+            },
+        }
+
+        with patch(
+            "scraper.facebook.facebook_marketplace.guarded_run_once",
+            return_value=(0, [], "cooldown_skip"),
+        ):
+            result = run_facebook(args, config, EgressConfig())
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["status"], "cooldown_skip")
 
 
 def sample_instagram_listing(account: str) -> dict[str, object]:

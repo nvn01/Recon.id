@@ -473,6 +473,12 @@ def extract_title(caption: str) -> str | None:
 
     skip_prefixes = (
         "#",
+        "sold",
+        "sold out",
+        "soldout",
+        "terjual",
+        "laku",
+        "booked",
         "condition",
         "kondisi",
         "description",

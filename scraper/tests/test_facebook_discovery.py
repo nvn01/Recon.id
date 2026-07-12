@@ -1,20 +1,26 @@
 from __future__ import annotations
 
 import json
+import tempfile
 import unittest
 from datetime import datetime, timezone
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
 from scraper.facebook.embedded import extract_marketplace_records
 from scraper.facebook.facebook_marketplace import (
     DEFAULT_TARGETS_FILE,
+    ConnectorBlockedError,
     MarketplaceCard,
+    MarketplaceTargetResult,
     build_search_url,
     card_from_embedded_record,
+    collect_target_cards,
     extract_brand,
     load_source_targets,
     normalize_card,
+    run_once,
     scrape_detail,
     source_target_from_record,
     uses_persistent_profile,
@@ -66,6 +72,78 @@ def marketplace_payload(*, sold: bool = False) -> dict:
 
 
 class FacebookDiscoveryTests(unittest.TestCase):
+    def test_zero_relevant_result_clears_prior_cooldown_as_successful_access(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            state_path = Path(tmpdir) / "facebook.json"
+            log_path = Path(tmpdir) / "facebook.jsonl"
+            state_path.write_text(
+                json.dumps({
+                    "cooldown_until": "2099-01-01T00:00:00+00:00",
+                    "last_error": "old failure",
+                }),
+                encoding="utf-8",
+            )
+            args = SimpleNamespace(
+                state_file=str(state_path),
+                log_file=str(log_path),
+                no_state=False,
+                ignore_cooldown=True,
+                access_mode="browser",
+                ai_parse=False,
+                max_seen=500,
+                details=False,
+                headless=True,
+                cooldown_seconds=300,
+                emit="all",
+            )
+
+            with patch("scraper.facebook.facebook_marketplace.run_browser_fetch", return_value=[]):
+                code, listings, status = run_once(args, include_status=True)
+
+            saved_state = json.loads(state_path.read_text(encoding="utf-8"))
+            [event] = [json.loads(line) for line in log_path.read_text(encoding="utf-8").splitlines()]
+
+        self.assertEqual((code, listings, status), (0, [], "no_new_data"))
+        self.assertIsNone(saved_state["cooldown_until"])
+        self.assertIsNone(saved_state["last_error"])
+        self.assertIsNotNone(saved_state["last_success_at"])
+        self.assertEqual(event["status"], "no_new_data")
+
+    def test_candidate_page_with_zero_relevant_cards_is_valid_no_new_data(self):
+        target = source_target_from_record(
+            {"id": "category-cell-phone-accessories", "categorySlug": "cell-phone-accessories"},
+            1,
+        )
+        result = MarketplaceTargetResult(
+            target=target,
+            url=build_search_url(target),
+            cards=[],
+            candidates_count=24,
+            matched_count=0,
+            skipped_count=20,
+            blocked_count=4,
+        )
+
+        self.assertEqual(collect_target_cards([result]), [])
+
+    def test_page_without_any_marketplace_candidates_remains_blocked(self):
+        target = source_target_from_record(
+            {"id": "category-computers", "categorySlug": "computers"},
+            1,
+        )
+        result = MarketplaceTargetResult(
+            target=target,
+            url=build_search_url(target),
+            cards=[],
+            candidates_count=0,
+            matched_count=0,
+            skipped_count=0,
+            blocked_count=0,
+        )
+
+        with self.assertRaises(ConnectorBlockedError):
+            collect_target_cards([result])
+
     def test_committed_targets_are_the_three_requested_jakarta_categories(self):
         targets = load_source_targets(DEFAULT_TARGETS_FILE)
 

@@ -880,8 +880,14 @@ def price_token_to_int(token: str, unit: str | None) -> int | None:
 
 
 def extract_category(text: str) -> str | None:
+    laptop_markers = (
+        r"\b(laptop|notebook|thinkpad|macbook|vivobook|zenbook|ideapad|legion)\b",
+        r"\b(rog strix|asus tuf|tuf gaming|msi gf63|msi gf65|msi cyborg|victus|nitro|predator|loq)\b",
+    )
     for line in iter_lines(text):
         lower = normalize_spaces(line).lower()
+        if any(re.search(pattern, lower) for pattern in laptop_markers):
+            return "Laptop"
         for category, keywords in CATEGORY_PATTERNS:
             if any(keyword_matches(lower, keyword) for keyword in keywords):
                 return category

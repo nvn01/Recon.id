@@ -1,0 +1,40 @@
+{
+  "require": [
+    {
+      "data": {
+        "marketplace_search": {
+          "feed_units": {
+            "edges": [
+              {
+                "node": {
+                  "listing": {
+                    "id": "4471077899839221",
+                    "marketplace_listing_title": "ASUS TUF RTX 3070",
+                    "listing_price": {
+                      "formatted_amount": "IDR14,500,000",
+                      "amount": "14500000"
+                    },
+                    "location": {
+                      "reverse_geocode": {
+                        "city_page": {"display_name": "Jakarta, Indonesia"}
+                      }
+                    },
+                    "primary_listing_photo": {
+                      "image": {"uri": "https://cdn.example/facebook-fixture.jpg"}
+                    },
+                    "marketplace_listing_seller": {"name": "Fixture Seller"},
+                    "if_gk_just_listed_tag_on_search_feed": true,
+                    "is_live": false,
+                    "is_sold": true,
+                    "is_pending": false,
+                    "is_hidden": false
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

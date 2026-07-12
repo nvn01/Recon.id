@@ -1185,10 +1185,14 @@ def extract_category(text: str) -> str | None:
     lower = normalize_spaces(text).lower()
     if re.search(r"\b(legion go|steam deck|rog ally|handheld pc)\b", lower):
         return "Handheld PC"
-    if re.search(r"\b(pc gaming|pc rakitan|komputer gaming|desktop|mini pc|workstation)\b", lower):
+    desktop_markers = (
+        r"\b(pc gaming|pc rakitan|komputer gaming|desktop|mini pc|workstation)\b",
+        r"^pc\s+(?:intel|amd|gaming|rakitan|komputer|fullset)\b",
+    )
+    if any(re.search(pattern, lower) for pattern in desktop_markers):
         return "Desktop PC"
     laptop_markers = (
-        r"\b(laptop|notebook|thinkpad|macbook|vivobook|zenbook|ideapad|legion|katana|zephyrus|omen|victus|nitro|predator|loq)\b",
+        r"\b(laptop|notebook|thinkpad|macbook|vivobook|zenbook|ideapad|legion|katana|zephyrus|omen|victus|nitro|predator|loq|latitude|aspire|probook|elitebook)\b",
         r"\b(rog strix|asus tuf|tuf gaming|tuf a15|tuf f15|ideapad gaming|pavilion gaming)\b",
         r"\b(msi gf63|msi gf65|msi gf66|msi gf76|msi gl63|msi gl65|msi ge66|msi cyborg|msi stealth|msi raider)\b",
         r"\b(ga401|ga402|g513|g713|g14|g15|g16|fx506|fx507|fa506|fa507|gu603)[a-z0-9-]*\b",
@@ -1682,7 +1686,11 @@ def calibration_error_record(target: SourceTarget, error: str) -> dict[str, Any]
     }
 
 
-def run_once(args: argparse.Namespace) -> tuple[int, list[dict[str, Any]]]:
+def run_once(
+    args: argparse.Namespace,
+    *,
+    include_status: bool = False,
+) -> tuple[int, list[dict[str, Any]]] | tuple[int, list[dict[str, Any]], str]:
     state_path = Path(args.state_file)
     log_path = None if args.no_state else Path(args.log_file)
     state = default_state() if args.no_state else load_state(state_path)
@@ -1699,13 +1707,14 @@ def run_once(args: argparse.Namespace) -> tuple[int, list[dict[str, Any]]]:
             },
         )
         print(f"Facebook connector is cooling down for {cooldown_remaining}s.", file=sys.stderr)
-        return 0, []
+        return format_run_result(0, [], "cooldown_skip", include_status)
 
     if args.access_mode == "http-probe":
         event = run_http_probe(args)
         log_event(log_path, event)
         print(json.dumps(event, ensure_ascii=False, indent=2), file=sys.stderr)
-        return (0 if event.get("has_marketplace_item") else 1), []
+        status = "success" if event.get("has_marketplace_item") else "blocked_or_empty"
+        return format_run_result(0 if event.get("has_marketplace_item") else 1, [], status, include_status)
 
     try:
         listings = run_browser_fetch(args, state)
@@ -1724,7 +1733,7 @@ def run_once(args: argparse.Namespace) -> tuple[int, list[dict[str, Any]]]:
             log_path,
             {
                 "source": "facebook",
-                "status": "success",
+                "status": "success" if listings else "no_new_data",
                 "normalized": len(listings),
                 "new": len(new_listings),
                 "details": bool(args.details),
@@ -1737,14 +1746,14 @@ def run_once(args: argparse.Namespace) -> tuple[int, list[dict[str, Any]]]:
             save_state(state_path, state)
         log_event(log_path, {"source": "facebook", "status": "login_blocked", "error": str(exc)})
         print(f"Facebook Marketplace login gate detected. Cooling down for {args.cooldown_seconds}s.", file=sys.stderr)
-        return 1, []
+        return format_run_result(1, [], "login_blocked", include_status)
     except ConnectorBlockedError as exc:
         set_cooldown(state, args.cooldown_seconds, str(exc))
         if not args.no_state:
             save_state(state_path, state)
         log_event(log_path, {"source": "facebook", "status": "blocked_or_empty", "error": str(exc)})
         print(f"Facebook Marketplace fetch did not expose cards. Cooling down for {args.cooldown_seconds}s.", file=sys.stderr)
-        return 1, []
+        return format_run_result(1, [], "blocked_or_empty", include_status)
     except PlaywrightError as exc:
         state["last_error"] = str(exc)
         if not args.no_state:
@@ -1753,10 +1762,21 @@ def run_once(args: argparse.Namespace) -> tuple[int, list[dict[str, Any]]]:
         print(f"Facebook Marketplace scrape failed: {exc}", file=sys.stderr)
         if args.browser == "chromium":
             print("If Chromium is not installed, run: python -m playwright install chromium", file=sys.stderr)
-        return 1, []
+        return format_run_result(1, [], "failed", include_status)
 
     selected = new_listings if args.emit == "new" else listings
-    return 0, selected
+    return format_run_result(0, selected, "success" if listings else "no_new_data", include_status)
+
+
+def format_run_result(
+    code: int,
+    listings: list[dict[str, Any]],
+    status: str,
+    include_status: bool,
+) -> tuple[int, list[dict[str, Any]]] | tuple[int, list[dict[str, Any]], str]:
+    if include_status:
+        return code, listings, status
+    return code, listings
 
 
 def run_browser_fetch(args: argparse.Namespace, state: dict[str, Any]) -> list[dict[str, Any]]:
@@ -1775,13 +1795,11 @@ def run_browser_fetch(args: argparse.Namespace, state: dict[str, Any]) -> list[d
                 run_login(page)
                 return []
 
-            all_cards: list[MarketplaceCard] = []
+            target_results: list[MarketplaceTargetResult] = []
             for target in targets:
-                all_cards.extend(scrape_target(page, target, args, keywords).cards)
+                target_results.append(scrape_target(page, target, args, keywords))
 
-            cards = dedupe_cards(all_cards)
-            if not cards:
-                raise ConnectorBlockedError("No Facebook Marketplace cards found")
+            cards = collect_target_cards(target_results)
 
             fetched_at = now_utc()
             listings: list[dict[str, Any]] = []
@@ -1795,6 +1813,16 @@ def run_browser_fetch(args: argparse.Namespace, state: dict[str, Any]) -> list[d
             context.close()
             if browser_instance is not None:
                 browser_instance.close()
+
+
+def collect_target_cards(results: list[MarketplaceTargetResult]) -> list[MarketplaceCard]:
+    cards = dedupe_cards(card for result in results for card in result.cards)
+    if cards:
+        return cards
+    if any(result.candidates_count > 0 for result in results):
+        print("Facebook Marketplace candidates contained no RECON-relevant listings.", file=sys.stderr)
+        return []
+    raise ConnectorBlockedError("No Facebook Marketplace cards found")
 
 
 def enrich_listings_with_ai(
@@ -1826,17 +1854,21 @@ def enrich_listings_with_ai(
         return listings
 
 
-def guarded_run_once(args: argparse.Namespace) -> tuple[int, list[dict[str, Any]]]:
+def guarded_run_once(
+    args: argparse.Namespace,
+    *,
+    include_status: bool = False,
+) -> tuple[int, list[dict[str, Any]]] | tuple[int, list[dict[str, Any]], str]:
     if args.no_state:
-        return run_once(args)
+        return run_once(args, include_status=include_status)
 
     try:
         with FileLock(Path(args.lock_file), args.lock_stale_seconds):
-            return run_once(args)
+            return run_once(args, include_status=include_status)
     except AlreadyRunningError as exc:
         log_event(Path(args.log_file), {"source": "facebook", "status": "locked", "error": str(exc)})
         print(str(exc), file=sys.stderr)
-        return 2, []
+        return format_run_result(2, [], "locked", include_status)
 
 
 def guarded_run_calibration(args: argparse.Namespace) -> tuple[int, list[dict[str, Any]]]:

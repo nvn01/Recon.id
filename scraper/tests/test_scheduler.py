@@ -79,6 +79,29 @@ class SchedulerTests(unittest.TestCase):
         self.assertEqual(child_env["SCRAPER_DATABASE_URL"], fixture_url)
         self.assertNotIn(fixture_url, result.command)
 
+    def test_operational_report_job_is_read_only_and_keeps_database_url_in_environment(self):
+        fixture_url = "postgresql://reporter:test-placeholder-123@postgres:5432/recon"
+        config = sample_config()
+        config["scheduler"]["operational_report"] = {
+            "enabled": True,
+            "cadence_seconds": 86_400,
+            "output_dir": ".logs/reports",
+        }
+        [job] = [item for item in build_jobs(config) if item.connector == "operations"]
+
+        with patch("scraper.scheduler.subprocess.run") as runner:
+            runner.return_value.returncode = 0
+            runner.return_value.stdout = '{"ok":true,"summary":{"listings":1},"connectors":[]}'
+            runner.return_value.stderr = ""
+            result = run_job(job, config_path="ignored.toml", write_db=True, database_url=fixture_url, timeout=30)
+
+        command = runner.call_args.args[0]
+        self.assertIn("scraper.operational_report", command)
+        self.assertNotIn("--write-db", command)
+        self.assertNotIn(fixture_url, command)
+        self.assertEqual(runner.call_args.kwargs["env"]["SCRAPER_DATABASE_URL"], fixture_url)
+        self.assertNotIn(fixture_url, result.command)
+
     def test_production_config_checks_all_instagram_accounts_inside_ten_minute_cycle(self):
         config = load_config(DEFAULT_CONFIG_PATH)
         jobs = [job for job in build_jobs(config) if job.connector == "instagram"]
@@ -96,6 +119,11 @@ class SchedulerTests(unittest.TestCase):
 
         facebook_jobs = [job for job in build_jobs(config) if job.connector == "facebook"]
         self.assertTrue(all("--ai-parse" in job.args for job in facebook_jobs))
+
+        [operations_job] = [job for job in build_jobs(config) if job.connector == "operations"]
+        self.assertEqual(operations_job.cadence_seconds, 86_400)
+        self.assertEqual(operations_job.module, "scraper.operational_report")
+        self.assertEqual(operations_job.args, ("--output-dir", ".logs/reports"))
 
     def test_scraper_image_runs_commands_inside_virtual_display(self):
         dockerfile = (Path(__file__).parents[1] / "Dockerfile").read_text(encoding="utf-8")

@@ -20,6 +20,12 @@ The main work right now is:
 - Avoid rate limits, temporary blocks, duplicate spam, and brittle scraping behavior.
 - Keep the system inspectable so future agents can understand what happened during each scrape run.
 
+Phase 5 operational hardening is implemented. Every connector has a sanitized
+parser fixture, duplicate-run locks and connector cooldowns have regression
+coverage, and `scraper.operational_report` produces separate daily data-quality
+and manual-review JSON artifacts under the persisted scraper log volume. UI
+work remains intentionally separate.
+
 UI work is intentionally deferred until real normalized listings and backend contracts exist.
 
 ## Product Freshness Goal
