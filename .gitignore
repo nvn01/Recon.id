@@ -4,6 +4,7 @@
 .codex-runtime/
 **/AGENTS.override.md
 !AGENTS.md
+!scraper/AGENTS.override.md
 
 # dependencies
 node_modules/
