@@ -159,6 +159,7 @@ def build_prompt(listings: list[dict[str, Any]]) -> str:
     for listing in listings:
         items.append(
             {
+                "platform": listing.get("platform") or "",
                 "externalId": listing.get("externalId") or "",
                 "title": listing.get("title") or "",
                 "description": listing.get("description") or "",
@@ -178,13 +179,16 @@ def build_prompt(listings: list[dict[str, Any]]) -> str:
         "Rules:\n"
         "- price must be integer rupiah, no punctuation, no currency string.\n"
         "- Shorthand Indonesian prices: 9.6jt = 9600000, 3.5 juta = 3500000, 350rb = 350000.\n"
+        "- Facebook Marketplace sellers often omit the thousands suffix. Use the product type and realistic Indonesian used-market range: PS4 price 3000 = 3000000, PS4 price 2650 = 2650000, console price 1900 = 1900000, and PlayStation price 450 = 450000 or 390 = 390000. Very small whole numbers such as PS5 price 11 can mean 11000000 when that is realistic for the product.\n"
+        "- Only expand a Facebook shorthand price when the title/description clearly identifies the product and the expanded amount is reasonable for that product type; otherwise return null.\n"
         "- If price is ambiguous, return null.\n"
         "- status must be AVAILABLE, SOLD, UNKNOWN, or null.\n"
         "- locationTexts must be an array. Return multiple public areas/cities when the post gives more than one.\n"
         "- Keep conditionText as short text copied or lightly normalized from the post.\n"
-        "- category must be a broad product group such as Laptop, Desktop PC, GPU, CPU, RAM, Storage, Motherboard, Monitor, Keyboard, Mouse, Network Adapter, Peripheral, Audio, Controller, Game Console, Game, Smartphone, Drawing Tablet, or Handheld PC.\n"
+        "- category must be a broad product group such as Laptop, Desktop PC, PC Case, Power Supply, GPU, CPU, RAM, Storage, Motherboard, Monitor, Keyboard, Mouse, Network Adapter, Peripheral, Audio, Controller, Game Console, Game, Smartphone, Drawing Tablet, or Handheld PC.\n"
         "- brand must be the product brand or manufacturer only, not the seller name.\n"
         "- Instagram examples: Rode VideoMic -> brand Rode and category Peripheral or Audio; Xiaomi 13 Ultra -> brand Xiaomi and category Smartphone; Call of Duty / Black Ops -> brand Activision and category Game; Genki Sase Switch -> brand Genki and category Controller; Moza R3 -> brand Moza and category Peripheral; Gigabyte H610M -> brand Gigabyte and category Motherboard.\n"
+        "- More real Instagram examples: XPG CORE REACTOR PSU -> brand ADATA and category Power Supply; Attack Shark R3 -> brand Attack Shark and category Mouse; Corsair K100/K70 -> brand Corsair and category Keyboard; BenQ Zowie XL2411K -> brand BenQ and category Monitor.\n"
         "- Do not extract model, specs, warranty, minus, evidence, confidence, or notes. Those remain in the original description field.\n"
         f"Return JSON matching this schema: {json.dumps(PARSE_SCHEMA, ensure_ascii=False)}\n\n"
         f"Items:\n{json.dumps({'items': items}, ensure_ascii=False)}"

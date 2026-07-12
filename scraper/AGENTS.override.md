@@ -48,6 +48,9 @@ old probe scripts or historical access experiments.
   data arrives rather than adding a fixed sleep.
 - Keep `--instagram-browser-mode headless` only as a diagnostic A/B control. The
   proven Debian production path is headed Chrome under Xvfb.
+- Scheduled Instagram jobs enable batched NVIDIA enrichment. Rule parsing runs
+  first; AI fills missing database-backed fields such as category and brand and
+  must degrade without blocking storage when the model is unavailable.
 
 ### Facebook Marketplace
 
@@ -62,6 +65,10 @@ old probe scripts or historical access experiments.
 - Apply the gaming, PC, and peripherals relevance filter before storage.
 - Scheduled discovery does not require login, persistent profile state,
   scrolling, detail-page fetches, seller actions, or AI enrichment.
+- Scheduled Facebook jobs use batched NVIDIA enrichment after deterministic
+  parsing. Structured prices below 10,000 are expanded only for recognizable
+  RECON products: values below 100 represent millions, while values from 100 to
+  9,999 represent thousands. Preserve full rupiah amounts at 10,000 or above.
 - Persistent profile and login CLI modes are diagnostics only. Never commit
   `.facebook-profile*`.
 

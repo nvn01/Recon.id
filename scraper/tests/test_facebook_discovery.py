@@ -170,6 +170,36 @@ class FacebookDiscoveryTests(unittest.TestCase):
         self.assertEqual(listing["sellerName"], "Public Seller")
         self.assertEqual(listing["images"][0]["sourceUrl"], "https://cdn.example/facebook.jpg")
 
+    def test_structured_facebook_shorthand_prices_expand_using_product_context(self):
+        cases = (
+            ("PS4 Resmi", 3_000, 3_000_000, "Game Console"),
+            ("PS4 slim seri 20 500gb", 2_650, 2_650_000, "Game Console"),
+            ("PlayStation portable", 390, 390_000, "Game Console"),
+            ("PlayStation", 450, 450_000, "Game Console"),
+            ("PS5 slim console disc edition", 11, 11_000_000, "Game Console"),
+            ("Laptop axioo mybook 14 lite", 400, 400_000, "Laptop"),
+        )
+
+        for title, raw_price, expected_price, expected_category in cases:
+            with self.subTest(title=title, raw_price=raw_price):
+                card = MarketplaceCard(
+                    item_id="123",
+                    url="https://www.facebook.com/marketplace/item/123/",
+                    price=f"IDR{raw_price:,}",
+                    title=title,
+                    location="Jakarta",
+                    is_newly_listed=True,
+                    image_url="",
+                    image_alt="",
+                    raw_text=title,
+                    price_amount=raw_price,
+                )
+
+                listing = normalize_card(card, None, datetime(2026, 7, 12, tzinfo=timezone.utc))
+
+                self.assertEqual(listing["price"], expected_price)
+                self.assertEqual(listing["category"], expected_category)
+
 
 if __name__ == "__main__":
     unittest.main()

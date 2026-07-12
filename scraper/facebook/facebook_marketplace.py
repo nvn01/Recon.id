@@ -172,6 +172,7 @@ LOCATION_PREFIXES = (
     "cod",
 )
 CATEGORY_PATTERNS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("Game Console", ("playstation", "ps2", "ps3", "ps4", "ps5", "psp", "ps vita", "xbox", "nintendo", "console")),
     ("GPU", ("gpu", "vga", "rtx", "gtx", "radeon", "geforce")),
     ("CPU", ("cpu", "processor", "prosesor", "ryzen", "core i", "intel i3", "intel i5", "intel i7", "intel i9")),
     ("RAM", ("ram", "ddr3", "ddr4", "ddr5", "sodimm", "so-dimm", "memory")),
@@ -186,6 +187,9 @@ CATEGORY_PATTERNS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("Peripheral", ("headset", "earphone", "speaker", "webcam", "microphone", "mic")),
 )
 BRAND_PATTERNS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("Sony", ("playstation", "ps2", "ps3", "ps4", "ps5", "psp", "ps vita")),
+    ("Nintendo", ("nintendo", "switch lite", "switch oled")),
+    ("Microsoft", ("xbox",)),
     ("Apple", ("apple", "macbook", "imac", "mac mini")),
     ("ASUS", ("asus", "rog", "tuf")),
     ("Acer", ("acer", "predator")),
@@ -988,15 +992,18 @@ def normalize_card(
         limit=8,
     )
 
+    category = extract_category(combined_text)
+    raw_price = card.price_amount if card.price_amount is not None else extract_price(detail.description, card.price)
+
     return {
         "platform": PLATFORM,
         "sourceUrl": canonical_marketplace_url(card),
         "externalId": card.item_id,
         "title": title,
         "description": description,
-        "category": extract_category(combined_text),
+        "category": category,
         "brand": extract_brand(combined_text),
-        "price": card.price_amount if card.price_amount is not None else extract_price(detail.description, card.price),
+        "price": normalize_facebook_price(raw_price, category=category, product_text=combined_text),
         "locationTexts": locations,
         "conditionText": detail.condition or extract_condition(description),
         "sellerName": detail.seller or card.seller_name or None,
@@ -1087,6 +1094,28 @@ def extract_price(description: str, card_price: str) -> int | None:
         return None
 
     return extract_price_from_text(card_price, prefer_context=False)
+
+
+def normalize_facebook_price(amount: int | None, *, category: str | None, product_text: str) -> int | None:
+    """Expand Marketplace's common suffix-less IDR shorthand for relevant products.
+
+    Facebook exposes the seller-entered numeric value verbatim. Indonesian sellers
+    frequently enter 3000 for Rp3,000,000 or 450 for Rp450,000. The listing has
+    already passed RECON relevance filtering, but require recognizable product
+    context again before changing the structured amount.
+    """
+    if amount is None or isinstance(amount, bool) or amount <= 0:
+        return None
+    if amount >= 10_000:
+        return amount if amount <= 200_000_000 else None
+
+    lower = product_text.lower()
+    has_product_context = bool(category) or any(keyword in lower for keyword in DEFAULT_RECON_KEYWORDS)
+    if not has_product_context:
+        return None
+
+    expanded = amount * (1_000_000 if amount < 100 else 1_000)
+    return expanded if 10_000 <= expanded <= 200_000_000 else None
 
 
 def extract_price_from_text(text: str, *, prefer_context: bool) -> int | None:

@@ -58,6 +58,12 @@ ACCOUNT_SOLD_MARKERS: dict[str, tuple[str, ...]] = {
 }
 INSTAGRAM_CATEGORY_PATTERNS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("Desktop PC", ("fullset pc", "pc gaming", "pc rakitan", "desktop pc", "komputer gaming")),
+    ("PC Case", ("case pc", "pc case", "casing pc", "chassis")),
+    ("Monitor", ("monitor", "zowie xl", "240hz", "144hz", "165hz")),
+    ("Keyboard", ("keyboard", "k100 rgb", "k70 rgb", "ducky one", "keychron")),
+    ("Mouse", ("mouse", "attack shark", "razer viper", "deathadder")),
+    ("Power Supply", ("power supply", "psu", "core reactor")),
+    ("Game Console", ("playstation", "ps4", "ps5", "xbox", "nintendo switch")),
     ("Motherboard", ("motherboard", "mainboard", "mobo", "h610", "h610m", "b450", "b550", "b650", "x570", "z690", "z790")),
     ("Smartphone", ("xiaomi", "redmi", "poco", "iphone", "samsung galaxy", "oppo", "vivo", "realme")),
     ("Game", ("call of duty", "black ops", "final fantasy", "complete edition", "ps4 game", "ps5 game", "nintendo switch game")),
@@ -67,6 +73,14 @@ INSTAGRAM_CATEGORY_PATTERNS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("Peripheral", ("headset", "headphone", "earphone", "webcam", "moza", "steering wheel", "pedals")),
 )
 INSTAGRAM_BRAND_PATTERNS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("Corsair", ("corsair",)),
+    ("BenQ", ("benq", "zowie")),
+    ("Huawei", ("huawei",)),
+    ("Ducky", ("ducky",)),
+    ("RayNeo", ("rayneo",)),
+    ("Cube Gaming", ("cube gaming",)),
+    ("Attack Shark", ("attack shark",)),
+    ("ADATA", ("adata", "xpg")),
     ("Rode", ("rode", "videomic")),
     ("Xiaomi", ("xiaomi", "redmi", "poco")),
     ("Activision", ("call of duty", "black ops")),

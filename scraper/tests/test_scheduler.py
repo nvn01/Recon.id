@@ -90,8 +90,12 @@ class SchedulerTests(unittest.TestCase):
         self.assertEqual(config["instagram"]["accounts"]["browser"], "chrome")
         self.assertEqual(config["instagram"]["accounts"]["browser_mode"], "headed")
         self.assertEqual(config["instagram"]["accounts"]["browser_wait_ms"], 8_000)
+        self.assertTrue(all("--ai-parse" in job.args for job in jobs))
         self.assertEqual(config["scheduler"]["facebook"]["browser"], "chrome")
         self.assertEqual(config["facebook"]["marketplace"]["browser"], "chrome")
+
+        facebook_jobs = [job for job in build_jobs(config) if job.connector == "facebook"]
+        self.assertTrue(all("--ai-parse" in job.args for job in facebook_jobs))
 
     def test_scraper_image_runs_commands_inside_virtual_display(self):
         dockerfile = (Path(__file__).parents[1] / "Dockerfile").read_text(encoding="utf-8")
