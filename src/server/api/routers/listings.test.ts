@@ -32,11 +32,16 @@ describe("listingsRouter.feed", () => {
     } satisfies Partial<TRPCError>);
   });
 
-  it("does not replace unexpected database errors with cursor errors", async () => {
+  it("does not expose unexpected database error details", async () => {
     const caller = createCaller(
-      vi.fn().mockRejectedValue(new Error("database unavailable")),
+      vi.fn().mockRejectedValue(
+        new Error("connect ECONNREFUSED postgresql://internal-host/recon"),
+      ),
     );
 
-    await expect(caller.feed()).rejects.toThrow("database unavailable");
+    await expect(caller.feed()).rejects.toMatchObject({
+      code: "INTERNAL_SERVER_ERROR",
+      message: "Unable to load listing feed",
+    } satisfies Partial<TRPCError>);
   });
 });
