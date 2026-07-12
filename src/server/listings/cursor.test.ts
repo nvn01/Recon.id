@@ -23,10 +23,18 @@ describe("listing feed cursor", () => {
   it.each([
     "not base64!",
     Buffer.from("not-json").toString("base64url"),
-    Buffer.from(JSON.stringify({ v: 2, r: 0, t: new Date().toISOString(), i: "id" })).toString("base64url"),
-    Buffer.from(JSON.stringify({ v: 1, r: 4, t: new Date().toISOString(), i: "id" })).toString("base64url"),
-    Buffer.from(JSON.stringify({ v: 1, r: 0, t: "not-a-date", i: "id" })).toString("base64url"),
+    Buffer.from(
+      JSON.stringify({ v: 2, r: 0, t: new Date().toISOString(), i: "id" }),
+    ).toString("base64url"),
+    Buffer.from(
+      JSON.stringify({ v: 1, r: 4, t: new Date().toISOString(), i: "id" }),
+    ).toString("base64url"),
+    Buffer.from(
+      JSON.stringify({ v: 1, r: 0, t: "not-a-date", i: "id" }),
+    ).toString("base64url"),
   ])("rejects malformed or unsupported cursors", (cursor) => {
-    expect(() => decodeListingCursor(cursor)).toThrow(InvalidListingCursorError);
+    expect(() => decodeListingCursor(cursor)).toThrow(
+      InvalidListingCursorError,
+    );
   });
 });

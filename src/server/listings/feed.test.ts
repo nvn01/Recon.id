@@ -32,9 +32,21 @@ const baseListing = {
 describe("getListingFeed", () => {
   it("preserves ranked query order, maps DTOs, and emits the last returned row as cursor", async () => {
     const queryRaw = vi.fn().mockResolvedValue([
-      { id: "listing-b", statusRank: 0, effectiveAt: new Date("2026-07-12T11:00:00Z") },
-      { id: "listing-a", statusRank: 0, effectiveAt: new Date("2026-07-12T10:00:00Z") },
-      { id: "listing-c", statusRank: 1, effectiveAt: new Date("2026-07-12T09:00:00Z") },
+      {
+        id: "listing-b",
+        statusRank: 0,
+        effectiveAt: new Date("2026-07-12T11:00:00Z"),
+      },
+      {
+        id: "listing-a",
+        statusRank: 0,
+        effectiveAt: new Date("2026-07-12T10:00:00Z"),
+      },
+      {
+        id: "listing-c",
+        statusRank: 1,
+        effectiveAt: new Date("2026-07-12T09:00:00Z"),
+      },
     ]);
     const findMany = vi.fn().mockResolvedValue([
       baseListing,
@@ -50,7 +62,10 @@ describe("getListingFeed", () => {
 
     const result = await getListingFeed(db, { limit: 2 });
 
-    expect(result.items.map((item) => item.id)).toEqual(["listing-b", "listing-a"]);
+    expect(result.items.map((item) => item.id)).toEqual([
+      "listing-b",
+      "listing-a",
+    ]);
     expect(result.hasNextPage).toBe(true);
     expect(result.nextCursor).not.toBeNull();
     expect(decodeListingCursor(result.nextCursor!)).toEqual({

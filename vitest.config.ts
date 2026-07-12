@@ -15,7 +15,10 @@ export default defineConfig({
     },
     coverage: {
       provider: "v8",
-      include: ["src/server/listings/**/*.ts", "src/server/api/routers/listings.ts"],
+      include: [
+        "src/server/listings/**/*.ts",
+        "src/server/api/routers/listings.ts",
+      ],
       exclude: ["**/*.test.ts"],
       thresholds: {
         branches: 80,

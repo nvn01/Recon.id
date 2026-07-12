@@ -1,6 +1,4 @@
-import {
-  Prisma,
-} from "../../../generated/prisma";
+import { Prisma } from "../../../generated/prisma";
 
 import {
   decodeListingCursor,
@@ -64,9 +62,7 @@ export async function getListingFeed(
   const lastKey = pageKeys.at(-1)!;
 
   return {
-    items: orderedRecords.map((record) =>
-      toListingDto(record as ListingFeedRecord),
-    ),
+    items: orderedRecords.map((record) => toListingDto(record)),
     nextCursor: hasNextPage
       ? encodeListingCursor({
           statusRank: lastKey.statusRank,

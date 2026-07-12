@@ -1,4 +1,4 @@
-import { TRPCError } from "@trpc/server";
+import type { TRPCError } from "@trpc/server";
 import { describe, expect, it, vi } from "vitest";
 
 import { listingsRouter } from "./listings";

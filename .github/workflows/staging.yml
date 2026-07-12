@@ -38,6 +38,9 @@ jobs:
       - name: Validate Prisma schema
         run: npx prisma validate
 
+      - name: Test backend API
+        run: npm run test:coverage
+
       - name: Check Next.js app
         run: npm run check
 

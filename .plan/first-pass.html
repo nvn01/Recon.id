@@ -409,11 +409,11 @@ Backend API / query layer
 
     <h3>Phase 4: backend API</h3>
     <ul class="checklist">
-      <li>Read API/query layer for listing feed data, platform filter, status filter, and available-first sorting.</li>
-      <li>Defer connector-health and scrape-run API until the product needs it.</li>
-      <li>Defer takedown/hide workflow until there is a real moderation need.</li>
-      <li>Basic security review for env vars, headers, database access, and image handling.</li>
-      <li>Staging deployment through homelab CI/CD.</li>
+      <li>Done: add the public read-only <code>listings.feed</code> tRPC query with bounded platform/status filters, opaque keyset pagination, and available-first sorting.</li>
+      <li>Done: keep connector-health and scrape-run APIs deferred until the product needs them.</li>
+      <li>Done: keep takedown/hide mutations deferred until there is a real moderation need.</li>
+      <li>Done: review env vars, headers, parameterized database access, DTO exposure, and HTTPS-only source/image handling; split the current shared staging superuser into reader/writer roles before public launch.</li>
+      <li>Done: use the existing homelab CI/CD image-publishing path and add the backend API coverage gate to staging builds.</li>
     </ul>
 
     <h3>Phase 5: operational hardening</h3>
