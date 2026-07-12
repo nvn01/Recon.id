@@ -1,0 +1,81 @@
+import { describe, expect, it } from "vitest";
+
+import { toListingDto } from "./listing-dto";
+
+const listing = {
+  id: "listing-1",
+  platform: "INSTAGRAM",
+  sourceUrl: "https://www.instagram.com/p/example/",
+  externalId: "example",
+  title: "RTX 4070",
+  description: "Full seller caption",
+  category: "GPU",
+  brand: "NVIDIA",
+  price: 7_500_000,
+  locationTexts: ["Jakarta"],
+  conditionText: "Used",
+  sellerName: "seller",
+  status: "AVAILABLE",
+  postedAt: null,
+  firstFetchedAt: new Date("2026-07-12T10:00:00Z"),
+  lastFetchedAt: new Date("2026-07-12T10:05:00Z"),
+  images: [
+    {
+      sourceUrl: "https://scontent.example/image-2.jpg",
+      position: 2,
+      altText: null,
+    },
+    {
+      sourceUrl: "javascript:alert(1)",
+      position: 1,
+      altText: "unsafe",
+    },
+    {
+      sourceUrl: "https://scontent.example/image-0.jpg",
+      position: 0,
+      altText: "front",
+    },
+  ],
+};
+
+describe("toListingDto", () => {
+  it("maps the database record to the public DB-shaped contract", () => {
+    expect(toListingDto(listing)).toEqual({
+      id: "listing-1",
+      platform: "instagram",
+      sourceUrl: "https://www.instagram.com/p/example/",
+      externalId: "example",
+      title: "RTX 4070",
+      description: "Full seller caption",
+      category: "GPU",
+      brand: "NVIDIA",
+      price: 7_500_000,
+      currency: "IDR",
+      locationTexts: ["Jakarta"],
+      conditionText: "Used",
+      sellerName: "seller",
+      status: "available",
+      postedAt: null,
+      firstFetchedAt: new Date("2026-07-12T10:00:00Z"),
+      lastFetchedAt: new Date("2026-07-12T10:05:00Z"),
+      images: [
+        {
+          sourceUrl: "https://scontent.example/image-0.jpg",
+          position: 0,
+          altText: "front",
+        },
+        {
+          sourceUrl: "https://scontent.example/image-2.jpg",
+          position: 2,
+          altText: null,
+        },
+      ],
+    });
+  });
+
+  it("fails closed when the original listing URL is not HTTPS", () => {
+    expect(() =>
+      toListingDto({ ...listing, sourceUrl: "http://example.com/listing" }),
+    ).toThrow("listing source URL must use HTTPS");
+  });
+});
