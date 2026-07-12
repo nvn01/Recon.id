@@ -198,6 +198,7 @@ def build_instagram_jobs(config: dict[str, Any]) -> list[ScheduleJob]:
     stagger = max(0, int_value(schedule_config.get("stagger_seconds"), 300))
     jitter = max(0, int_value(schedule_config.get("jitter_seconds"), 0))
     limit = max(1, int_value(schedule_config.get("limit"), 1))
+    ai_parse = bool_value(schedule_config.get("ai_parse"), default=False)
     accounts = string_list(source_config.get("names"))
     per_account = bool_value(schedule_config.get("per_account"), default=True)
 
@@ -209,7 +210,7 @@ def build_instagram_jobs(config: dict[str, Any]) -> list[ScheduleJob]:
                 id="instagram",
                 connector="instagram",
                 cadence_seconds=cadence,
-                args=("--instagram", "--limit", str(limit)),
+                args=("--instagram", *(("--ai-parse",) if ai_parse else ()), "--limit", str(limit)),
                 jitter_seconds=jitter,
             )
         ]
@@ -219,7 +220,14 @@ def build_instagram_jobs(config: dict[str, Any]) -> list[ScheduleJob]:
             id=f"instagram:{account}",
             connector="instagram",
             cadence_seconds=cadence,
-            args=("--instagram", "--instagram-account", account, "--limit", str(limit)),
+            args=(
+                "--instagram",
+                "--instagram-account",
+                account,
+                *(("--ai-parse",) if ai_parse else ()),
+                "--limit",
+                str(limit),
+            ),
             initial_delay_seconds=index * stagger,
             jitter_seconds=jitter,
         )
@@ -241,6 +249,7 @@ def build_facebook_jobs(config: dict[str, Any]) -> list[ScheduleJob]:
     target_ids = string_list(schedule_config.get("target_ids")) or string_list(source_config.get("target_ids"))
     target_groups = string_list(schedule_config.get("target_groups")) or string_list(source_config.get("target_groups"))
     split_targets = bool_value(schedule_config.get("split_targets"), default=False)
+    ai_parse = bool_value(schedule_config.get("ai_parse"), default=False)
 
     if split_targets:
         targets_file = resolve_facebook_targets_path(source_config.get("targets_file"))
@@ -254,6 +263,7 @@ def build_facebook_jobs(config: dict[str, Any]) -> list[ScheduleJob]:
                 jitter=jitter,
                 browser=browser,
                 headless=headless,
+                ai_parse=ai_parse,
             )
 
     job_args: list[str] = ["--facebook", "--limit", str(limit)]
@@ -265,6 +275,8 @@ def build_facebook_jobs(config: dict[str, Any]) -> list[ScheduleJob]:
         job_args.append("--headless")
     if browser:
         job_args.extend(["--facebook-browser", browser])
+    if ai_parse:
+        job_args.append("--ai-parse")
 
     return [
         ScheduleJob(
@@ -286,6 +298,7 @@ def build_facebook_target_jobs(
     jitter: int,
     browser: str,
     headless: bool,
+    ai_parse: bool,
 ) -> list[ScheduleJob]:
     target_stagger = max(0, int_value(schedule_config.get("target_stagger_seconds"), 60))
     target_cadence_override = int_value(schedule_config.get("target_cadence_seconds"), 0)
@@ -300,6 +313,8 @@ def build_facebook_target_jobs(
             job_args.append("--headless")
         if browser:
             job_args.extend(["--facebook-browser", browser])
+        if ai_parse:
+            job_args.append("--ai-parse")
 
         jobs.append(
             ScheduleJob(

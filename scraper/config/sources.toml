@@ -32,6 +32,7 @@ limit = 15
 
 [scheduler.instagram]
 enabled = true
+ai_parse = true
 # Seven public profiles share one ten-minute cycle: one profile starts roughly
 # every 85 seconds and each profile repeats every 600 seconds.
 cadence_seconds = 600
@@ -42,6 +43,7 @@ per_account = true
 
 [scheduler.facebook]
 enabled = true
+ai_parse = true
 # Rotate reviewed hot targets one at a time instead of hammering all Marketplace
 # searches together. With the current hot target count this yields about one
 # browser-backed Marketplace search per minute, while each target repeats slower.
