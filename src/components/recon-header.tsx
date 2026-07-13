@@ -2,11 +2,20 @@
 
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { type ReactNode } from "react";
 
 function SearchIcon() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true">
       <path d="m21 21-4.35-4.35m2.35-5.4a7.75 7.75 0 1 1-15.5 0 7.75 7.75 0 0 1 15.5 0Z" />
+    </svg>
+  );
+}
+
+function CloseIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="m7 7 10 10M17 7 7 17" />
     </svg>
   );
 }
@@ -20,7 +29,7 @@ export function ReconMark() {
   );
 }
 
-export function ReconHeader() {
+export function ReconHeader({ children }: { children?: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -40,6 +49,13 @@ export function ReconHeader() {
     router.push(`${targetPath}${suffix ? `?${suffix}` : ""}`);
   }
 
+  function clearSearch() {
+    const next = new URLSearchParams(searchParams.toString());
+    next.delete("q");
+    const targetPath = pathname === "/platform" ? "/collection/all" : pathname;
+    router.push(`${targetPath}${next.size ? `?${next.toString()}` : ""}`);
+  }
+
   return (
     <header className="site-header">
       <div className="header-inner">
@@ -47,11 +63,6 @@ export function ReconHeader() {
           <ReconMark />
           <span>RECON</span>
         </Link>
-
-        <nav className="primary-nav" aria-label="Navigasi utama">
-          <Link href="/collection/all">Jelajah</Link>
-          <Link href="/platform">Platform</Link>
-        </nav>
 
         <form className="search-box" role="search" onSubmit={submitSearch}>
           <label className="sr-only" htmlFor="recon-search">
@@ -67,14 +78,27 @@ export function ReconHeader() {
             placeholder="Cari GPU, laptop, keyboard…"
             autoComplete="off"
           />
-          <kbd>Enter</kbd>
+          {query ? (
+            <button type="button" className="clear-search" onClick={clearSearch}>
+              <CloseIcon />
+              <span className="sr-only">Hapus pencarian</span>
+            </button>
+          ) : (
+            <span className="search-hint">Cari</span>
+          )}
         </form>
 
-        <div className="header-status" aria-label="Status pemantauan">
-          <span className="live-dot" />
-          <span>SCAN AKTIF</span>
+        <div className="header-actions">
+          <Link href="/platform" className="platform-action">
+            Platform
+          </Link>
+          <div className="header-status" aria-label="Status pemantauan">
+            <span className="live-dot" />
+            <span>SCAN AKTIF</span>
+          </div>
         </div>
       </div>
+      {children ? <div className="header-subnav">{children}</div> : null}
     </header>
   );
 }

@@ -16,6 +16,7 @@ export type DummyListing = {
   seller: string;
   postedLabel: string;
   imageUrl: string;
+  previewImageUrls?: string[];
   imagePageUrl: string;
   imageAlt: string;
   imageAspect: ListingAspect;
@@ -75,6 +76,10 @@ export const dummyListings: DummyListing[] = [
     seller: "pixel.parts",
     postedLabel: "8 menit lalu",
     imageUrl: img("photo-1752179634046-5159d1b13f6f"),
+    previewImageUrls: [
+      img("photo-1763905180930-892ee8d37ea6"),
+      img("photo-1675049626914-b2e051e92f23"),
+    ],
     imagePageUrl:
       "https://unsplash.com/photos/a-close-up-of-an-rtx-3090-graphics-card-FAdPUFutzb0",
     imageAlt: "Close-up kartu grafis RTX 3090",
@@ -96,6 +101,10 @@ export const dummyListings: DummyListing[] = [
     seller: "Raka Pratama",
     postedLabel: "14 menit lalu",
     imageUrl: img("photo-1634891392987-e91db6bf9557"),
+    previewImageUrls: [
+      img("photo-1639506060085-2a01a8a84c34"),
+      img("photo-1763905180930-892ee8d37ea6"),
+    ],
     imagePageUrl:
       "https://unsplash.com/photos/two-computer-monitors-sitting-on-top-of-a-white-desk-wcoXr9o83o8",
     imageAlt: "Dua monitor komputer di atas meja putih",
@@ -138,6 +147,10 @@ export const dummyListings: DummyListing[] = [
     seller: "secondbyte.id",
     postedLabel: "31 menit lalu",
     imageUrl: img("photo-1594972765410-9fe8c0e4e984"),
+    previewImageUrls: [
+      img("photo-1716681863790-45ee0db408ff"),
+      img("photo-1639506060085-2a01a8a84c34"),
+    ],
     imagePageUrl:
       "https://unsplash.com/photos/macbook-air-on-white-table-noW0zN8Vb4E",
     imageAlt: "MacBook Air di atas meja putih",
@@ -159,6 +172,10 @@ export const dummyListings: DummyListing[] = [
     seller: "Faisal Build",
     postedLabel: "42 menit lalu",
     imageUrl: img("photo-1763905180930-892ee8d37ea6"),
+    previewImageUrls: [
+      img("photo-1675049626914-b2e051e92f23"),
+      img("photo-1634891392987-e91db6bf9557"),
+    ],
     imagePageUrl:
       "https://unsplash.com/photos/computer-setup-with-monitor-keyboard-and-webcam-dSFV8clfe98",
     imageAlt: "Setup komputer desktop dengan monitor dan keyboard",
@@ -201,6 +218,10 @@ export const dummyListings: DummyListing[] = [
     seller: "u/sundaydeclutter",
     postedLabel: "1 jam lalu",
     imageUrl: img("photo-1639506060085-2a01a8a84c34"),
+    previewImageUrls: [
+      img("photo-1634891392987-e91db6bf9557"),
+      img("photo-1763905180930-892ee8d37ea6"),
+    ],
     imagePageUrl:
       "https://unsplash.com/photos/a-desk-with-a-laptop-and-a-monitor-on-it-TTHm86CTwXQ",
     imageAlt: "Meja minimalis dengan laptop dan monitor",
@@ -222,6 +243,10 @@ export const dummyListings: DummyListing[] = [
     seller: "Bagas Nugroho",
     postedLabel: "2 jam lalu",
     imageUrl: img("photo-1716681863790-45ee0db408ff"),
+    previewImageUrls: [
+      img("photo-1594972765410-9fe8c0e4e984"),
+      img("photo-1763905180930-892ee8d37ea6"),
+    ],
     imagePageUrl:
       "https://unsplash.com/photos/a-laptop-computer-sitting-on-top-of-a-desk-JyuI90QJ4ww",
     imageAlt: "Laptop di meja kerja dengan monitor",
@@ -243,6 +268,10 @@ export const dummyListings: DummyListing[] = [
     seller: "setup.swap",
     postedLabel: "2 jam lalu",
     imageUrl: img("photo-1675049626914-b2e051e92f23"),
+    previewImageUrls: [
+      img("photo-1763905180930-892ee8d37ea6"),
+      img("photo-1639506060085-2a01a8a84c34"),
+    ],
     imagePageUrl:
       "https://unsplash.com/photos/a-computer-desk-with-two-monitors-and-a-keyboard-FpTTnUxS45g",
     imageAlt: "Setup gaming merah dengan dua monitor",

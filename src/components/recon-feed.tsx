@@ -46,6 +46,14 @@ function SlidersIcon() {
   );
 }
 
+function SortIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M5 7h14M8 12h8m-5 5h2" />
+    </svg>
+  );
+}
+
 function CloseIcon() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -75,17 +83,6 @@ function titleForScope(scope: FeedScope) {
   return `${collections.find((item) => item.slug === scope.slug)?.label ?? "Koleksi"} yang baru ditemukan.`;
 }
 
-function eyebrowForScope(scope: FeedScope) {
-  if (scope.type === "platform") return `Platform / ${platformMeta[scope.slug].label}`;
-  if (scope.slug === "all") return "Semua koleksi / terbaru";
-  return `Koleksi / ${collections.find((item) => item.slug === scope.slug)?.label ?? scope.slug}`;
-}
-
-function descriptionForScope(scope: FeedScope) {
-  if (scope.type === "platform") return platformMeta[scope.slug].description;
-  return "RECON memantau listing publik dari berbagai platform, lalu menyusunnya agar cepat dipindai sebelum barang incaran lewat.";
-}
-
 function PlatformBadge({ platform }: { platform: ListingPlatform }) {
   const meta = platformMeta[platform];
   return (
@@ -106,6 +103,44 @@ function ListingCard({
   onOpen: (listing: DummyListing) => void;
 }) {
   const status = statusMeta[listing.status];
+  const images = [listing.imageUrl, ...(listing.previewImageUrls ?? [])];
+  const [activeImage, setActiveImage] = useState(0);
+  const intentTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const carouselTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  function stopPreview(reset = true) {
+    if (intentTimer.current) clearTimeout(intentTimer.current);
+    if (carouselTimer.current) clearInterval(carouselTimer.current);
+    intentTimer.current = null;
+    carouselTimer.current = null;
+    if (reset) setActiveImage(0);
+  }
+
+  function startPreview(event: React.PointerEvent<HTMLButtonElement>) {
+    if (
+      event.pointerType !== "mouse" ||
+      images.length < 2 ||
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    ) {
+      return;
+    }
+
+    stopPreview(false);
+    intentTimer.current = setTimeout(() => {
+      setActiveImage(1);
+      carouselTimer.current = setInterval(() => {
+        setActiveImage((current) => (current + 1) % images.length);
+      }, 400);
+    }, 180);
+  }
+
+  useEffect(
+    () => () => {
+      if (intentTimer.current) clearTimeout(intentTimer.current);
+      if (carouselTimer.current) clearInterval(carouselTimer.current);
+    },
+    [],
+  );
 
   return (
     <article className={`listing-card ${listing.status === "sold" ? "card-sold" : ""}`}>
@@ -113,17 +148,34 @@ function ListingCard({
         type="button"
         className={`listing-image image-${listing.imageAspect}`}
         onClick={() => onOpen(listing)}
+        onPointerEnter={startPreview}
+        onPointerLeave={() => stopPreview()}
+        onPointerCancel={() => stopPreview()}
       >
-        <Image
-          src={listing.imageUrl}
-          alt=""
-          fill
-          priority={priority}
-          sizes="(max-width: 520px) 48vw, (max-width: 900px) 32vw, (max-width: 1280px) 25vw, 20vw"
-        />
+        <span className="carousel-media" aria-hidden="true">
+          {images.map((imageUrl, index) => (
+            <Image
+              key={imageUrl}
+              className={`carousel-frame ${index === activeImage ? "is-active" : ""}`}
+              src={imageUrl}
+              alt=""
+              fill
+              priority={priority && index === 0}
+              sizes="(max-width: 520px) 48vw, (max-width: 900px) 32vw, (max-width: 1280px) 25vw, 20vw"
+            />
+          ))}
+        </span>
+        <span className="image-price">{formatRupiah(listing.price)}</span>
         <span className={`status-pill ${status.className}`}>
           {status.label}
         </span>
+        {images.length > 1 ? (
+          <span className="carousel-dots" aria-hidden="true">
+            {images.map((imageUrl, index) => (
+              <i key={imageUrl} className={index === activeImage ? "active" : undefined} />
+            ))}
+          </span>
+        ) : null}
         <span className="quick-view">
           Lihat detail <ArrowIcon />
         </span>
@@ -142,7 +194,6 @@ function ListingCard({
         >
           {listing.title}
         </button>
-        <p className="listing-price">{formatRupiah(listing.price)}</p>
         <p className="listing-place">{listing.location}</p>
       </div>
     </article>
@@ -327,54 +378,27 @@ export function ReconFeed({ scope }: ReconFeedProps) {
 
   return (
     <div className="app-shell">
-      <ReconHeader />
+      <ReconHeader>
+        <div className="header-controls">
+          <nav className="collection-rail" aria-label="Koleksi produk">
+            {collections.map((collection) => {
+              const active =
+                scope.type === "collection" && scope.slug === collection.slug;
+              return (
+                <Link
+                  key={collection.slug}
+                  href={collectionHref(collection.slug)}
+                  className={active ? "active" : undefined}
+                  aria-current={active ? "page" : undefined}
+                >
+                  {collection.label}
+                </Link>
+              );
+            })}
+          </nav>
 
-      <div className="signal-rail" aria-label="Ringkasan pemantauan RECON">
-        <div className="signal-rail-inner">
-          <p>
-            <span className="live-dot" />
-            Live scan
-          </p>
-          <span>3 platform dipantau</span>
-          <span>203 listing terbaca</span>
-          <span>Pembaruan terakhir 2 menit lalu</span>
-          <span className="rail-marquee">Tidak checkout di RECON — transaksi tetap di sumber</span>
-        </div>
-      </div>
-
-      <main className="feed-main">
-        <section className="feed-intro" aria-labelledby="feed-title">
-          <div>
-            <p className="eyebrow">{eyebrowForScope(scope)}</p>
-            <h1 id="feed-title">{titleForScope(scope)}</h1>
-            <p className="intro-copy">{descriptionForScope(scope)}</p>
-          </div>
-          <div className="feed-count" aria-live="polite">
-            <span>{filteredListings.length.toString().padStart(2, "0")}</span>
-            <p>listing demo cocok</p>
-          </div>
-        </section>
-
-        <nav className="collection-rail" aria-label="Koleksi produk">
-          {collections.map((collection) => {
-            const active =
-              scope.type === "collection" && scope.slug === collection.slug;
-            return (
-              <Link
-                key={collection.slug}
-                href={collectionHref(collection.slug)}
-                className={active ? "active" : undefined}
-                aria-current={active ? "page" : undefined}
-              >
-                <span>{collection.mark}</span>
-                {collection.label}
-              </Link>
-            );
-          })}
-        </nav>
-
-        <section className="feed-toolbar" aria-label="Filter listing">
-          <div className="platform-filters" aria-label="Filter platform">
+          <div className="header-filter-actions">
+            <div className="platform-filters" aria-label="Filter platform">
             <Link
               href={platformHref("all")}
               className={!currentPlatform ? "active" : undefined}
@@ -390,38 +414,47 @@ export function ReconFeed({ scope }: ReconFeedProps) {
                 {platformMeta[platform].label}
               </Link>
             ))}
-          </div>
-
-          <details className="filter-menu">
-            <summary>
-              <SlidersIcon />
-              Filter
-              {currentStatus ? <span className="filter-count">1</span> : null}
-            </summary>
-            <div className="filter-popover">
-              <p>Status listing</p>
-              <Link
-                href={statusHref("all")}
-                className={!currentStatus ? "active" : undefined}
-              >
-                Semua status
-              </Link>
-              {(Object.keys(statusMeta) as ListingStatus[]).map((status) => (
-                <Link
-                  key={status}
-                  href={statusHref(status)}
-                  className={currentStatus === status ? "active" : undefined}
-                >
-                  {statusMeta[status].label}
-                </Link>
-              ))}
-              <div className="sort-note">
-                <span>Urutan</span>
-                Tersedia dulu, lalu terbaru
-              </div>
             </div>
-          </details>
-        </section>
+
+            <details className="filter-menu">
+              <summary>
+                <SlidersIcon />
+                Filter
+                {currentStatus ? <span className="filter-count">1</span> : null}
+              </summary>
+              <div className="filter-popover">
+                <p>Status listing</p>
+                <Link
+                  href={statusHref("all")}
+                  className={!currentStatus ? "active" : undefined}
+                >
+                  Semua status
+                </Link>
+                {(Object.keys(statusMeta) as ListingStatus[]).map((status) => (
+                  <Link
+                    key={status}
+                    href={statusHref(status)}
+                    className={currentStatus === status ? "active" : undefined}
+                  >
+                    {statusMeta[status].label}
+                  </Link>
+                ))}
+                <div className="sort-note">
+                  <span>Urutan</span>
+                  Tersedia dulu, lalu terbaru
+                </div>
+              </div>
+            </details>
+            <span className="sort-chip"><SortIcon /> Terbaru dulu</span>
+          </div>
+        </div>
+      </ReconHeader>
+
+      <main className="feed-main">
+        <h1 className="sr-only">{titleForScope(scope)}</h1>
+        <p className="sr-only" aria-live="polite">
+          {filteredListings.length} listing demo cocok
+        </p>
 
         {query ? (
           <div className="query-banner">
