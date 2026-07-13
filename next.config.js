@@ -30,6 +30,14 @@ const securityHeaders = [
 
 /** @type {import("next").NextConfig} */
 const config = {
+  images: {
+    remotePatterns: [
+      {
+        protocol: "https",
+        hostname: "images.unsplash.com",
+      },
+    ],
+  },
   async headers() {
     return [
       {
