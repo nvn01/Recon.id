@@ -112,15 +112,35 @@ describe("getListingFeed", () => {
     await getListingFeed(db, {
       platforms: ["facebook"],
       statuses: ["available"],
+      categories: ["Laptop"],
+      locations: ["Bandung"],
+      conditions: ["Bekas - baik"],
+      q: "100% RTX_4070",
+      minPrice: 1_000_000,
+      maxPrice: 10_000_000,
       limit: 5,
       cursor,
     });
 
     const sql = queryRaw.mock.calls[0]?.[0] as { values?: unknown[] };
+    const queryText = (queryRaw.mock.calls[0]?.[0] as { strings?: string[] })
+      .strings?.join("?");
+    expect(queryText).toContain("category IN");
+    expect(queryText).toContain("location_texts && ARRAY");
+    expect(queryText).toContain("condition_text IN");
+    expect(queryText).toContain("ILIKE");
+    expect(queryText).toContain("price >=");
+    expect(queryText).toContain("price <=");
     expect(sql.values).toEqual(
       expect.arrayContaining([
         "facebook",
         "available",
+        "Laptop",
+        "Bandung",
+        "Bekas - baik",
+        "%100\\% RTX\\_4070%",
+        1_000_000,
+        10_000_000,
         1,
         new Date("2026-07-12T09:00:00Z"),
         "cursor-id",

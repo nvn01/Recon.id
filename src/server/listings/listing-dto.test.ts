@@ -49,7 +49,6 @@ describe("toListingDto", () => {
       id: "listing-1",
       platform: "instagram",
       sourceUrl: "https://www.instagram.com/p/example/",
-      externalId: "example",
       title: "RTX 4070",
       description: "Full seller caption",
       category: "GPU",
@@ -60,9 +59,7 @@ describe("toListingDto", () => {
       conditionText: "Used",
       sellerName: "seller",
       status: "available",
-      postedAt: null,
-      firstFetchedAt: new Date("2026-07-12T10:00:00Z"),
-      lastFetchedAt: new Date("2026-07-12T10:05:00Z"),
+      listedAt: new Date("2026-07-12T10:00:00Z"),
       images: [
         {
           sourceUrl: "https://scontent.example/image-0.jpg",
@@ -82,5 +79,19 @@ describe("toListingDto", () => {
     expect(() =>
       toListingDto({ ...listing, sourceUrl: "http://example.com/listing" }),
     ).toThrow("listing source URL must use HTTPS");
+  });
+
+  it("omits location values that look like contact data or oversized parser output", () => {
+    expect(
+      toListingDto({
+        ...listing,
+        locationTexts: [
+          " Bandung ",
+          "081234567890",
+          "https://example.com/location",
+          "x".repeat(81),
+        ],
+      }).locationTexts,
+    ).toEqual(["Bandung"]);
   });
 });

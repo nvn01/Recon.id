@@ -7,17 +7,29 @@ describe("listingFeedInputSchema", () => {
     expect(listingFeedInputSchema.parse(undefined)).toEqual({ limit: 24 });
   });
 
-  it("accepts supported platform and status filters", () => {
+  it("accepts the bounded filters required by the public UI", () => {
     expect(
       listingFeedInputSchema.parse({
         platforms: ["instagram", "facebook"],
         statuses: ["available", "sold"],
-        limit: 50,
+        categories: ["Laptop", "GPU"],
+        locations: ["Bandung", "Jakarta Selatan"],
+        conditions: ["Bekas - baik"],
+        q: "  RTX 4070  ",
+        minPrice: 1_000_000,
+        maxPrice: 10_000_000,
+        limit: 12,
       }),
     ).toEqual({
       platforms: ["instagram", "facebook"],
       statuses: ["available", "sold"],
-      limit: 50,
+      categories: ["Laptop", "GPU"],
+      locations: ["Bandung", "Jakarta Selatan"],
+      conditions: ["Bekas - baik"],
+      q: "RTX 4070",
+      minPrice: 1_000_000,
+      maxPrice: 10_000_000,
+      limit: 12,
     });
   });
 
@@ -26,10 +38,21 @@ describe("listingFeedInputSchema", () => {
     { limit: 51 },
     { platforms: [] },
     { statuses: [] },
+    { categories: [] },
+    { locations: [] },
+    { conditions: [] },
     { platforms: ["instagram", "instagram"] },
     { statuses: ["available", "available"] },
+    { categories: ["GPU", "GPU"] },
+    { locations: ["Bandung", "Bandung"] },
+    { conditions: ["Bekas", "Bekas"] },
     { platforms: ["tiktok"] },
     { statuses: ["removed"] },
+    { q: " " },
+    { q: "x".repeat(81) },
+    { minPrice: -1 },
+    { maxPrice: 2_000_000_001 },
+    { minPrice: 5_000_000, maxPrice: 1_000_000 },
     { cursor: "x".repeat(513) },
     { unexpected: true },
   ])("rejects invalid or excessive input: %j", (input) => {
