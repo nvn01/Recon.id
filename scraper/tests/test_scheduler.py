@@ -47,6 +47,22 @@ def sample_config():
 
 
 class SchedulerTests(unittest.TestCase):
+    def test_production_config_fetches_all_reddit_wts_flairs_with_a_short_gap(self):
+        config = load_config(DEFAULT_CONFIG_PATH)
+        reddit_config = config["reddit"]["wts_computers"]
+
+        self.assertEqual(
+            reddit_config["flairs"],
+            [
+                "WTS: Computers & Peripherals",
+                "WTS: Electronics",
+                "WTS: Video Games & Consoles",
+                "WTS: Smartphones & Tablets",
+            ],
+        )
+        self.assertEqual(len(reddit_config["urls"]), 4)
+        self.assertEqual(reddit_config["feed_delay_seconds"], 3.0)
+
     def test_scheduler_lock_blocks_a_second_scheduler_instance(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             lock_path = Path(tmpdir) / "scheduler.lock"

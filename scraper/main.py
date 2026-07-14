@@ -289,10 +289,13 @@ def run_reddit(args: argparse.Namespace, config: dict[str, Any]) -> dict[str, An
     run_config = table(config, "run")
     reddit_config = table(config, "reddit", "wts_computers")
     limit = effective_limit(args, reddit_config, run_config)
+    configured_flairs = string_list(reddit_config.get("flairs"))
     reddit_args = SimpleNamespace(
         limit=limit,
         subreddit=reddit_config.get("subreddit", reddit.SUBREDDIT),
         flair=reddit_config.get("flair", reddit.FLAIR),
+        flairs=configured_flairs or [str(reddit_config.get("flair") or reddit.FLAIR)],
+        feed_delay_seconds=float_value(reddit_config.get("feed_delay_seconds"), 3.0),
         retries=int_value(reddit_config.get("retries"), 2),
         retry_wait=int_value(reddit_config.get("retry_wait_seconds"), 20),
         retry_jitter_seconds=float_value(
@@ -336,6 +339,7 @@ def run_reddit(args: argparse.Namespace, config: dict[str, Any]) -> dict[str, An
         "httpStatusSource": "inferred from successful urllib fetch",
         "transport": "reddit_rss",
         "sourceUrl": reddit_config.get("url"),
+        "sourceUrls": string_list(reddit_config.get("urls")) or [str(reddit_config.get("url") or "")],
         "normalized": len(listings),
         "validated": len(valid),
         "validationErrors": invalid,

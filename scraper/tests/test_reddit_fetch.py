@@ -28,12 +28,20 @@ class RedditFetchTests(unittest.TestCase):
 
         with (
             patch("scraper.reddit.reddit.fetch_text", return_value="<feed />") as fetch_text,
-            patch("scraper.reddit.reddit.parse_feed", side_effect=lambda _xml, _limit: []) as parse_feed,
+            patch(
+                "scraper.reddit.reddit.parse_feed",
+                side_effect=lambda _xml, _limit: [
+                    {
+                        "url": "https://www.reddit.com/r/jualbeliindonesia/comments/shared/example/",
+                        "atom_id": "t3_shared",
+                    }
+                ],
+            ) as parse_feed,
             patch("scraper.reddit.reddit.time.sleep") as sleep,
         ):
             posts = reddit.fetch_flair_feeds(args, flairs)
 
-        self.assertEqual(posts, [])
+        self.assertEqual(len(posts), 1)
         self.assertEqual(fetch_text.call_count, 4)
         self.assertEqual(parse_feed.call_count, 4)
         self.assertEqual(

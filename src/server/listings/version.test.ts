@@ -15,7 +15,8 @@ describe("getListingVersion", () => {
     const second = await getListingVersion({ $queryRaw: queryRaw });
 
     expect(first).toEqual(second);
-    expect(first).toEqual({ revision: expect.stringMatching(/^[\w-]{43}$/) });
+    expect(Object.keys(first)).toEqual(["revision"]);
+    expect(first.revision).toMatch(/^[\w-]{43}$/);
     expect(JSON.stringify(first)).not.toContain("42");
     expect(JSON.stringify(first)).not.toContain("2026-07-14");
   });
@@ -40,5 +41,15 @@ describe("getListingVersion", () => {
     const after = await getListingVersion({ $queryRaw: queryRaw });
 
     expect(after.revision).not.toBe(before.revision);
+  });
+
+  it("returns a stable opaque revision before the first listing exists", async () => {
+    const queryRaw = vi.fn().mockResolvedValue([]);
+
+    const first = await getListingVersion({ $queryRaw: queryRaw });
+    const second = await getListingVersion({ $queryRaw: queryRaw });
+
+    expect(first).toEqual(second);
+    expect(first.revision).toMatch(/^[\w-]{43}$/);
   });
 });

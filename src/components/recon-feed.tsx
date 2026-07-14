@@ -16,6 +16,10 @@ import { ReconHeader } from "~/components/recon-header";
 import { RefreshArrowIcon } from "~/components/refresh-arrow-icon";
 import { stepCarouselIndex } from "~/data/carousel-navigation";
 import {
+  hasUnseenListingRevision,
+  manualListingRefreshQueryOptions,
+} from "~/data/listing-refresh";
+import {
   collections,
   formatListedAt,
   formatRupiah,
@@ -932,6 +936,7 @@ export function ReconFeed({ scope }: ReconFeedProps) {
   const searchParams = useSearchParams();
   const utils = api.useUtils();
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [hasNewListings, setHasNewListings] = useState(false);
   const [refreshAnnouncement, setRefreshAnnouncement] = useState("");
   const [selectedListing, setSelectedListing] = useState<Listing | null>(null);
   const query = (searchParams.get("q") ?? "").trim().slice(0, 80);
@@ -951,12 +956,45 @@ export function ReconFeed({ scope }: ReconFeedProps) {
     [filters, query, scope],
   );
   const feedQuery = api.listings.feed.useInfiniteQuery(feedInput, {
+    ...manualListingRefreshQueryOptions,
     initialCursor: undefined,
     getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
   });
-  const facetsQuery = api.listings.facets.useQuery(undefined, {
-    staleTime: 5 * 60 * 1000,
+  const facetsQuery = api.listings.facets.useQuery(
+    undefined,
+    manualListingRefreshQueryOptions,
+  );
+  const versionQuery = api.listings.version.useQuery(undefined, {
+    refetchInterval: 30 * 1000,
+    refetchIntervalInBackground: false,
+    refetchOnReconnect: true,
+    refetchOnWindowFocus: true,
+    retry: 1,
+    staleTime: 0,
   });
+  const seenListingRevision = useRef(versionQuery.data?.revision ?? null);
+
+  useEffect(() => {
+    const currentRevision = versionQuery.data?.revision ?? null;
+    if (!currentRevision) return;
+
+    if (!seenListingRevision.current) {
+      seenListingRevision.current = currentRevision;
+      return;
+    }
+
+    if (
+      hasUnseenListingRevision(
+        seenListingRevision.current,
+        currentRevision,
+      )
+    ) {
+      setHasNewListings(true);
+      setRefreshAnnouncement(
+        "Temuan baru tersedia. Gunakan tombol di bagian atas untuk memuatnya.",
+      );
+    }
+  }, [versionQuery.data?.revision]);
   const listings = useMemo(() => {
     const uniqueListings = new Map<string, Listing>();
     for (const page of feedQuery.data?.pages ?? []) {
@@ -1018,7 +1056,15 @@ export function ReconFeed({ scope }: ReconFeedProps) {
     });
 
     try {
-      await utils.listings.feed.reset(feedInput, { throwOnError: true });
+      const revisionResult = await versionQuery.refetch();
+      await Promise.all([
+        utils.listings.feed.reset(feedInput, { throwOnError: true }),
+        utils.listings.facets.reset(undefined, { throwOnError: true }),
+      ]);
+      if (revisionResult.data?.revision) {
+        seenListingRevision.current = revisionResult.data.revision;
+      }
+      setHasNewListings(false);
       setRefreshAnnouncement("Temuan terbaru sudah dimuat.");
     } catch {
       setRefreshAnnouncement("Temuan belum berhasil diperbarui. Coba lagi.");
@@ -1031,7 +1077,7 @@ export function ReconFeed({ scope }: ReconFeedProps) {
     <div className="app-shell">
       <ReconHeader
         refreshControl={{
-          newCount: 0,
+          hasNewListings,
           isRefreshing,
           onRefresh: () => void refreshFeed(),
         }}

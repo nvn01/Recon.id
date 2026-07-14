@@ -38,7 +38,7 @@ export function ReconMark() {
 }
 
 export type FeedRefreshControl = {
-  newCount: number;
+  hasNewListings: boolean;
   isRefreshing: boolean;
   onRefresh: () => void;
 };
@@ -128,7 +128,7 @@ export function ReconHeader({
               data-state={
                 refreshControl.isRefreshing
                   ? "loading"
-                  : refreshControl.newCount > 0
+                  : refreshControl.hasNewListings
                     ? "new"
                     : "idle"
               }
@@ -137,8 +137,8 @@ export function ReconHeader({
               aria-label={
                 refreshControl.isRefreshing
                   ? "Memperbarui listing"
-                  : refreshControl.newCount > 0
-                    ? `Tampilkan ${refreshControl.newCount} listing baru`
+                  : refreshControl.hasNewListings
+                    ? "Tampilkan temuan baru"
                     : "Periksa listing baru"
               }
             >
@@ -147,10 +147,9 @@ export function ReconHeader({
               ) : (
                 <span className="live-dot" />
               )}
-              {refreshControl.newCount > 0 && !refreshControl.isRefreshing ? (
-                <span className="feed-refresh-label">
-                  {refreshControl.newCount} listing baru
-                </span>
+              {refreshControl.hasNewListings &&
+              !refreshControl.isRefreshing ? (
+                <span className="feed-refresh-label">Temuan baru</span>
               ) : null}
             </button>
           ) : (

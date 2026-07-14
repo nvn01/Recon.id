@@ -21,6 +21,7 @@ export async function ReconFeedPage({
   await Promise.all([
     api.listings.feed.prefetchInfinite(feedInput),
     api.listings.facets.prefetch(),
+    api.listings.version.prefetch(),
   ]);
 
   return (

@@ -59,9 +59,10 @@ describe("listingsRouter.version", () => {
       ]),
     );
 
-    await expect(caller.version()).resolves.toEqual({
-      revision: expect.stringMatching(/^[\w-]{43}$/),
-    });
+    const result = await caller.version();
+
+    expect(Object.keys(result)).toEqual(["revision"]);
+    expect(result.revision).toMatch(/^[\w-]{43}$/);
   });
 
   it("does not expose unexpected database error details", async () => {

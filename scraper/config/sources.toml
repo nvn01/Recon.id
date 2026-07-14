@@ -72,8 +72,21 @@ enabled = true
 # Human-facing source URL. The Reddit connector still uses subreddit + flair
 # internally so it can request the RSS search URL with sort=new.
 url = "https://www.reddit.com/r/jualbeliindonesia/?f=flair_name%3A%22WTS%3A%20Computers%20%26%20Peripherals%22"
+urls = [
+  "https://www.reddit.com/r/jualbeliindonesia/?f=flair_name%3A%22WTS%3A%20Computers%20%26%20Peripherals%22",
+  "https://www.reddit.com/r/jualbeliindonesia/?f=flair_name%3A%22WTS%3A%20Electronics%22",
+  "https://www.reddit.com/r/jualbeliindonesia/?f=flair_name%3A%22WTS%3A%20Video%20Games%20%26%20Consoles%22",
+  "https://www.reddit.com/r/jualbeliindonesia/?f=flair_name%3A%22WTS%3A%20Smartphones%20%26%20Tablets%22",
+]
 subreddit = "jualbeliindonesia"
 flair = "WTS: Computers & Peripherals"
+flairs = [
+  "WTS: Computers & Peripherals",
+  "WTS: Electronics",
+  "WTS: Video Games & Consoles",
+  "WTS: Smartphones & Tablets",
+]
+feed_delay_seconds = 3.0
 limit = 15
 retries = 2
 retry_wait_seconds = 20

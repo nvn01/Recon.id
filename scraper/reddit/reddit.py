@@ -415,6 +415,47 @@ def build_rss_url(limit: int, subreddit: str = SUBREDDIT, flair: str = FLAIR) ->
     return f"https://www.reddit.com/r/{subreddit}/search.rss?{query}"
 
 
+def fetch_flair_feeds(args: argparse.Namespace, flairs: Iterable[str]) -> list[dict[str, Any]]:
+    posts: list[dict[str, Any]] = []
+    feed_delay = max(0.0, float(getattr(args, "feed_delay_seconds", 0.0)))
+
+    for index, flair in enumerate(flairs):
+        if index and feed_delay:
+            time.sleep(feed_delay)
+
+        url = build_rss_url(args.limit, getattr(args, "subreddit", SUBREDDIT), flair)
+        print(f"Fetching: {url}", file=sys.stderr)
+        xml_text = fetch_text(
+            url,
+            args.user_agent,
+            args.retries,
+            args.retry_wait,
+            getattr(args, "retry_jitter_seconds", 0.0),
+            args.timeout,
+        )
+        posts.extend(parse_feed(xml_text, args.limit))
+
+    return dedupe_posts(posts)
+
+
+def dedupe_posts(posts: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
+    seen: set[str] = set()
+    deduped: list[dict[str, Any]] = []
+    for post in posts:
+        identity = str(
+            extract_external_id(str(post.get("url", "")), str(post.get("atom_id", "")))
+            or canonical_url(str(post.get("url", "")))
+            or post.get("atom_id")
+            or ""
+        )
+        if identity and identity in seen:
+            continue
+        if identity:
+            seen.add(identity)
+        deduped.append(post)
+    return deduped
+
+
 def parsedate_to_datetime(value: str) -> datetime:
     from email.utils import parsedate_to_datetime as parse_email_date
 
@@ -1146,19 +1187,9 @@ def run_once(
         print(f"Reddit connector is cooling down for {cooldown_remaining}s.", file=sys.stderr)
         return format_run_result(0, [], "cooldown_skip", include_status)
 
-    url = build_rss_url(args.limit, getattr(args, "subreddit", SUBREDDIT), getattr(args, "flair", FLAIR))
-    print(f"Fetching: {url}", file=sys.stderr)
-
     try:
-        xml_text = fetch_text(
-            url,
-            args.user_agent,
-            args.retries,
-            args.retry_wait,
-            getattr(args, "retry_jitter_seconds", 0.0),
-            args.timeout,
-        )
-        posts = parse_feed(xml_text, args.limit)
+        flairs = list(getattr(args, "flairs", [])) or [getattr(args, "flair", FLAIR)]
+        posts = fetch_flair_feeds(args, flairs)
         posts = enrich_posts_with_detail_images(
             posts,
             state=state,
@@ -1375,6 +1406,12 @@ def main() -> int:
     parser.add_argument("--limit", type=int, default=15, help="Number of posts to fetch.")
     parser.add_argument("--subreddit", default=SUBREDDIT, help="Subreddit name for the Reddit RSS search.")
     parser.add_argument("--flair", default=FLAIR, help="Flair name for the Reddit RSS search.")
+    parser.add_argument(
+        "--feed-delay-seconds",
+        type=float,
+        default=0.0,
+        help="Seconds to wait between configured Reddit flair feeds.",
+    )
     parser.add_argument("--retries", type=int, default=3, help="HTTP retry attempts.")
     parser.add_argument("--retry-wait", type=int, default=20, help="Seconds to wait after HTTP 429.")
     parser.add_argument("--retry-jitter-seconds", type=float, default=0.0, help="Random extra seconds added to retry waits.")
