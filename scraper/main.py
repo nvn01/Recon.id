@@ -52,6 +52,8 @@ INSTAGRAM_COOLDOWN_HTTP_STATUSES = {401, 403, 429}
 
 def main() -> int:
     args = parse_args()
+    if args.write_db:
+        args.ai_parse = True
     try:
         egress = resolve_egress_config()
     except EgressConfigError as exc:
@@ -137,8 +139,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--no-state", action="store_true", help="Do not read/write connector state, locks, or run logs.")
     parser.add_argument("--ignore-cooldown", action="store_true", help="Ignore active local connector cooldown state.")
     parser.add_argument("--lock-stale-seconds", type=int, default=900, help="Remove orchestrator lock files older than this many seconds.")
-    parser.add_argument("--ai-parse", action="store_true", help="Enable optional batched NVIDIA AI enrichment.")
-    parser.add_argument("--ai-prefer", action="store_true", help="Let AI values replace rule-parser values when available.")
+    parser.add_argument("--ai-parse", action="store_true", help="Run required batched NVIDIA semantic parsing.")
     parser.add_argument("--headless", action="store_true", help="Force Facebook browser runs to be headless.")
     parser.add_argument("--facebook-details", action="store_true", help="Fetch Facebook detail pages for richer fields.")
     parser.add_argument("--facebook-browser", choices=("chrome", "chromium"), default=None, help="Facebook Playwright browser channel override.")
@@ -326,7 +327,6 @@ def run_reddit(args: argparse.Namespace, config: dict[str, Any]) -> dict[str, An
         image_timeout=20,
         image_detail_delay=1.0,
         ai_parse=args.ai_parse,
-        ai_prefer=args.ai_prefer,
         ai_model=None,
         ai_batch_size=int_value(run_config.get("ai_batch_size"), 5),
         ai_rate_limit=float_value(run_config.get("ai_rate_limit_seconds"), 2.0),
@@ -444,13 +444,14 @@ def run_instagram(args: argparse.Namespace, config: dict[str, Any]) -> dict[str,
             listings = enrich_with_nvidia(listings, args, run_config)
         except NvidiaParserError as exc:
             ai_parse_error = str(exc)
+            listings = []
     valid, invalid = validate_listings(listings)
     fetched_results = [result for result in account_results if not result.get("skipped_by_cooldown")]
     failed_accounts = [result for result in fetched_results if not result["ok"]]
     cooldown_accounts = [
         result for result in failed_accounts if result.get("http_status") in INSTAGRAM_COOLDOWN_HTTP_STATUSES
     ]
-    ok = not failed_accounts and not invalid
+    ok = not failed_accounts and not invalid and ai_parse_error is None
     statuses = sorted({result["http_status"] for result in account_results if result["http_status"] is not None})
     cooldown = int_value(instagram_config.get("cooldown_seconds"), 300)
     for result in fetched_results:
@@ -495,7 +496,7 @@ def run_instagram(args: argparse.Namespace, config: dict[str, Any]) -> dict[str,
             },
         )
     else:
-        state["last_error"] = "; ".join(str(item.get("error")) for item in failed_accounts[:3] if item.get("error")) or None
+        state["last_error"] = ai_parse_error or "; ".join(str(item.get("error")) for item in failed_accounts[:3] if item.get("error")) or None
         log_event(
             log_path,
             {
@@ -650,7 +651,6 @@ def run_facebook(args: argparse.Namespace, config: dict[str, Any], egress: Egres
         no_state=args.no_state,
         lock_stale_seconds=int_value(facebook_config.get("lock_stale_seconds"), int_value(run_config.get("lock_stale_seconds"), 900)),
         ai_parse=args.ai_parse,
-        ai_prefer=args.ai_prefer,
         ai_model=None,
         ai_batch_size=int_value(run_config.get("ai_batch_size"), 5),
         ai_rate_limit=float_value(run_config.get("ai_rate_limit_seconds"), 2.0),
@@ -762,7 +762,6 @@ def enrich_with_nvidia(listings: list[dict[str, Any]], args: argparse.Namespace,
         listings,
         batch_size=int_value(run_config.get("ai_batch_size"), 5),
         rate_limit_seconds=float_value(run_config.get("ai_rate_limit_seconds"), 2.0),
-        prefer_ai=args.ai_prefer,
     )
 
 

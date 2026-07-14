@@ -142,87 +142,6 @@ DEFAULT_BLOCKED_KEYWORDS = (
     "hdmi to vga",
 )
 
-SOLD_MARKERS = (
-    "sold out",
-    "sold",
-    "terjual",
-    "laku",
-    "booked",
-)
-ASK_PRICE_MARKERS = (
-    "ask price",
-    "askprice",
-    "tanya harga",
-    "tanya admin",
-    "tanyakan harga",
-    "hubungi",
-    "dm",
-    "pm",
-    "inbox",
-    "chat",
-)
-FREE_PRICE_MARKERS = (
-    "gratis",
-    "free",
-)
-LOCATION_PREFIXES = (
-    "lokasi",
-    "location",
-    "loc",
-    "cod",
-)
-CATEGORY_PATTERNS: tuple[tuple[str, tuple[str, ...]], ...] = (
-    ("Game Console", ("playstation", "ps2", "ps3", "ps4", "ps5", "psp", "ps vita", "xbox", "nintendo", "console")),
-    ("GPU", ("gpu", "vga", "rtx", "gtx", "radeon", "geforce")),
-    ("CPU", ("cpu", "processor", "prosesor", "ryzen", "core i", "intel i3", "intel i5", "intel i7", "intel i9")),
-    ("RAM", ("ram", "ddr3", "ddr4", "ddr5", "sodimm", "so-dimm", "memory")),
-    ("Storage", ("ssd", "hdd", "nvme", "harddisk", "hard disk", "m.2", "sata")),
-    ("Motherboard", ("motherboard", "mainboard", "mobo")),
-    ("Monitor", ("monitor", "lcd", "ips", "oled", "va panel", "hz")),
-    ("Keyboard", ("keyboard", "keychron", "mechanical", "mecha")),
-    ("Mouse", ("mouse", "logitech g", "razer viper", "deathadder")),
-    ("Desktop PC", ("pc rakitan", "desktop", "mini pc", "workstation", "komputer")),
-    ("Handheld PC", ("legion go", "steam deck", "rog ally", "handheld pc")),
-    ("Laptop", ("laptop", "notebook", "thinkpad", "macbook", "vivobook", "zenbook", "ideapad", "legion")),
-    ("Peripheral", ("headset", "earphone", "speaker", "webcam", "microphone", "mic")),
-)
-BRAND_PATTERNS: tuple[tuple[str, tuple[str, ...]], ...] = (
-    ("Sony", ("playstation", "ps2", "ps3", "ps4", "ps5", "psp", "ps vita")),
-    ("Nintendo", ("nintendo", "switch lite", "switch oled")),
-    ("Microsoft", ("xbox",)),
-    ("Apple", ("apple", "macbook", "imac", "mac mini")),
-    ("ASUS", ("asus", "rog", "tuf")),
-    ("Acer", ("acer", "predator")),
-    ("Lenovo", ("lenovo", "thinkpad", "legion", "ideapad")),
-    ("HP", ("hp", "hewlett packard", "omen", "victus")),
-    ("Dell", ("dell", "alienware")),
-    ("MSI", ("msi",)),
-    ("Gigabyte", ("gigabyte", "aorus")),
-    ("ASRock", ("asrock",)),
-    ("Intel", ("intel",)),
-    ("AMD", ("amd", "ryzen", "radeon")),
-    ("NVIDIA", ("nvidia", "geforce")),
-    ("Zotac", ("zotac",)),
-    ("Inno3D", ("inno3d", "inno 3d")),
-    ("Sapphire", ("sapphire", "saphire")),
-    ("PowerColor", ("powercolor", "power color")),
-    ("Palit", ("palit",)),
-    ("Galax", ("galax",)),
-    ("Colorful", ("colorful",)),
-    ("Digital Alliance", ("digital alliance",)),
-    ("Corsair", ("corsair",)),
-    ("Kingston", ("kingston", "hyperx", "hyper x")),
-    ("ADATA", ("adata", "xpg")),
-    ("Samsung", ("samsung",)),
-    ("Crucial", ("crucial",)),
-    ("Western Digital", ("western digital", "wd", "wdc")),
-    ("Seagate", ("seagate",)),
-    ("Logitech", ("logitech",)),
-    ("Razer", ("razer",)),
-    ("SteelSeries", ("steelseries", "steel series")),
-)
-
-
 @dataclass(frozen=True)
 class MarketplaceCard:
     item_id: str
@@ -968,59 +887,35 @@ def normalize_card(
     detail = detail or MarketplaceDetail()
     description = detail.description or card.raw_text
     title = normalize_listing_title(card)
-    combined_text = "\n".join(
-        part
-        for part in (
-            title,
-            card.price,
-            clean_card_location(card.location),
-            card.raw_text,
-            detail.description,
-            detail.condition,
-            detail.approx_location,
-            card.image_alt,
-        )
-        if part
-    )
-
-    locations = unique_values(
-        [
-            clean_card_location(card.location),
-            normalize_approx_location(detail.approx_location),
-            *extract_locations(description),
-        ],
-        limit=8,
-    )
-
-    category = extract_category(combined_text)
-    raw_price = card.price_amount if card.price_amount is not None else extract_price(detail.description, card.price)
-
     return {
         "platform": PLATFORM,
         "sourceUrl": canonical_marketplace_url(card),
         "externalId": card.item_id,
         "title": title,
         "description": description,
-        "category": category,
-        "brand": extract_brand(combined_text),
-        "price": normalize_facebook_price(raw_price, category=category, product_text=combined_text),
-        "locationTexts": locations,
-        "conditionText": detail.condition or extract_condition(description),
+        "category": None,
+        "brand": None,
+        "price": None,
+        "locationTexts": [],
+        "conditionText": None,
         "sellerName": detail.seller or card.seller_name or None,
-        "status": structured_card_status(card, combined_text),
+        "status": "UNKNOWN",
         "postedAt": parse_posted_at(detail.posted, fetched_at),
         "firstFetchedAt": fetched_at.isoformat(),
         "lastFetchedAt": fetched_at.isoformat(),
         "images": build_images(card),
+        "_sourceFacts": {
+            "priceText": card.price,
+            "priceAmount": card.price_amount,
+            "location": card.location,
+            "condition": detail.condition,
+            "approxLocation": detail.approx_location,
+            "isLive": card.is_live,
+            "isSold": card.is_sold,
+            "isPending": card.is_pending,
+            "isHidden": card.is_hidden,
+        },
     }
-
-
-def structured_card_status(card: MarketplaceCard, fallback_text: str) -> str:
-    if card.is_sold:
-        return "SOLD"
-    if card.is_hidden or card.is_pending or card.is_live is False:
-        return "UNKNOWN"
-    return extract_status(fallback_text)
 
 
 def normalize_listing_title(card: MarketplaceCard) -> str:
@@ -1048,17 +943,6 @@ def title_from_image_alt(value: str) -> str:
     return value
 
 
-def clean_card_location(value: str) -> str:
-    value = normalize_spaces(value)
-    if not value:
-        return ""
-    if re.search(r"\brp\s*[0-9]", value, flags=re.I):
-        return ""
-    if re.search(r"\b(jt|juta|rb|ribu)\b", value, flags=re.I) and re.search(r"\d", value):
-        return ""
-    return value
-
-
 def canonical_marketplace_url(card: MarketplaceCard) -> str:
     if re.fullmatch(r"\d+", card.item_id):
         return f"https://www.facebook.com/marketplace/item/{card.item_id}/"
@@ -1080,184 +964,6 @@ def build_images(card: MarketplaceCard) -> list[dict[str, Any]]:
             "altText": card.image_alt or None,
         }
     ]
-
-
-def extract_price(description: str, card_price: str) -> int | None:
-    description_price = extract_price_from_text(description, prefer_context=True)
-    if description_price is not None:
-        return description_price
-
-    card_price_lower = card_price.lower()
-    if any(marker in card_price_lower for marker in FREE_PRICE_MARKERS):
-        return None
-    if any(marker in card_price_lower for marker in ASK_PRICE_MARKERS):
-        return None
-
-    return extract_price_from_text(card_price, prefer_context=False)
-
-
-def normalize_facebook_price(amount: int | None, *, category: str | None, product_text: str) -> int | None:
-    """Expand Marketplace's common suffix-less IDR shorthand for relevant products.
-
-    Facebook exposes the seller-entered numeric value verbatim. Indonesian sellers
-    frequently enter 3000 for Rp3,000,000 or 450 for Rp450,000. The listing has
-    already passed RECON relevance filtering, but require recognizable product
-    context again before changing the structured amount.
-    """
-    if amount is None or isinstance(amount, bool) or amount <= 0:
-        return None
-    if amount >= 10_000:
-        return amount if amount <= 200_000_000 else None
-
-    lower = product_text.lower()
-    has_product_context = bool(category) or any(keyword in lower for keyword in DEFAULT_RECON_KEYWORDS)
-    if not has_product_context:
-        return None
-
-    expanded = amount * (1_000_000 if amount < 100 else 1_000)
-    return expanded if 10_000 <= expanded <= 200_000_000 else None
-
-
-def extract_price_from_text(text: str, *, prefer_context: bool) -> int | None:
-    if not text:
-        return None
-
-    candidates: list[int] = []
-    for line in compact_lines(text):
-        lower = line.lower()
-        if prefer_context and not any(word in lower for word in ("harga", "price", "rp", "idr", "$", "nego", "nett", "net")):
-            continue
-        if any(marker in lower for marker in FREE_PRICE_MARKERS) and not re.search(r"\d", lower):
-            continue
-        if any(marker in lower for marker in ASK_PRICE_MARKERS) and not re.search(r"\d", lower):
-            continue
-
-        amount = parse_price_value(line)
-        if amount is not None:
-            candidates.append(amount)
-
-    return candidates[0] if candidates else None
-
-
-def parse_price_value(value: str) -> int | None:
-    value = value.lower().replace("\xa0", " ")
-    value = value.replace("idr", "rp")
-
-    unit_match = re.search(r"(?:rp|\$)?\s*(\d+(?:[.,]\d+)?)\s*(jt|juta|rb|ribu|k)\b", value, flags=re.I)
-    if unit_match:
-        number = float(unit_match.group(1).replace(",", "."))
-        unit = unit_match.group(2).lower()
-        multiplier = 1_000_000 if unit in {"jt", "juta"} else 1_000
-        amount = int(number * multiplier)
-        return amount if 10_000 <= amount <= 200_000_000 else None
-
-    money_match = re.search(r"(?:rp|\$)\s*([0-9][0-9.,]*)", value, flags=re.I)
-    if money_match:
-        amount = parse_grouped_digits(money_match.group(1))
-        return amount if amount and 10_000 <= amount <= 200_000_000 else None
-
-    grouped_match = re.search(r"\b([0-9]{1,3}(?:[.,][0-9]{3})+)\b", value)
-    if grouped_match:
-        amount = parse_grouped_digits(grouped_match.group(1))
-        return amount if amount and 10_000 <= amount <= 200_000_000 else None
-
-    return None
-
-
-def parse_grouped_digits(value: str) -> int | None:
-    separators = re.findall(r"[.,]", value)
-    digits = "".join(ch for ch in value if ch.isdigit())
-    if not digits:
-        return None
-    if not separators and len(digits) <= 3:
-        return None
-    return int(digits)
-
-
-def extract_status(text: str) -> str:
-    lower = text.lower()
-    if any(re.search(rf"\b{re.escape(marker)}\b", lower) for marker in SOLD_MARKERS):
-        return "SOLD"
-    return "AVAILABLE"
-
-
-def extract_category(text: str) -> str | None:
-    lower = normalize_spaces(text).lower()
-    if re.search(r"\b(legion go|steam deck|rog ally|handheld pc)\b", lower):
-        return "Handheld PC"
-    desktop_markers = (
-        r"\b(pc gaming|pc rakitan|komputer gaming|desktop|mini pc|workstation)\b",
-        r"^pc\s+(?:intel|amd|gaming|rakitan|komputer|fullset)\b",
-    )
-    if any(re.search(pattern, lower) for pattern in desktop_markers):
-        return "Desktop PC"
-    laptop_markers = (
-        r"\b(laptop|notebook|thinkpad|macbook|vivobook|zenbook|ideapad|legion|katana|zephyrus|omen|victus|nitro|predator|loq|latitude|aspire|probook|elitebook)\b",
-        r"\b(rog strix|asus tuf|tuf gaming|tuf a15|tuf f15|ideapad gaming|pavilion gaming)\b",
-        r"\b(msi gf63|msi gf65|msi gf66|msi gf76|msi gl63|msi gl65|msi ge66|msi cyborg|msi stealth|msi raider)\b",
-        r"\b(ga401|ga402|g513|g713|g14|g15|g16|fx506|fx507|fa506|fa507|gu603)[a-z0-9-]*\b",
-    )
-    if any(re.search(pattern, lower) for pattern in laptop_markers):
-        return "Laptop"
-    for category, keywords in CATEGORY_PATTERNS:
-        if any(keyword_matches(lower, keyword) for keyword in keywords):
-            return category
-    return None
-
-
-def extract_brand(text: str) -> str | None:
-    lower = normalize_spaces(text).lower()
-    for brand, keywords in BRAND_PATTERNS:
-        if any(positive_brand_keyword_matches(lower, keyword) for keyword in keywords):
-            return brand
-    return None
-
-
-def positive_brand_keyword_matches(text: str, keyword: str) -> bool:
-    keyword_pattern = re.escape(normalize_spaces(keyword).lower()).replace(r"\ ", r"\s+")
-    pattern = re.compile(rf"(?<!\w){keyword_pattern}(?!\w)")
-    for match in pattern.finditer(text):
-        prefix = text[max(0, match.start() - 24) : match.start()]
-        if re.search(r"\b(?:not|no|bukan|tanpa|non)[\s/_-]*$", prefix):
-            continue
-        return True
-    return False
-
-
-def extract_condition(text: str) -> str | None:
-    for line in compact_lines(text):
-        lower = line.lower()
-        if re.search(r"\b(kondisi|condition|bekas|second|2nd|normal|minus)\b", lower) or "like new" in lower:
-            return line[:240]
-    return None
-
-
-def extract_locations(text: str) -> list[str]:
-    locations: list[str] = []
-    for line in compact_lines(text):
-        stripped = trim_value(line)
-        lower = stripped.lower()
-        for prefix in LOCATION_PREFIXES:
-            match = re.match(rf"^{re.escape(prefix)}\s*[:\\-]?\s*(.+)$", stripped, flags=re.I)
-            if match:
-                locations.extend(split_locations(match.group(1)))
-                break
-        if "perkiraan lokasi" in lower:
-            locations.append(normalize_approx_location(stripped))
-    return unique_values(locations, limit=8)
-
-
-def split_locations(value: str) -> list[str]:
-    value = trim_value(value)
-    value = re.sub(r"\b(?:bisa|prefer|only|aja|dan|sekitarnya)?\s*(?:kirim|lewat|ekspedisi|paket|juga).*$", "", value, flags=re.I)
-    parts = re.split(r"\s*(?:,|/|;|\||&|\+|\bdan\b|\batau\b|\bor\b)\s*", value, flags=re.I)
-    return [part[:160] for part in (trim_value(part) for part in parts) if part]
-
-
-def normalize_approx_location(value: str) -> str:
-    value = value.replace("· Perkiraan lokasi", "")
-    value = value.replace("Perkiraan lokasi", "")
-    return trim_value(value)
 
 
 def parse_posted_at(value: str, fallback: datetime) -> str | None:
@@ -1837,7 +1543,7 @@ def enrich_listings_with_ai(
     except ImportError as exc:
         log_event(log_path, {"source": "facebook", "status": "ai_parse_unavailable", "error": str(exc)})
         print(f"NVIDIA AI parsing unavailable: {exc}", file=sys.stderr)
-        return listings
+        raise
 
     try:
         return enrich_listings_with_nvidia(
@@ -1846,12 +1552,11 @@ def enrich_listings_with_ai(
             batch_size=args.ai_batch_size,
             rate_limit_seconds=args.ai_rate_limit,
             timeout=args.ai_timeout,
-            prefer_ai=args.ai_prefer,
         )
     except NvidiaParserError as exc:
         log_event(log_path, {"source": "facebook", "status": "ai_parse_failed", "error": str(exc)})
-        print(f"NVIDIA AI parsing skipped: {exc}", file=sys.stderr)
-        return listings
+        print(f"NVIDIA AI parsing failed; listings will not be ingested: {exc}", file=sys.stderr)
+        raise
 
 
 def guarded_run_once(
@@ -2113,7 +1818,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--no-state", action="store_true", help="Do not read/write state, lock, or run logs.")
     parser.add_argument("--lock-stale-seconds", type=int, default=900, help="Remove lock files older than this many seconds.")
     parser.add_argument("--ai-parse", action="store_true", help="Enrich parsed listing fields with NVIDIA AI extraction.")
-    parser.add_argument("--ai-prefer", action="store_true", help="Let AI values replace rule-parser values when available.")
     parser.add_argument("--ai-model", default=None, help="NVIDIA model ID for AI parsing.")
     parser.add_argument("--ai-batch-size", type=int, default=5, help="Listings per NVIDIA parser request.")
     parser.add_argument("--ai-rate-limit", type=float, default=2.0, help="Seconds between NVIDIA parser requests.")

@@ -16,9 +16,9 @@ Read this file with the root `AGENTS.md` when changing the Next.js/tRPC API.
 - `listings.facets` returns bounded category, location, and condition summaries.
   Category summaries include count, public-safe minimum price, and an optional
   HTTPS cover image. Facets are navigation aids, not mutable catalog metadata.
-- `listings.version` returns only an opaque revision derived from listing insert
-  state. The UI polls it separately and must not refetch visible feed data until
-  the user activates the new-findings control.
+- `listings.version` returns an opaque revision plus the current listing count.
+  The UI uses the count delta to label unseen inserts, polls separately, and must
+  not refetch visible feed data until the user activates the new-items control.
 - Do not add total counts to the cursor feed. They add a second changing query
   and are not needed for infinite scrolling.
 
@@ -67,7 +67,7 @@ interpolate a raw search pattern or apply client-only filtering to one page.
 - Unexpected facet failures must return the generic error message "Unable to
   load listing filters." with the same diagnostic restrictions.
 - Unexpected listing-version failures must return "Unable to check for new
-  listings" and must not expose row counts, timestamps, or database details.
+  listings" and must not expose timestamps or database details.
 - `/api/*` responses receive strict JSON-oriented CSP and
   `Cache-Control: no-store`; the application-wide CSP remains report-only until
   UI nonce/hash work is implemented.

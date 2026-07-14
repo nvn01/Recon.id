@@ -30,8 +30,8 @@ old probe scripts or historical access experiments.
   scheduled path.
 - Preserve TLS verification. Transient certificate or transport failures get
   bounded retries/cooldowns, never `verify=false`.
-- AI/NVIDIA parsing is optional enrichment. It is not required for discovery or
-  database writes.
+- Discovery only collects source identity, raw seller text, media, and timestamps.
+  Scheduled semantic parsing is AI-only and required before database writes.
 
 ### Instagram
 
@@ -42,15 +42,14 @@ old probe scripts or historical access experiments.
   headers, a persistent browser profile, or login credentials.
 - Canonicalize and deduplicate by shortcode, then sort by source timestamp or
   numeric post ID so pinned posts do not control ordering.
-- Keep account-specific sold markers deterministic and scoped near the listing
-  header. Do not infer sold state from generic footer or marketing text.
 - `browser_wait_ms` is a maximum event-pump budget. Poll and return when timeline
   data arrives rather than adding a fixed sleep.
 - Keep `--instagram-browser-mode headless` only as a diagnostic A/B control. The
   proven Debian production path is headed Chrome under Xvfb.
-- Scheduled Instagram jobs enable batched NVIDIA enrichment. Rule parsing runs
-  first; AI fills missing database-backed fields such as category and brand and
-  must degrade without blocking storage when the model is unavailable.
+- Scheduled Instagram jobs send raw post candidates to batched NVIDIA parsing.
+  AI decides whether each post is a listing and owns title, category, brand,
+  price, condition, location, and status. If parsing fails, do not write the
+  incomplete candidates.
 
 ### Facebook Marketplace
 
@@ -67,11 +66,10 @@ old probe scripts or historical access experiments.
   `no_new_data`; only missing Marketplace candidates or a real access/login
   failure may set the connector-wide cooldown.
 - Scheduled discovery does not require login, persistent profile state,
-  scrolling, detail-page fetches, seller actions, or AI enrichment.
-- Scheduled Facebook jobs use batched NVIDIA enrichment after deterministic
-  parsing. Structured prices below 10,000 are expanded only for recognizable
-  RECON products: values below 100 represent millions, while values from 100 to
-  9,999 represent thousands. Preserve full rupiah amounts at 10,000 or above.
+  scrolling, detail-page fetches, or seller actions.
+- Scheduled Facebook jobs use batched NVIDIA semantic parsing. Collector fields
+  such as card price, location, and sold flags are source evidence only; local
+  code must not translate them into database semantic values.
 - Persistent profile and login CLI modes are diagnostics only. Never commit
   `.facebook-profile*`.
 
@@ -169,7 +167,7 @@ Before committing scraper changes:
 
 1. Trace imports, CLI entrypoints, Compose references, workflow references, and
    tests before removing a file.
-2. Keep connector discovery cheap; enrichment remains optional and new-only.
+2. Keep connector discovery cheap; AI semantic parsing is required and batched.
 3. Preserve the shared normalized contract and idempotent write behavior.
 4. Run the full scraper unit suite and Ruff.
 5. For browser/network changes, build through GitHub Actions and validate the

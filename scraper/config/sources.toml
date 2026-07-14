@@ -26,6 +26,7 @@ lock_stale_seconds = 7200
 
 [scheduler.reddit]
 enabled = true
+ai_parse = true
 cadence_seconds = 300
 stagger_seconds = 75
 jitter_seconds = 10
@@ -47,7 +48,6 @@ enabled = true
 ai_parse = true
 # Let the stricter Facebook AI reviewer correct populated-but-wrong rule values.
 # This affects enrichment precedence only; collection and browser behavior stay unchanged.
-ai_prefer = true
 # Rotate reviewed hot targets one at a time instead of hammering all Marketplace
 # searches together. With the current hot target count this yields about one
 # browser-backed Marketplace search per minute, while each target repeats slower.

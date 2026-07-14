@@ -49,7 +49,7 @@ describe("listingsRouter.feed", () => {
 });
 
 describe("listingsRouter.version", () => {
-  it("exposes only the opaque listing revision", async () => {
+  it("exposes the opaque listing revision and current count", async () => {
     const caller = createCaller(
       vi.fn().mockResolvedValue([
         {
@@ -61,8 +61,9 @@ describe("listingsRouter.version", () => {
 
     const result = await caller.version();
 
-    expect(Object.keys(result)).toEqual(["revision"]);
+    expect(Object.keys(result)).toEqual(["revision", "totalCount"]);
     expect(result.revision).toMatch(/^[\w-]{43}$/);
+    expect(result.totalCount).toBe(7);
   });
 
   it("does not expose unexpected database error details", async () => {

@@ -8,27 +8,12 @@ from scraper.instagram.embedded import extract_profile_posts
 from scraper.instagram.instagram import (
     InstagramFetchError,
     capture_timeline_response,
-    extract_instagram_brand,
-    extract_instagram_category,
     fetch_profile_resilient,
     wait_for_profile_posts,
 )
 
 
 class InstagramFetchTests(unittest.TestCase):
-    def test_staging_product_titles_have_deterministic_category_and_brand_fallbacks(self):
-        cases = (
-            ("PSU XPG CORE REACTOR II VE 650 WATT GOLD", "Power Supply", "ADATA"),
-            ("Attack Shark R3", "Mouse", "Attack Shark"),
-            ("CORSAIR K100 RGB", "Keyboard", "Corsair"),
-            ("BENQ zowie xl2411k", "Monitor", "BenQ"),
-        )
-
-        for title, expected_category, expected_brand in cases:
-            with self.subTest(title=title):
-                self.assertEqual(extract_instagram_category(title, title), expected_category)
-                self.assertEqual(extract_instagram_brand(title, title), expected_brand)
-
     def test_profile_wait_keeps_pumping_until_delayed_timeline_response(self):
         timeline_payloads: list[dict] = []
         delayed_payload = {

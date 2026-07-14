@@ -17,7 +17,6 @@ from scraper.facebook.facebook_marketplace import (
     build_search_url,
     card_from_embedded_record,
     collect_target_cards,
-    extract_brand,
     load_source_targets,
     normalize_card,
     run_once,
@@ -173,21 +172,6 @@ class FacebookDiscoveryTests(unittest.TestCase):
             "?sortBy=creation_time_descend&radius=500",
         )
 
-    def test_brand_extraction_ignores_negated_competitor_mentions(self):
-        titles = (
-            "PC Komputer Gaming Set AMD RX 6800 XT High End not RTX not intel 4070 5070",
-            "PC AMD Ryzen bukan Intel",
-            "PC AMD Ryzen tanpa Intel",
-            "PC AMD Ryzen non-Intel",
-        )
-
-        for title in titles:
-            with self.subTest(title=title):
-                self.assertEqual(extract_brand(title), "AMD")
-
-    def test_brand_extraction_keeps_positive_intel_mentions(self):
-        self.assertEqual(extract_brand("PC gaming Intel Core i7 RTX 4070"), "Intel")
-
     def test_detail_fetch_uses_canonical_facebook_item_url(self):
         card = MarketplaceCard(
             item_id="123",
@@ -237,47 +221,16 @@ class FacebookDiscoveryTests(unittest.TestCase):
 
         self.assertEqual([record["itemId"] for record in records], ["4471077899839221"])
 
-    def test_structured_sold_status_and_exact_price_survive_normalization(self):
+    def test_source_metadata_survives_ai_candidate_normalization(self):
         [record] = extract_marketplace_records([json.dumps(marketplace_payload(sold=True))], limit=10)
         card = card_from_embedded_record(record)
 
         listing = normalize_card(card, None, datetime(2026, 7, 10, tzinfo=timezone.utc))
 
-        self.assertEqual(listing["price"], 14500000)
-        self.assertEqual(listing["status"], "SOLD")
+        self.assertIsNone(listing["price"])
+        self.assertEqual(listing["status"], "UNKNOWN")
         self.assertEqual(listing["sellerName"], "Public Seller")
         self.assertEqual(listing["images"][0]["sourceUrl"], "https://cdn.example/facebook.jpg")
-
-    def test_structured_facebook_shorthand_prices_expand_using_product_context(self):
-        cases = (
-            ("PS4 Resmi", 3_000, 3_000_000, "Game Console"),
-            ("PS4 slim seri 20 500gb", 2_650, 2_650_000, "Game Console"),
-            ("PlayStation portable", 390, 390_000, "Game Console"),
-            ("PlayStation", 450, 450_000, "Game Console"),
-            ("PS5 slim console disc edition", 11, 11_000_000, "Game Console"),
-            ("Laptop axioo mybook 14 lite", 400, 400_000, "Laptop"),
-        )
-
-        for title, raw_price, expected_price, expected_category in cases:
-            with self.subTest(title=title, raw_price=raw_price):
-                card = MarketplaceCard(
-                    item_id="123",
-                    url="https://www.facebook.com/marketplace/item/123/",
-                    price=f"IDR{raw_price:,}",
-                    title=title,
-                    location="Jakarta",
-                    is_newly_listed=True,
-                    image_url="",
-                    image_alt="",
-                    raw_text=title,
-                    price_amount=raw_price,
-                )
-
-                listing = normalize_card(card, None, datetime(2026, 7, 12, tzinfo=timezone.utc))
-
-                self.assertEqual(listing["price"], expected_price)
-                self.assertEqual(listing["category"], expected_category)
-
 
 if __name__ == "__main__":
     unittest.main()

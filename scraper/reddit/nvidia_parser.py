@@ -13,24 +13,26 @@ DEFAULT_BASE_URL = "https://integrate.api.nvidia.com/v1"
 DEFAULT_MODEL = "nvidia/nemotron-3-nano-30b-a3b"
 
 SYSTEM_PROMPT = """
-You are RECON's strict listing-enrichment reviewer for Indonesian second-hand technology listings.
+You are RECON's strict semantic parser for Indonesian second-hand technology listings.
 You receive batches from Reddit, Instagram, or Facebook Marketplace and must return only JSON that
 matches the supplied schema. Do not use Markdown, explanations, notes, confidence, or extra keys.
 
 Output discipline:
 - Return exactly one result for every input item, with the exact same externalId. Do not omit,
   duplicate, rename, reorder across items, or invent an externalId.
-- Treat ruleParsed values as provisional candidates. Keep a candidate when it is correct, but
-  correct it when the title or description shows that it is wrong.
-- Inspect the title, description, platform, and ruleParsed values together. Do not return null just
+- All semantic fields are AI-owned. There is no local rule-parser output to preserve or prefer.
+- Inspect the title, description, platform, and sourceFacts together. Do not return null just
   to avoid reasoning. Make the best evidence-based inference unless a rule below explicitly requires
   null.
 - Never copy a whole title, description, URL, phone number, seller advertisement, or specification
   block into conditionText, locationTexts, category, or brand.
+- isListing is true only when the item is actually offering a product for sale. It is false for
+  memes, announcements, reviews, promotions without a specific offered item, and wanted-to-buy posts.
+- title is a concise product title derived from the seller text. Do not use a caption paragraph,
+  promotional slogan, price, location, or contact instruction as the title.
 - price is the seller's asking price normalized to integer rupiah. Market knowledge may choose the
   scale of a seller-written shorthand, but must not invent a different base asking price.
-- status must be AVAILABLE, SOLD, UNKNOWN, or null. Preserve a valid ruleParsed status unless the
-  listing itself contains a clear contradictory sold or availability signal.
+- status must be AVAILABLE, SOLD, UNKNOWN, or null and must come from the listing evidence.
 - category is the broad type of the primary item being sold. brand is the manufacturer of that
   primary item, not the seller and not a component mentioned in its specifications.
 
@@ -39,16 +41,13 @@ Facebook Marketplace rules:
   never treat the entire card line as one extracted field.
 
 - conditionText:
-  1. If explicit wording exists, extract a concise condition phrase of at most 80 characters.
-  2. "mulus normal no minus" -> "Bekas - mulus, normal, no minus".
-  3. "minus layar" -> "Bekas - minus layar".
-  4. "baru", "BNIB", "BNOB", or "masih segel" -> a concise Baru/BNIB/BNOB condition matching
-     the seller's wording.
-  5. "second", "bekas", or "pemakaian" without more detail ->
-     "Bekas - detail kondisi tidak disebutkan".
-  6. If no condition evidence exists, infer that a normal Facebook Marketplace second-hand listing
-     is "Bekas - detail kondisi tidak disebutkan". Do not guess "mulus", "normal", a numeric grade,
-     or "no minus" without evidence.
+  1. Normalize conditionText to exactly one of: "Baru / BNIB", "Like New", "Bekas - baik",
+     "Bekas - normal", "Bekas - minus", or null.
+  2. Use "Bekas - baik" for explicit mulus/no-minus/very-good wording.
+  3. Use "Bekas - normal" for ordinary used/second/pemakaian wording without a defect.
+  4. Use "Bekas - minus" when a defect, damage, or repair need is stated.
+  5. Use "Baru / BNIB" for baru, BNIB, BNOB, sealed, or equivalent unused wording.
+  6. Use null when no condition evidence exists. Do not invent condition quality.
   7. A condition must not be the product title, specs, location, price, contact instruction, URL, or
      seller promotion.
 
@@ -70,7 +69,7 @@ Facebook Marketplace rules:
 
 - locationTexts:
   1. Return only public geographic place names such as city, regency, district, or area.
-  2. Keep a valid ruleParsed location, but remove values that are actually product text.
+  2. Return concise canonical area names, not the seller's whole location sentence.
   3. "COD Laptop Second Murah ..." does not make "Laptop Second Murah ..." a location. COD is a
      transaction method unless followed by a real place name.
   4. Never return a phone number, price, delivery method, product title, seller slogan, or full address.
@@ -88,9 +87,8 @@ Facebook Marketplace rules:
   4. Do not assume every value below 100 means millions. Steam Deck 65 can mean 6500000 rather than
      65000000; a PS4 controller 85 can mean 85000 rather than 85000000.
   5. Standard shorthand remains exact: 9.6jt -> 9600000, 3.5 juta -> 3500000, 350rb -> 350000.
-  6. If ruleParsed price has an implausible scale but the seller's raw number and product make one
-     scale clearly more likely, return the corrected scale. If the number is a contact placeholder,
-     return null instead of estimating a market price.
+  6. If the seller's raw number and product make one scale clearly more likely, return that normalized
+     scale. If the number is a contact placeholder, return null instead of estimating a market price.
 
 Instagram-specific examples remain: Rode VideoMic -> brand Rode and category Audio or Peripheral;
 Xiaomi 13 Ultra -> brand Xiaomi and category Smartphone; Call of Duty / Black Ops -> brand Activision
@@ -113,12 +111,24 @@ PARSE_SCHEMA: dict[str, Any] = {
                 "type": "object",
                 "properties": {
                     "externalId": {"type": "string"},
+                    "isListing": {"type": "boolean"},
+                    "title": {"type": "string"},
                     "price": {"type": ["integer", "null"]},
                     "locationTexts": {
                         "type": "array",
                         "items": {"type": "string"},
                     },
-                    "conditionText": {"type": ["string", "null"]},
+                    "conditionText": {
+                        "type": ["string", "null"],
+                        "enum": [
+                            "Baru / BNIB",
+                            "Like New",
+                            "Bekas - baik",
+                            "Bekas - normal",
+                            "Bekas - minus",
+                            None,
+                        ],
+                    },
                     "status": {
                         "type": ["string", "null"],
                         "enum": ["AVAILABLE", "SOLD", "UNKNOWN", None],
@@ -128,6 +138,8 @@ PARSE_SCHEMA: dict[str, Any] = {
                 },
                 "required": [
                     "externalId",
+                    "isListing",
+                    "title",
                     "price",
                     "locationTexts",
                     "conditionText",
@@ -155,7 +167,6 @@ def enrich_listings_with_nvidia(
     batch_size: int = 5,
     rate_limit_seconds: float = 2.0,
     timeout: int = 45,
-    prefer_ai: bool = False,
 ) -> list[dict[str, Any]]:
     load_dotenv_if_present()
     api_key = os.environ.get("NVIDIA_API_KEY", "").strip()
@@ -172,7 +183,7 @@ def enrich_listings_with_nvidia(
         if index:
             time.sleep(max(0.0, rate_limit_seconds))
         analyses = client.parse_batch(batch)
-        enriched.extend(merge_ai_results(batch, analyses, prefer_ai=prefer_ai))
+        enriched.extend(merge_ai_results(batch, analyses))
     return enriched
 
 
@@ -250,13 +261,14 @@ def build_prompt(listings: list[dict[str, Any]]) -> str:
                 "externalId": listing.get("externalId") or "",
                 "title": listing.get("title") or "",
                 "description": listing.get("description") or "",
-                "ruleParsed": {
-                    "price": listing.get("price"),
-                    "locationTexts": listing.get("locationTexts") or [],
-                    "conditionText": listing.get("conditionText"),
-                    "status": listing.get("status"),
-                    "category": listing.get("category"),
-                    "brand": listing.get("brand"),
+                "sourceFacts": {
+                    "sellerName": listing.get("sellerName"),
+                    "postedAt": listing.get("postedAt"),
+                    **(
+                        listing.get("_sourceFacts")
+                        if isinstance(listing.get("_sourceFacts"), dict)
+                        else {}
+                    ),
                 },
             }
         )
@@ -272,58 +284,45 @@ def build_prompt(listings: list[dict[str, Any]]) -> str:
 def merge_ai_results(
     listings: list[dict[str, Any]],
     analyses: list[dict[str, Any]],
-    *,
-    prefer_ai: bool,
 ) -> list[dict[str, Any]]:
     by_id = {
         str(item.get("externalId") or ""): item
         for item in analyses
         if isinstance(item, dict)
     }
+    expected_ids = [str(listing.get("externalId") or "") for listing in listings]
+    if len(by_id) != len(expected_ids) or set(by_id) != set(expected_ids):
+        raise NvidiaParserError("NVIDIA parser did not return exactly one result for every listing")
+
     merged: list[dict[str, Any]] = []
     for listing in listings:
         item = dict(listing)
         analysis = by_id.get(str(item.get("externalId") or ""))
         if analysis:
-            apply_field(item, analysis, "price", prefer_ai=prefer_ai)
-            apply_field(item, analysis, "locationTexts", prefer_ai=prefer_ai)
-            apply_field(item, analysis, "conditionText", prefer_ai=prefer_ai)
-            apply_field(item, analysis, "status", prefer_ai=prefer_ai)
-            apply_field(item, analysis, "category", prefer_ai=prefer_ai)
-            apply_field(item, analysis, "brand", prefer_ai=prefer_ai)
+            if analysis.get("isListing") is not True:
+                continue
+            item["title"] = blank_to_none(analysis.get("title")) or item["title"]
+            item["price"] = normalize_ai_price(analysis.get("price"))
+            item["locationTexts"] = normalize_ai_locations(analysis.get("locationTexts"))
+            item["conditionText"] = normalize_ai_condition(analysis.get("conditionText"))
+            item["status"] = normalize_ai_status(analysis.get("status")) or "UNKNOWN"
+            item["category"] = blank_to_none(analysis.get("category"))
+            item["brand"] = blank_to_none(analysis.get("brand"))
+            item.pop("_sourceFacts", None)
         merged.append(item)
     return merged
 
 
-def apply_field(item: dict[str, Any], analysis: dict[str, Any], field: str, *, prefer_ai: bool) -> None:
-    raw_value = analysis.get(field)
-    if (
-        field == "price"
-        and prefer_ai
-        and "price" in analysis
-        and raw_value is None
-        and str(item.get("platform") or "").upper() == "FACEBOOK"
-    ):
-        # A successfully parsed AI item uses null as an explicit decision that a
-        # Facebook price is free, contact-only, or a dummy placeholder. Request
-        # failures never reach this branch, so they cannot erase an existing value.
-        item[field] = None
-        return
-
-    value = raw_value
-    if field == "price":
-        value = normalize_ai_price(value)
-    elif field == "locationTexts":
-        value = normalize_ai_locations(value)
-    elif field == "status":
-        value = normalize_ai_status(value)
-    else:
-        value = blank_to_none(value)
-
-    if value is None or value == []:
-        return
-    if prefer_ai or item.get(field) in (None, "", "UNKNOWN", []):
-        item[field] = value
+def normalize_ai_condition(value: Any) -> str | None:
+    condition = blank_to_none(value)
+    allowed = {
+        "Baru / BNIB",
+        "Like New",
+        "Bekas - baik",
+        "Bekas - normal",
+        "Bekas - minus",
+    }
+    return condition if condition in allowed else None
 
 
 def normalize_ai_price(value: Any) -> int | None:

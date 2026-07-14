@@ -39,6 +39,7 @@ export function ReconMark() {
 
 export type FeedRefreshControl = {
   hasNewListings: boolean;
+  unseenCount: number;
   isRefreshing: boolean;
   onRefresh: () => void;
 };
@@ -115,9 +116,10 @@ export function ReconHeader({
               <CloseIcon />
               <span className="sr-only">Hapus pencarian</span>
             </button>
-          ) : (
-            <span className="search-hint">Cari</span>
-          )}
+          ) : null}
+          <button type="submit" className="search-hint" aria-label="Cari listing">
+            Cari
+          </button>
         </form>
 
         <div className="header-actions">
@@ -138,7 +140,7 @@ export function ReconHeader({
                 refreshControl.isRefreshing
                   ? "Memperbarui listing"
                   : refreshControl.hasNewListings
-                    ? "Tampilkan temuan baru"
+                    ? `Tampilkan ${refreshControl.unseenCount} item baru`
                     : "Periksa listing baru"
               }
             >
@@ -149,7 +151,9 @@ export function ReconHeader({
               )}
               {refreshControl.hasNewListings &&
               !refreshControl.isRefreshing ? (
-                <span className="feed-refresh-label">Temuan baru</span>
+                <span className="feed-refresh-label">
+                  {refreshControl.unseenCount} Item baru
+                </span>
               ) : null}
             </button>
           ) : (

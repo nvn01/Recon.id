@@ -18,6 +18,7 @@ export async function getListingVersion(db: ListingVersionDatabase) {
 
   return {
     revision: createHash("sha256").update(fingerprint).digest("base64url"),
+    totalCount: Number.parseInt(row.rowCount, 10) || 0,
   };
 }
 

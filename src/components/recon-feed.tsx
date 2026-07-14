@@ -16,6 +16,7 @@ import { ReconHeader } from "~/components/recon-header";
 import { RefreshArrowIcon } from "~/components/refresh-arrow-icon";
 import { stepCarouselIndex } from "~/data/carousel-navigation";
 import {
+  countUnseenListings,
   hasUnseenListingRevision,
   manualListingRefreshQueryOptions,
 } from "~/data/listing-refresh";
@@ -491,7 +492,12 @@ function ListingCard({
   priority?: boolean;
   onOpen: (listing: Listing) => void;
 }) {
-  const images = listing.images;
+  const [failedImageUrls, setFailedImageUrls] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const images = listing.images.filter(
+    (image) => !failedImageUrls.has(image.sourceUrl),
+  );
   const [activeImage, setActiveImage] = useState(0);
   const intentTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const carouselTimer = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -558,6 +564,12 @@ function ListingCard({
               referrerPolicy="no-referrer"
               onError={(event) => {
                 event.currentTarget.style.display = "none";
+                setFailedImageUrls((current) => {
+                  const next = new Set(current);
+                  next.add(activeImageRecord.sourceUrl);
+                  return next;
+                });
+                setActiveImage(0);
               }}
               sizes="(max-width: 520px) 48vw, (max-width: 900px) 32vw, (max-width: 1280px) 25vw, 20vw"
             />
@@ -676,12 +688,20 @@ function ListingDialog({
     listingId: string | null;
     index: number;
   }>({ listingId: null, index: 0 });
+  const [failedImages, setFailedImages] = useState<{
+    listingId: string | null;
+    urls: Set<string>;
+  }>({ listingId: null, urls: new Set() });
   const description = listing
     ? previewDescription(listing.description)
     : { text: "", isTruncated: false };
-  const images = listing?.images ?? [];
+  const images = (listing?.images ?? []).filter(
+    (image) =>
+      failedImages.listingId !== listing?.id ||
+      !failedImages.urls.has(image.sourceUrl),
+  );
   const activeImage =
-    carouselState.listingId === listing?.id
+    images.length > 0 && carouselState.listingId === listing?.id
       ? Math.min(carouselState.index, images.length - 1)
       : 0;
   const hasMultipleImages = images.length > 1;
@@ -694,7 +714,7 @@ function ListingDialog({
   }
 
   function goToImage(index: number) {
-    if (!listing) return;
+    if (!listing || images.length === 0) return;
     setCarouselState({
       listingId: listing.id,
       index: Math.min(images.length - 1, Math.max(0, index)),
@@ -799,6 +819,15 @@ function ListingDialog({
                     referrerPolicy="no-referrer"
                     onError={(event) => {
                       event.currentTarget.style.display = "none";
+                      setFailedImages((current) => {
+                        const urls =
+                          current.listingId === listing.id
+                            ? new Set(current.urls)
+                            : new Set<string>();
+                        urls.add(activeImageRecord.sourceUrl);
+                        return { listingId: listing.id, urls };
+                      });
+                      goToImage(0);
                     }}
                     sizes="(max-width: 760px) 100vw, 54vw"
                   />
@@ -937,6 +966,7 @@ export function ReconFeed({ scope }: ReconFeedProps) {
   const utils = api.useUtils();
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [hasNewListings, setHasNewListings] = useState(false);
+  const [unseenListingCount, setUnseenListingCount] = useState(0);
   const [refreshAnnouncement, setRefreshAnnouncement] = useState("");
   const [selectedListing, setSelectedListing] = useState<Listing | null>(null);
   const query = (searchParams.get("q") ?? "").trim().slice(0, 80);
@@ -973,13 +1003,18 @@ export function ReconFeed({ scope }: ReconFeedProps) {
     staleTime: 0,
   });
   const seenListingRevision = useRef(versionQuery.data?.revision ?? null);
+  const seenListingCount = useRef<number | null>(
+    versionQuery.data?.totalCount ?? null,
+  );
 
   useEffect(() => {
     const currentRevision = versionQuery.data?.revision ?? null;
-    if (!currentRevision) return;
+    const currentCount = versionQuery.data?.totalCount;
+    if (!currentRevision || currentCount === undefined) return;
 
     if (!seenListingRevision.current) {
       seenListingRevision.current = currentRevision;
+      seenListingCount.current = currentCount;
       return;
     }
 
@@ -989,12 +1024,19 @@ export function ReconFeed({ scope }: ReconFeedProps) {
         currentRevision,
       )
     ) {
-      setHasNewListings(true);
-      setRefreshAnnouncement(
-        "Temuan baru tersedia. Gunakan tombol di bagian atas untuk memuatnya.",
+      const unseenCount = countUnseenListings(
+        seenListingCount.current,
+        currentCount,
       );
+      setUnseenListingCount(unseenCount);
+      setHasNewListings(unseenCount > 0);
+      if (unseenCount > 0) {
+        setRefreshAnnouncement(
+          `${unseenCount} item baru tersedia. Gunakan tombol di bagian atas untuk memuatnya.`,
+        );
+      }
     }
-  }, [versionQuery.data?.revision]);
+  }, [versionQuery.data?.revision, versionQuery.data?.totalCount]);
   const listings = useMemo(() => {
     const uniqueListings = new Map<string, Listing>();
     for (const page of feedQuery.data?.pages ?? []) {
@@ -1063,8 +1105,10 @@ export function ReconFeed({ scope }: ReconFeedProps) {
       ]);
       if (revisionResult.data?.revision) {
         seenListingRevision.current = revisionResult.data.revision;
+        seenListingCount.current = revisionResult.data.totalCount;
       }
       setHasNewListings(false);
+      setUnseenListingCount(0);
       setRefreshAnnouncement("Temuan terbaru sudah dimuat.");
     } catch {
       setRefreshAnnouncement("Temuan belum berhasil diperbarui. Coba lagi.");
@@ -1078,6 +1122,7 @@ export function ReconFeed({ scope }: ReconFeedProps) {
       <ReconHeader
         refreshControl={{
           hasNewListings,
+          unseenCount: unseenListingCount,
           isRefreshing,
           onRefresh: () => void refreshFeed(),
         }}

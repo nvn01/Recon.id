@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import html
 import json
-import re
 import sys
 import time
 import urllib.error
@@ -17,12 +16,10 @@ from typing import Any
 
 try:
     from scraper.instagram.embedded import extract_profile_posts
-    from scraper.reddit import reddit as rule_parser
     from scraper.shared.runtime import RetryPolicy, retry_after_seconds_from_headers, retry_call
 except ImportError:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
     from instagram.embedded import extract_profile_posts
-    from reddit import reddit as rule_parser
     from shared.runtime import RetryPolicy, retry_after_seconds_from_headers, retry_call
 
 
@@ -34,67 +31,6 @@ DEFAULT_USER_AGENT = (
     "Chrome/126.0 Safari/537.36"
 )
 INSTAGRAM_APP_ID = "936619743392459"
-
-SALE_MARKERS = (
-    "harga",
-    "price",
-    "condition",
-    "kondisi",
-    "lokasi",
-    "location",
-    "garansi",
-    "ready",
-    "consign price",
-    "code item",
-    "kelengkapan",
-    "rp",
-    "idr",
-)
-SOLD_MARKERS = ("sold out", "soldout", "sold", "terjual", "laku", "booked")
-ACCOUNT_SOLD_MARKERS: dict[str, tuple[str, ...]] = {
-    "thelazytitip": ("sold",),
-    "consigngaming": ("soldout", "sold out"),
-    "gamecentral.id": ("sold out",),
-}
-INSTAGRAM_CATEGORY_PATTERNS: tuple[tuple[str, tuple[str, ...]], ...] = (
-    ("Desktop PC", ("fullset pc", "pc gaming", "pc rakitan", "desktop pc", "komputer gaming")),
-    ("PC Case", ("case pc", "pc case", "casing pc", "chassis")),
-    ("Monitor", ("monitor", "zowie xl", "240hz", "144hz", "165hz")),
-    ("Keyboard", ("keyboard", "k100 rgb", "k70 rgb", "ducky one", "keychron")),
-    ("Mouse", ("mouse", "attack shark", "razer viper", "deathadder")),
-    ("Power Supply", ("power supply", "psu", "core reactor")),
-    ("Game Console", ("playstation", "ps4", "ps5", "xbox", "nintendo switch")),
-    ("Motherboard", ("motherboard", "mainboard", "mobo", "h610", "h610m", "b450", "b550", "b650", "x570", "z690", "z790")),
-    ("Smartphone", ("xiaomi", "redmi", "poco", "iphone", "samsung galaxy", "oppo", "vivo", "realme")),
-    ("Game", ("call of duty", "black ops", "final fantasy", "complete edition", "ps4 game", "ps5 game", "nintendo switch game")),
-    ("Controller", ("controller", "gamepad", "dualsense", "dualshock", "joycon", "joy-con", "genki sase", "genki shadowcast")),
-    ("Drawing Tablet", ("drawing tablet", "pen tablet", "veikk", "wacom", "huion")),
-    ("Audio", ("speaker", "maono", "microphone", "mic ", "videomic")),
-    ("Peripheral", ("headset", "headphone", "earphone", "webcam", "moza", "steering wheel", "pedals")),
-)
-INSTAGRAM_BRAND_PATTERNS: tuple[tuple[str, tuple[str, ...]], ...] = (
-    ("Corsair", ("corsair",)),
-    ("BenQ", ("benq", "zowie")),
-    ("Huawei", ("huawei",)),
-    ("Ducky", ("ducky",)),
-    ("RayNeo", ("rayneo",)),
-    ("Cube Gaming", ("cube gaming",)),
-    ("Attack Shark", ("attack shark",)),
-    ("ADATA", ("adata", "xpg")),
-    ("Rode", ("rode", "videomic")),
-    ("Xiaomi", ("xiaomi", "redmi", "poco")),
-    ("Activision", ("call of duty", "black ops")),
-    ("Square Enix", ("final fantasy",)),
-    ("Genki", ("genki",)),
-    ("Moza", ("moza",)),
-    ("Veikk", ("veikk",)),
-    ("Wacom", ("wacom",)),
-    ("Huion", ("huion",)),
-    ("Maono", ("maono",)),
-    ("Sony", ("sony",)),
-    ("Sharp", ("sharp",)),
-)
-
 
 @dataclass(frozen=True)
 class InstagramAccountResult:
@@ -160,12 +96,7 @@ def run_accounts(
             selected: list[dict[str, Any]] = []
             skipped_count = 0
             for post in posts[:max_posts_per_account]:
-                if not is_listing_post(post):
-                    skipped_count += 1
-                    continue
                 selected.append(normalize_post(account, post, fetched_at))
-                if len(selected) >= limit:
-                    break
             listings.extend(selected)
             results.append(
                 InstagramAccountResult(
@@ -290,7 +221,16 @@ def fetch_profile_browser(
             try:
                 page = context.new_page()
                 timeline_payloads: list[dict[str, Any]] = []
-                page.on("response", lambda candidate: capture_timeline_response(candidate, timeline_payloads))
+
+                def handle_response(candidate: Any) -> None:
+                    try:
+                        capture_timeline_response(candidate, timeline_payloads)
+                    except PlaywrightError:
+                        # A response callback can finish after navigation or context
+                        # teardown. That race must not fail the whole account run.
+                        return
+
+                page.on("response", handle_response)
                 response = page.goto(
                     f"https://www.instagram.com/{username}/",
                     wait_until="domcontentloaded",
@@ -306,9 +246,12 @@ def fetch_profile_browser(
                     wait_ms=wait_ms,
                 )
                 if not posts:
+                    final_path = urllib.parse.urlparse(page.url).path[:160]
+                    page_title = page.title()[:120]
                     raise InstagramFetchError(
                         "Instagram profile browser did not expose timeline posts "
-                        f"(scripts={script_count}, timelineResponses={len(timeline_payloads)})",
+                        f"(scripts={script_count}, timelineResponses={len(timeline_payloads)}, "
+                        f"finalPath={final_path!r}, title={page_title!r})",
                         status=status,
                     )
 
@@ -406,42 +349,27 @@ def integer_or_zero(value: Any) -> int:
         return 0
 
 
-def is_listing_post(post: dict[str, Any]) -> bool:
-    caption = caption_text(post).lower()
-    if not caption:
-        return False
-    marker_hits = sum(1 for marker in SALE_MARKERS if marker in caption)
-    if marker_hits >= 2:
-        return True
-    return bool(re.search(r"\brp\.?\s*[0-9]", caption, flags=re.I))
-
-
 def normalize_post(account: str, post: dict[str, Any], fetched_at: datetime) -> dict[str, Any]:
     caption = caption_text(post)
     shortcode = str(post.get("shortcode") or "")
     source_url = f"https://www.instagram.com/p/{shortcode}/"
-    title = extract_title(caption) or shortcode
+    title = shortcode
     timestamp = integer_or_zero(post.get("taken_at_timestamp"))
     posted_at = datetime.fromtimestamp(timestamp, timezone.utc).isoformat() if timestamp else None
     images = extract_images(post, title)
-    combined = "\n".join(part for part in (title, caption) if part)
-
-    category = extract_instagram_category(title, caption) or rule_parser.extract_category(combined)
-    brand = extract_instagram_brand(title, caption) or rule_parser.extract_brand(combined)
-
     return {
         "platform": PLATFORM,
         "sourceUrl": source_url,
         "externalId": shortcode,
         "title": title,
         "description": caption,
-        "category": category,
-        "brand": brand,
-        "price": rule_parser.extract_price(caption),
-        "locationTexts": rule_parser.extract_locations(caption),
-        "conditionText": rule_parser.extract_condition(caption),
+        "category": None,
+        "brand": None,
+        "price": None,
+        "locationTexts": [],
+        "conditionText": None,
         "sellerName": account,
-        "status": extract_status(account, caption),
+        "status": "UNKNOWN",
         "postedAt": posted_at,
         "firstFetchedAt": fetched_at.isoformat(),
         "lastFetchedAt": fetched_at.isoformat(),
@@ -456,142 +384,6 @@ def caption_text(post: dict[str, Any]) -> str:
     node = edges[0].get("node", {}) if isinstance(edges[0], dict) else {}
     text = node.get("text") if isinstance(node, dict) else ""
     return html.unescape(str(text or "")).strip()
-
-
-def extract_title(caption: str) -> str | None:
-    fallback_code: str | None = None
-    for raw_line in caption.splitlines():
-        line = clean_line(raw_line)
-        label_match = re.search(r"(?:nama produk|nama barang|product name|produk)\s*[:\-]\s*(.+)$", line, flags=re.I)
-        if label_match:
-            title = clean_line(label_match.group(1))
-            if title:
-                return title[:180]
-        code_match = re.search(r"\bcode\s*(?:item)?\s*[:\-]\s*#?([A-Za-z0-9_-]+)", line, flags=re.I)
-        if code_match and not fallback_code:
-            fallback_code = code_match.group(1)
-
-    skip_prefixes = (
-        "#",
-        "sold",
-        "sold out",
-        "soldout",
-        "terjual",
-        "laku",
-        "booked",
-        "condition",
-        "kondisi",
-        "description",
-        "deskripsi",
-        "garansi",
-        "location",
-        "lokasi",
-        "price",
-        "harga",
-        "code",
-        "kelengkapan",
-        "pembelian",
-        "market price",
-        "turn on",
-        "line",
-        "wa:",
-        "whatsapp",
-    )
-    for raw_line in caption.splitlines():
-        line = clean_line(raw_line)
-        if not line:
-            continue
-        lower = line.lower()
-        if lower.startswith(skip_prefixes):
-            continue
-        if is_marketing_title_line(lower):
-            continue
-        if re.search(r"\b(rp|idr)\b|[0-9][.,][0-9]", lower) and len(line) < 32:
-            continue
-        if len(re.sub(r"[^A-Za-z0-9]", "", line)) < 4:
-            continue
-        return line[:180]
-    if fallback_code:
-        category_hint = category_hint_from_text(caption)
-        if category_hint:
-            return f"{category_hint} listing {fallback_code}"
-        return f"Listing {fallback_code}"
-    return None
-
-
-def clean_line(value: str) -> str:
-    value = html.unescape(value)
-    value = re.sub(r"\s+", " ", value).strip(" -–—:.")
-    return value.strip()
-
-
-def is_marketing_title_line(lower: str) -> bool:
-    marketing_fragments = (
-        "perangkat paling murah",
-        "most wanted gaming peripherals",
-        "khusus buat",
-        "buat yg",
-        "buat yang",
-        "lgi cari",
-        "lagi cari",
-        "punya gear nganggur",
-        "daripada berdebu",
-        "mending consign",
-        "gak pake ribet",
-        "ready for new owner",
-        "turn on post notification",
-        "let's order",
-        "let’s order",
-        "lets order",
-        "click link in bio",
-        "for order and consign",
-        "add thelazytitip",
-        "customer service",
-        "trusted source",
-    )
-    return any(fragment in lower for fragment in marketing_fragments)
-
-
-def extract_instagram_category(title: str, caption: str) -> str | None:
-    title_match = match_patterns(title, INSTAGRAM_CATEGORY_PATTERNS)
-    if title_match:
-        return title_match
-    return match_patterns(caption, INSTAGRAM_CATEGORY_PATTERNS)
-
-
-def extract_instagram_brand(title: str, caption: str) -> str | None:
-    title_match = match_patterns(title, INSTAGRAM_BRAND_PATTERNS)
-    if title_match:
-        return title_match
-    return match_patterns(caption, INSTAGRAM_BRAND_PATTERNS)
-
-
-def match_patterns(text: str, patterns: tuple[tuple[str, tuple[str, ...]], ...]) -> str | None:
-    lower = f" {text.lower()} "
-    for value, keywords in patterns:
-        if any(keyword in lower for keyword in keywords):
-            return value
-    return None
-
-
-def category_hint_from_text(text: str) -> str | None:
-    category = extract_instagram_category("", text)
-    if category == "Peripheral" and "headset" in text.lower():
-        return "Gaming headset"
-    return category
-
-
-def extract_status(account: str, caption: str) -> str:
-    lower = caption.lower()
-    top_text = "\n".join(line for line in lower.splitlines()[:5] if line.strip())
-    for marker in ACCOUNT_SOLD_MARKERS.get(account, ()):
-        if marker in top_text:
-            return "SOLD"
-    if re.search(r"(^|\n)\s*[^\w\n]{0,4}(sold\s*out|soldout|sold|terjual|laku|booked)\b", top_text, flags=re.I):
-        return "SOLD"
-    if is_listing_post({"edge_media_to_caption": {"edges": [{"node": {"text": caption}}]}}):
-        return "AVAILABLE"
-    return "UNKNOWN"
 
 
 def extract_images(post: dict[str, Any], alt_text: str) -> list[dict[str, Any]]:

@@ -12,3 +12,10 @@ export function hasUnseenListingRevision(
     seenRevision && currentRevision && seenRevision !== currentRevision,
   );
 }
+
+export function countUnseenListings(
+  seenCount: number | null,
+  currentCount: number,
+): number {
+  return Math.max(0, currentCount - (seenCount ?? currentCount));
+}

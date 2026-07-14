@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { getListingVersion } from "./version";
 
 describe("getListingVersion", () => {
-  it("returns an opaque stable revision without exposing row counts or timestamps", async () => {
+  it("returns an opaque revision and the current listing count", async () => {
     const queryRaw = vi.fn().mockResolvedValue([
       {
         rowCount: "42",
@@ -15,9 +15,9 @@ describe("getListingVersion", () => {
     const second = await getListingVersion({ $queryRaw: queryRaw });
 
     expect(first).toEqual(second);
-    expect(Object.keys(first)).toEqual(["revision"]);
+    expect(Object.keys(first)).toEqual(["revision", "totalCount"]);
     expect(first.revision).toMatch(/^[\w-]{43}$/);
-    expect(JSON.stringify(first)).not.toContain("42");
+    expect(first.totalCount).toBe(42);
     expect(JSON.stringify(first)).not.toContain("2026-07-14");
   });
 
@@ -51,5 +51,6 @@ describe("getListingVersion", () => {
 
     expect(first).toEqual(second);
     expect(first.revision).toMatch(/^[\w-]{43}$/);
+    expect(first.totalCount).toBe(0);
   });
 });

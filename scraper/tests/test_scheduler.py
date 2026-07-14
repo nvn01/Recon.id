@@ -145,8 +145,7 @@ class SchedulerTests(unittest.TestCase):
 
         facebook_jobs = [job for job in build_jobs(config) if job.connector == "facebook"]
         self.assertTrue(all("--ai-parse" in job.args for job in facebook_jobs))
-        self.assertTrue(all("--ai-prefer" in job.args for job in facebook_jobs))
-        self.assertTrue(all("--ai-prefer" not in job.args for job in jobs))
+        self.assertTrue(all("--ai-parse" in job.args for job in facebook_jobs))
 
         [operations_job] = [job for job in build_jobs(config) if job.connector == "operations"]
         self.assertEqual(operations_job.cadence_seconds, 86_400)

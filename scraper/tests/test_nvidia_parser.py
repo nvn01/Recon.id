@@ -24,7 +24,7 @@ class NvidiaParserPromptTests(unittest.TestCase):
         self.assertIn("controller 200 can mean 200000", SYSTEM_PROMPT)
         self.assertIn("Steam Deck 65 can mean 6500000", SYSTEM_PROMPT)
         self.assertIn("123456", SYSTEM_PROMPT)
-        self.assertIn("Bekas - detail kondisi tidak disebutkan", SYSTEM_PROMPT)
+        self.assertIn("Bekas - normal", SYSTEM_PROMPT)
         self.assertIn("XPG CORE REACTOR", SYSTEM_PROMPT)
         self.assertIn("Attack Shark R3", SYSTEM_PROMPT)
         self.assertIn("Review and enrich every listing", prompt)
@@ -43,15 +43,34 @@ class NvidiaParserPromptTests(unittest.TestCase):
 
         self.assertIn('"platform": "instagram"', prompt)
 
-    def test_preferred_ai_can_explicitly_clear_a_placeholder_price(self):
-        listings = [{"externalId": "fb-1", "platform": "FACEBOOK", "price": 123_456}]
-        analyses = [{"externalId": "fb-1", "price": None}]
+    def test_ai_result_owns_all_semantic_fields(self):
+        listings = [{"externalId": "fb-1", "platform": "FACEBOOK", "title": "raw", "price": 123_456}]
+        analyses = [
+            {
+                "externalId": "fb-1",
+                "isListing": True,
+                "title": "PS4 Slim 500GB",
+                "price": None,
+                "locationTexts": ["Jakarta"],
+                "conditionText": "Bekas - baik",
+                "status": "AVAILABLE",
+                "category": "Game Console",
+                "brand": "Sony",
+            }
+        ]
 
-        [preferred] = merge_ai_results(listings, analyses, prefer_ai=True)
-        [fallback] = merge_ai_results(listings, analyses, prefer_ai=False)
+        [parsed] = merge_ai_results(listings, analyses)
 
-        self.assertIsNone(preferred["price"])
-        self.assertEqual(fallback["price"], 123_456)
+        self.assertEqual(parsed["title"], "PS4 Slim 500GB")
+        self.assertIsNone(parsed["price"])
+        self.assertEqual(parsed["conditionText"], "Bekas - baik")
+        self.assertEqual(parsed["category"], "Game Console")
+
+    def test_ai_can_reject_non_listing_content(self):
+        listings = [{"externalId": "ig-1", "platform": "INSTAGRAM", "title": "raw"}]
+        analyses = [{"externalId": "ig-1", "isListing": False}]
+
+        self.assertEqual(merge_ai_results(listings, analyses), [])
 
 
 if __name__ == "__main__":

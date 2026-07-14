@@ -49,14 +49,32 @@ export async function getListingFacets(db: ListingFacetsDatabase) {
   });
   const locations = (locationResult as TextFacetRow[]).flatMap((row) => {
     const value = sanitizePublicLocation(row.value);
-    return value ? [{ value, count: row.count }] : [];
+    return value && isPlausibleLocationFacet(value)
+      ? [{ value, count: row.count }]
+      : [];
   });
   const conditions = (conditionResult as TextFacetRow[]).flatMap((row) => {
     const value = sanitizeFacetText(row.value, 80);
-    return value ? [{ value, count: row.count }] : [];
+    return value && isPlausibleConditionFacet(value)
+      ? [{ value, count: row.count }]
+      : [];
   });
 
   return { categories, locations, conditions };
+}
+
+function isPlausibleLocationFacet(value: string): boolean {
+  if (value.length > 48 || /\d|%|https?:|www\.|@/i.test(value)) return false;
+  return !/\b(?:harga|price|link|oren|cod|ongkir|kirim|ready|stok|stock|bekas|second|nego|wa|dm)\b/i.test(
+    value,
+  );
+}
+
+function isPlausibleConditionFacet(value: string): boolean {
+  if (value.length > 32) return false;
+  return /^(?:Baru(?:\s*\/\s*BNIB)?|BNIB|Like New|Second|Bekas(?:\s*-\s*(?:baik|normal|minus))?)$/i.test(
+    value,
+  );
 }
 
 const categoryFacetQuery = Prisma.sql`

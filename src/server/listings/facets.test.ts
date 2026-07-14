@@ -25,8 +25,12 @@ describe("getListingFacets", () => {
       .mockResolvedValueOnce([
         { value: "Bandung", count: 8 },
         { value: "081234567890", count: 2 },
+        { value: "link oren maleman", count: 3 },
       ])
-      .mockResolvedValueOnce([{ value: "Bekas - baik", count: 9 }]);
+      .mockResolvedValueOnce([
+        { value: "Bekas - baik", count: 9 },
+        { value: "Laptop gaming mulus siap pakai harga nego", count: 2 },
+      ]);
 
     await expect(getListingFacets({ $queryRaw: queryRaw })).resolves.toEqual({
       categories: [

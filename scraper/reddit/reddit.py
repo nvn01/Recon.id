@@ -47,141 +47,6 @@ DEFAULT_LOCK_FILE = DEFAULT_STATE_DIR / "reddit_wts_computers.lock"
 DEFAULT_LOG_FILE = DEFAULT_LOG_DIR / "reddit_wts_computers.jsonl"
 DEFAULT_USER_AGENT = "ReconDataCollection/0.2 by local developer"
 
-SOLD_MARKERS = (
-    "sold out",
-    "sold",
-    "terjual",
-    "laku",
-    "booked",
-)
-AVAILABLE_MARKERS = (
-    "#ready",
-    "#chemicyready",
-    "ready",
-    "available",
-)
-PRICE_CONTEXT_WORDS = (
-    "harga",
-    "price",
-    "cod",
-    "tokped",
-    "toco",
-    "shopee",
-    "nego",
-    "nett",
-    "net aja",
-    "jual",
-    "wts",
-    "rp",
-)
-LOCATION_WORDS = (
-    "lokasi",
-    "cod",
-    "kirim",
-    "ekspedisi",
-    "prefer",
-)
-KNOWN_LOCATIONS = (
-    "Jakarta Selatan",
-    "Jakarta Barat",
-    "Jakarta Timur",
-    "Jakarta Utara",
-    "Jakarta Pusat",
-    "Jakarta",
-    "Jaksel",
-    "Jakbar",
-    "Jaktim",
-    "Jakut",
-    "Jakpus",
-    "Bandung",
-    "Surabaya",
-    "Sleman",
-    "Yogyakarta",
-    "Jogja",
-    "DIY",
-    "Kudus",
-    "Jawa Tengah",
-    "Jepara",
-    "Kediri",
-    "Malang",
-    "Tangerang",
-    "Bekasi",
-    "Depok",
-    "Bogor",
-    "Semarang",
-    "Solo",
-    "Denpasar",
-)
-CATEGORY_PATTERNS: tuple[tuple[str, tuple[str, ...]], ...] = (
-    ("GPU", ("gpu", "vga", "rtx", "gtx", "radeon", "geforce")),
-    ("CPU", ("cpu", "processor", "prosesor", "ryzen", "core i", "intel i3", "intel i5", "intel i7", "intel i9")),
-    ("RAM", ("ram", "ddr3", "ddr4", "ddr5", "sodimm", "so-dimm", "memory")),
-    ("Storage", ("ssd", "hdd", "nvme", "harddisk", "hard disk", "m.2", "sata")),
-    ("Motherboard", ("motherboard", "mainboard", "mobo")),
-    ("Network Adapter", ("wifi", "wi-fi", "router", "modem", "lan card", "network adapter", "adapter wifi")),
-    ("Monitor", ("monitor", "lcd", "ips", "oled", "va panel", "hz")),
-    ("Keyboard", ("keyboard", "keychron", "mechanical", "mecha")),
-    ("Mouse", ("mouse", "logitech g", "razer viper", "deathadder")),
-    ("Desktop PC", ("pc rakitan", "desktop", "mini pc", "workstation", "komputer")),
-    ("Handheld PC", ("legion go", "steam deck", "rog ally", "pc handheld", "pc handled", "handheld pc")),
-    ("Laptop", ("laptop", "notebook", "thinkpad", "macbook", "vivobook", "zenbook", "ideapad", "legion")),
-    ("Peripheral", ("headset", "earphone", "speaker", "webcam", "microphone", "mic")),
-)
-BRAND_PATTERNS: tuple[tuple[str, tuple[str, ...]], ...] = (
-    ("Apple", ("apple", "macbook", "imac", "mac mini")),
-    ("ASUS", ("asus", "rog", "tuf")),
-    ("Acer", ("acer", "predator")),
-    ("Lenovo", ("lenovo", "thinkpad", "legion", "ideapad")),
-    ("HP", ("hp", "hewlett packard", "omen", "victus")),
-    ("Dell", ("dell", "alienware")),
-    ("MSI", ("msi",)),
-    ("Gigabyte", ("gigabyte", "aorus")),
-    ("ASRock", ("asrock",)),
-    ("Intel", ("intel",)),
-    ("AMD", ("amd", "ryzen", "radeon")),
-    ("NVIDIA", ("nvidia", "geforce")),
-    ("Zotac", ("zotac",)),
-    ("Inno3D", ("inno3d", "inno 3d")),
-    ("Sapphire", ("sapphire",)),
-    ("PowerColor", ("powercolor", "power color")),
-    ("Palit", ("palit",)),
-    ("Galax", ("galax",)),
-    ("Colorful", ("colorful",)),
-    ("Corsair", ("corsair",)),
-    ("Kingston", ("kingston", "hyperx", "hyper x")),
-    ("ADATA", ("adata", "xpg")),
-    ("Micron", ("micron",)),
-    ("Samsung", ("samsung",)),
-    ("Crucial", ("crucial",)),
-    ("Western Digital", ("western digital", "wd", "wdc")),
-    ("Seagate", ("seagate",)),
-    ("Logitech", ("logitech",)),
-    ("Razer", ("razer",)),
-    ("SteelSeries", ("steelseries", "steel series")),
-    ("TP-Link", ("tp-link", "tp link", "tplink")),
-    ("Mercusys", ("mercusys",)),
-    ("D-Link", ("d-link", "d link", "dlink")),
-    ("Tenda", ("tenda",)),
-    ("V-Gen", ("v-gen", "vgen")),
-    ("TeamGroup", ("teamgroup", "team group")),
-)
-DIRECT_CONDITION_KEYWORDS = (
-    "kondisi",
-    "condition",
-    "bekas",
-    "second",
-    "2nd",
-    "like new",
-    "no minus",
-    "minus",
-    "fungsi normal",
-    "pemakaian",
-)
-WEAK_CONDITION_KEYWORDS = (
-    "fullset",
-    "full set",
-    "garansi",
-)
 
 
 if hasattr(sys.stdout, "reconfigure"):
@@ -796,7 +661,6 @@ def parse_feed(xml_text: str, limit: int) -> list[dict[str, Any]]:
 def normalize_post(post: dict[str, Any], fetched_at: datetime | None = None) -> dict[str, Any]:
     title = str(post.get("title", "")).strip()
     description = str(post.get("description", "")).strip()
-    text = "\n".join(part for part in [title, description] if part)
     fetched_at_text = (fetched_at or now_utc()).isoformat()
     images = [
         {
@@ -813,13 +677,13 @@ def normalize_post(post: dict[str, Any], fetched_at: datetime | None = None) -> 
         "externalId": extract_external_id(str(post.get("url", "")), str(post.get("atom_id", ""))),
         "title": title,
         "description": description,
-        "category": extract_category(text),
-        "brand": extract_brand(text),
-        "price": extract_price(text),
-        "locationTexts": extract_locations(text),
-        "conditionText": extract_condition(description) or extract_condition(text),
+        "category": None,
+        "brand": None,
+        "price": None,
+        "locationTexts": [],
+        "conditionText": None,
         "sellerName": str(post.get("author", "")).strip() or None,
-        "status": extract_status(text),
+        "status": "UNKNOWN",
         "postedAt": normalize_datetime_string(str(post.get("updated", ""))),
         "firstFetchedAt": fetched_at_text,
         "lastFetchedAt": fetched_at_text,
@@ -856,215 +720,6 @@ def extract_external_id(url: str, atom_id: str = "") -> str | None:
     return None
 
 
-def extract_status(text: str) -> str:
-    lower = normalize_spaces(text).lower()
-    if any(marker in lower for marker in SOLD_MARKERS):
-        return "SOLD"
-    if any(marker in lower for marker in AVAILABLE_MARKERS):
-        return "AVAILABLE"
-    return "AVAILABLE"
-
-
-def extract_price(text: str) -> int | None:
-    candidates: list[tuple[int, int, int]] = []
-    for line_number, raw_line in enumerate(iter_lines(text)):
-        line = raw_line.strip()
-        lower = line.lower()
-        has_context = any(word in lower for word in PRICE_CONTEXT_WORDS)
-        context_score = 60 if has_context else 0
-        if "harga new" in lower or "harga baru" in lower:
-            context_score -= 45
-
-        for match in re.finditer(r"\brp\.?\s*([0-9][0-9.,]*[0-9]|[0-9])(?:\s*(jt|juta+|rb|ribu|k))?", line, flags=re.I):
-            amount = price_token_to_int(match.group(1), match.group(2))
-            if amount:
-                candidates.append((120 + context_score - line_number, amount, line_number))
-
-        for match in re.finditer(r"(?<![a-z0-9.,])([0-9]+(?:[.,][0-9]+)?)(?![.,0-9])\s*(jt|juta+|rb|ribu|k)\b", line, flags=re.I):
-            amount = price_token_to_int(match.group(1), match.group(2))
-            if amount:
-                candidates.append((80 + context_score - line_number, amount, line_number))
-
-        if has_context:
-            for match in re.finditer(r"(?<![0-9.,])([0-9]{1,3}(?:[.,][0-9]{3}){1,3})(?![0-9.,])(?:\s*(?:jt|juta+))?", line, flags=re.I):
-                amount = price_token_to_int(match.group(1), None)
-                if amount:
-                    candidates.append((65 + context_score - line_number, amount, line_number))
-
-    if not candidates:
-        return None
-    candidates.sort(key=lambda candidate: (-candidate[0], candidate[2]))
-    return candidates[0][1]
-
-
-def price_token_to_int(token: str, unit: str | None) -> int | None:
-    token = token.strip()
-    unit = (unit or "").lower()
-    has_thousand_groups = bool(re.fullmatch(r"[0-9]{1,3}(?:[.,][0-9]{3})+", token))
-
-    if unit in {"jt", "juta"} or unit.startswith("juta"):
-        if has_thousand_groups:
-            amount = int(re.sub(r"\D", "", token))
-        else:
-            amount = int(float(token.replace(",", ".")) * 1_000_000)
-    elif unit in {"rb", "ribu", "k"}:
-        amount = int(float(token.replace(",", ".")) * 1_000)
-    elif has_thousand_groups:
-        amount = int(re.sub(r"\D", "", token))
-    else:
-        digits = re.sub(r"\D", "", token)
-        amount = int(digits) if digits else 0
-
-    if amount < 10_000 or amount > 200_000_000:
-        return None
-    return amount
-
-
-def extract_category(text: str) -> str | None:
-    laptop_markers = (
-        r"\b(laptop|notebook|thinkpad|macbook|vivobook|zenbook|ideapad|legion)\b",
-        r"\b(rog strix|asus tuf|tuf gaming|msi gf63|msi gf65|msi cyborg|victus|nitro|predator|loq)\b",
-    )
-    for line in iter_lines(text):
-        lower = normalize_spaces(line).lower()
-        if any(re.search(pattern, lower) for pattern in laptop_markers):
-            return "Laptop"
-        for category, keywords in CATEGORY_PATTERNS:
-            if any(keyword_matches(lower, keyword) for keyword in keywords):
-                return category
-    return None
-
-
-def extract_brand(text: str) -> str | None:
-    for line in iter_lines(text):
-        lower = normalize_spaces(line).lower()
-        for brand, keywords in BRAND_PATTERNS:
-            if any(keyword_matches(lower, keyword) for keyword in keywords):
-                return brand
-    return None
-
-
-def keyword_matches(text: str, keyword: str) -> bool:
-    pattern = rf"(?<![a-z0-9]){re.escape(keyword.lower())}(?![a-z0-9])"
-    return bool(re.search(pattern, text, flags=re.I))
-
-
-def extract_locations(text: str) -> list[str]:
-    locations: list[str] = []
-    for line in iter_lines(text):
-        stripped = trim_value(line)
-        lower = stripped.lower()
-
-        match = re.search(r"^(?:lokasi|location|loc)\s*[:\-]?\s*(.+)$", stripped, flags=re.I)
-        if match:
-            locations.extend(normalize_location_values(match.group(1)))
-            continue
-
-        match = re.search(r"\bcod\s+(?:only\s+|bisa\s+di\s+|di\s+)?(.+)$", stripped, flags=re.I)
-        if match:
-            locations.extend(normalize_location_values(match.group(1)))
-            continue
-
-        match = re.search(r"\bprefer\s+cod\s+(.+)$", stripped, flags=re.I)
-        if match:
-            locations.extend(normalize_location_values(match.group(1)))
-            continue
-
-        if any(word in lower for word in LOCATION_WORDS):
-            locations.extend(find_known_locations(stripped))
-
-    for line in iter_lines(text):
-        locations.extend(find_known_locations(line))
-    return unique_locations(locations)
-
-
-def normalize_location_values(value: str) -> list[str]:
-    cleaned = cleanup_location(value)
-    if not cleaned:
-        return []
-
-    known = find_known_locations(cleaned)
-    if known:
-        return known
-
-    parts = re.split(r"\s*(?:,|/|;|\||&|\+|\bdan\b|\batau\b|\bor\b)\s*", cleaned, flags=re.I)
-    return [part[:160] for part in (trim_value(part) for part in parts) if part]
-
-
-def cleanup_location(value: str) -> str | None:
-    value = trim_value(value)
-    value = re.sub(r"\b(?:bisa|prefer|only|aja|dan|sekitarnya)?\s*(?:kirim|lewat|ekspedisi|paket|juga).*$", "", value, flags=re.I).strip(" ,.-")
-    if not value:
-        return None
-    return value[:160]
-
-
-def find_known_locations(value: str) -> list[str]:
-    matches: list[tuple[int, str]] = []
-    for location in KNOWN_LOCATIONS:
-        match = re.search(rf"\b{re.escape(location)}\b", value, flags=re.I)
-        if match:
-            matches.append((match.start(), location))
-    return unique_locations(location for _, location in sorted(matches, key=lambda item: item[0]))
-
-
-def unique_locations(values: Iterable[str], limit: int = 8) -> list[str]:
-    seen: set[str] = set()
-    result: list[str] = []
-    for value in values:
-        clean = trim_value(value)
-        key = clean.casefold()
-        if not clean or key in seen:
-            continue
-        seen.add(key)
-        result.append(clean)
-        if len(result) >= limit:
-            break
-    return result
-
-
-def extract_condition(text: str) -> str | None:
-    lines = list(iter_lines(text))
-    for index, line in enumerate(lines):
-        stripped = trim_value(line)
-        lower = stripped.lower()
-        if re.match(r"^(kondisi|condition)\s*[:\-]?\s*$", stripped, flags=re.I):
-            for next_line in lines[index + 1 :]:
-                next_value = trim_value(next_line)
-                if next_value:
-                    return next_value[:240]
-        match = re.match(r"^(kondisi|condition)\s*[:\-]\s*(.+)$", stripped, flags=re.I)
-        if match:
-            return trim_value(match.group(2))[:240]
-        if stripped.lower().startswith("wts "):
-            continue
-        if any(keyword in lower for keyword in DIRECT_CONDITION_KEYWORDS):
-            return stripped[:240]
-    for line in lines:
-        stripped = trim_value(line)
-        lower = stripped.lower()
-        if stripped.lower().startswith("wts "):
-            continue
-        if any(keyword in lower for keyword in WEAK_CONDITION_KEYWORDS):
-            return stripped[:240]
-    return None
-
-
-def iter_lines(text: str) -> Iterable[str]:
-    for line in text.splitlines():
-        stripped = line.strip(" \t-*")
-        if stripped:
-            yield stripped
-
-
-def trim_value(value: str) -> str:
-    value = normalize_spaces(value)
-    value = value.strip(" :;,.|-")
-    return value
-
-
-def normalize_spaces(value: str) -> str:
-    return re.sub(r"\s+", " ", value or "").strip()
 
 
 def default_state() -> dict[str, Any]:
@@ -1213,7 +868,6 @@ def run_once(
                     batch_size=args.ai_batch_size,
                     rate_limit_seconds=args.ai_rate_limit,
                     timeout=args.ai_timeout,
-                    prefer_ai=args.ai_prefer,
                 )
             except NvidiaParserError as exc:
                 log_event(
@@ -1224,7 +878,8 @@ def run_once(
                         "error": str(exc),
                     },
                 )
-                print(f"NVIDIA AI parsing skipped: {exc}", file=sys.stderr)
+                print(f"NVIDIA AI parsing failed; listings will not be ingested: {exc}", file=sys.stderr)
+                raise
         new_listings = filter_new_listings(listings, state)
         update_seen_state(state, listings, args.max_seen)
         clear_cooldown(state)
@@ -1448,7 +1103,6 @@ def main() -> int:
     parser.add_argument("--image-timeout", type=int, default=20, help="Per-post image detail timeout in seconds.")
     parser.add_argument("--image-detail-delay", type=float, default=1.0, help="Seconds between per-post image detail requests.")
     parser.add_argument("--ai-parse", action="store_true", help="Enrich parsed listing fields with NVIDIA AI extraction.")
-    parser.add_argument("--ai-prefer", action="store_true", help="Let AI values replace rule-parser values when available.")
     parser.add_argument("--ai-model", default=None, help="NVIDIA model ID for AI parsing.")
     parser.add_argument("--ai-batch-size", type=int, default=5, help="Listings per NVIDIA parser request.")
     parser.add_argument("--ai-rate-limit", type=float, default=2.0, help="Seconds between NVIDIA parser requests.")
