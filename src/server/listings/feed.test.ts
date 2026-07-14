@@ -43,16 +43,19 @@ describe("getListingFeed", () => {
       {
         id: "listing-b",
         statusRank: 0,
+        sortValue: 0,
         effectiveAt: new Date("2026-07-12T11:00:00Z"),
       },
       {
         id: "listing-a",
         statusRank: 0,
+        sortValue: 0,
         effectiveAt: new Date("2026-07-12T10:00:00Z"),
       },
       {
         id: "listing-c",
         statusRank: 1,
+        sortValue: 0,
         effectiveAt: new Date("2026-07-12T09:00:00Z"),
       },
     ]);
@@ -76,7 +79,9 @@ describe("getListingFeed", () => {
     expect(result.hasNextPage).toBe(true);
     expect(result.nextCursor).not.toBeNull();
     expect(decodeListingCursor(result.nextCursor!)).toEqual({
+      sort: "newest",
       statusRank: 0,
+      sortValue: 0,
       effectiveAt: new Date("2026-07-12T10:00:00Z"),
       id: "listing-a",
     });
@@ -101,7 +106,9 @@ describe("getListingFeed", () => {
     const db = { $queryRaw: queryRaw, listing: { findMany: vi.fn() } };
 
     const cursor = encodeListingCursor({
+      sort: "newest",
       statusRank: 1,
+      sortValue: 0,
       effectiveAt: new Date("2026-07-12T09:00:00Z"),
       id: "cursor-id",
     });
@@ -153,6 +160,7 @@ describe("getListingFeed", () => {
         {
           id: "missing",
           statusRank: 0,
+          sortValue: 0,
           effectiveAt: new Date("2026-07-12T10:00:00Z"),
         },
       ]),

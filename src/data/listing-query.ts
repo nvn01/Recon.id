@@ -1,5 +1,6 @@
 import { parseListingFilters, type ListingFilters } from "./listing-filter";
 import { collectionCategories, type FeedScope } from "./listings";
+import { parseListingSort, type ListingSort } from "./listing-sort";
 import { type ListingFeedInput } from "~/server/listings/feed-input";
 
 export type ListingFeedQueryInput = Omit<ListingFeedInput, "cursor">;
@@ -8,6 +9,7 @@ export function buildListingFeedInput(
   scope: FeedScope,
   filters: ListingFilters,
   query: string,
+  sort: ListingSort,
 ): ListingFeedQueryInput {
   const platforms =
     scope.type === "platform" ? [scope.slug] : filters.platforms;
@@ -27,6 +29,7 @@ export function buildListingFeedInput(
     ...(filters.minPrice !== null ? { minPrice: filters.minPrice } : {}),
     ...(filters.maxPrice !== null ? { maxPrice: filters.maxPrice } : {}),
     ...(normalizedQuery ? { q: normalizedQuery } : {}),
+    ...(sort !== "newest" ? { sort } : {}),
   };
 }
 
@@ -38,6 +41,7 @@ export function buildListingFeedInputFromSearchParams(
     scope,
     parseListingFilters(params),
     params.get("q") ?? "",
+    parseListingSort(params.get("sort")),
   );
 }
 

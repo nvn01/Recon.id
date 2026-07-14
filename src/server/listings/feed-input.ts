@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { listingSortValues } from "~/data/listing-sort";
+
 const uniqueValues = (values: readonly string[]) =>
   new Set(values).size === values.length;
 
@@ -49,6 +51,7 @@ export const listingFeedInputSchema = z
     q: boundedText(80).optional(),
     minPrice: priceSchema.optional(),
     maxPrice: priceSchema.optional(),
+    sort: z.enum(listingSortValues).optional(),
     limit: z.number().int().min(1).max(50).default(24),
     cursor: z.string().min(1).max(512).optional(),
     direction: z.literal("forward").optional(),

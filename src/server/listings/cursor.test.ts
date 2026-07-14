@@ -9,7 +9,9 @@ import {
 describe("listing feed cursor", () => {
   it("round-trips the ranked keyset without exposing plain JSON", () => {
     const value = {
+      sort: "price-high",
       statusRank: 1,
+      sortValue: 8_500_000,
       effectiveAt: new Date("2026-07-12T10:19:21.617Z"),
       id: "listing-123",
     } as const;
@@ -20,7 +22,7 @@ describe("listing feed cursor", () => {
     ) as unknown;
 
     expect(cursor).not.toContain("listing-123");
-    expect(payload).toMatchObject({ v: 2, r: 1 });
+    expect(payload).toMatchObject({ v: 3, s: "price-high", r: 1 });
     expect(decodeListingCursor(cursor)).toEqual(value);
   });
 
@@ -34,7 +36,14 @@ describe("listing feed cursor", () => {
       JSON.stringify({ v: 2, r: 2, t: new Date().toISOString(), i: "id" }),
     ).toString("base64url"),
     Buffer.from(
-      JSON.stringify({ v: 2, r: 0, t: "not-a-date", i: "id" }),
+      JSON.stringify({
+        v: 3,
+        s: "newest",
+        r: 0,
+        k: 0,
+        t: "not-a-date",
+        i: "id",
+      }),
     ).toString("base64url"),
   ])("rejects malformed or unsupported cursors", (cursor) => {
     expect(() => decodeListingCursor(cursor)).toThrow(

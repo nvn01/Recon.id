@@ -1,14 +1,25 @@
 import { z } from "zod";
 
 const encodedCursorSchema = z.object({
-  v: z.literal(2),
-  r: z.number().int().min(0).max(1),
+  v: z.literal(3),
+  s: z.enum([
+    "newest",
+    "price-high",
+    "price-low",
+    "available-first",
+    "sold-first",
+  ]),
+  r: z.number().int().min(0).max(2),
+  k: z.number().int(),
   t: z.string().datetime({ offset: true }),
   i: z.string().min(1).max(128),
 });
 
 export interface ListingCursor {
+  sort:
+    "newest" | "price-high" | "price-low" | "available-first" | "sold-first";
   statusRank: number;
+  sortValue: number;
   effectiveAt: Date;
   id: string;
 }
@@ -22,8 +33,10 @@ export class InvalidListingCursorError extends Error {
 
 export function encodeListingCursor(cursor: ListingCursor): string {
   const encoded = encodedCursorSchema.parse({
-    v: 2,
+    v: 3,
+    s: cursor.sort,
     r: cursor.statusRank,
+    k: cursor.sortValue,
     t: cursor.effectiveAt.toISOString(),
     i: cursor.id,
   });
@@ -41,7 +54,9 @@ export function decodeListingCursor(value: string): ListingCursor {
     const parsed = encodedCursorSchema.parse(JSON.parse(json));
 
     return {
+      sort: parsed.s,
       statusRank: parsed.r,
+      sortValue: parsed.k,
       effectiveAt: new Date(parsed.t),
       id: parsed.i,
     };

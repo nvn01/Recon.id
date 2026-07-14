@@ -16,6 +16,7 @@ describe("listing feed query mapping", () => {
           maxPrice: 8_000_000,
         },
         "rtx 4070",
+        "newest",
       ),
     ).toEqual({
       limit: 12,
@@ -43,7 +44,26 @@ describe("listing feed query mapping", () => {
           maxPrice: null,
         },
         "",
+        "newest",
       ),
     ).toEqual({ limit: 12, platforms: ["instagram"] });
+  });
+
+  it("passes a non-default sort to the server feed", () => {
+    expect(
+      buildListingFeedInput(
+        { type: "collection", slug: "all" },
+        {
+          platforms: [],
+          statuses: [],
+          locations: [],
+          conditions: [],
+          minPrice: null,
+          maxPrice: null,
+        },
+        "",
+        "price-high",
+      ),
+    ).toEqual({ limit: 12, sort: "price-high" });
   });
 });

@@ -18,6 +18,7 @@ describe("listingFeedInputSchema", () => {
         q: "  RTX 4070  ",
         minPrice: 1_000_000,
         maxPrice: 10_000_000,
+        sort: "price-high",
         limit: 12,
         direction: "forward",
       }),
@@ -30,6 +31,7 @@ describe("listingFeedInputSchema", () => {
       q: "RTX 4070",
       minPrice: 1_000_000,
       maxPrice: 10_000_000,
+      sort: "price-high",
       limit: 12,
       direction: "forward",
     });
@@ -57,6 +59,7 @@ describe("listingFeedInputSchema", () => {
     { minPrice: 5_000_000, maxPrice: 1_000_000 },
     { cursor: "x".repeat(513) },
     { direction: "backward" },
+    { sort: "oldest" },
     { unexpected: true },
   ])("rejects invalid or excessive input: %j", (input) => {
     expect(() => listingFeedInputSchema.parse(input)).toThrow();

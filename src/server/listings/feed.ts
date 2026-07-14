@@ -3,9 +3,11 @@ import { Prisma } from "../../../generated/prisma";
 import {
   decodeListingCursor,
   encodeListingCursor,
+  InvalidListingCursorError,
   type ListingCursor,
 } from "./cursor";
 import { type ListingFeedInput } from "./feed-input";
+import { defaultListingSort, type ListingSort } from "~/data/listing-sort";
 import {
   listingFeedSelect,
   toListingDto,
@@ -15,6 +17,7 @@ import {
 interface RankedListingKey {
   id: string;
   statusRank: number;
+  sortValue: number;
   effectiveAt: Date;
 }
 
@@ -33,6 +36,10 @@ export async function getListingFeed(
   input: ListingFeedInput,
 ) {
   const cursor = input.cursor ? decodeListingCursor(input.cursor) : undefined;
+  const sort = input.sort ?? defaultListingSort;
+  if (cursor && cursor.sort !== sort) {
+    throw new InvalidListingCursorError();
+  }
   const rankedKeys = await db.$queryRaw(buildListingFeedQuery(input, cursor));
   const pageKeys = rankedKeys.slice(0, input.limit);
 
@@ -65,7 +72,9 @@ export async function getListingFeed(
     items: orderedRecords.map((record) => toListingDto(record)),
     nextCursor: hasNextPage
       ? encodeListingCursor({
+          sort,
           statusRank: lastKey.statusRank,
+          sortValue: lastKey.sortValue,
           effectiveAt: lastKey.effectiveAt,
           id: lastKey.id,
         })
@@ -78,6 +87,7 @@ export function buildListingFeedQuery(
   input: ListingFeedInput,
   cursor?: ListingCursor,
 ): Prisma.Sql {
+  const sort = input.sort ?? defaultListingSort;
   const platformFilter = input.platforms
     ? Prisma.sql`AND platform::text IN (${Prisma.join(input.platforms)})`
     : Prisma.empty;
@@ -111,16 +121,30 @@ export function buildListingFeedQuery(
     input.maxPrice !== undefined
       ? Prisma.sql`AND price <= ${input.maxPrice}`
       : Prisma.empty;
+  const rankExpression = statusRankExpression(sort);
+  const sortValueExpression = listingSortValueExpression(sort);
+  const sortValueDirection =
+    sort === "price-low" ? Prisma.sql`ASC` : Prisma.sql`DESC`;
+  const cursorSortComparison =
+    sort === "price-low"
+      ? Prisma.sql`"sortValue" > ${cursor?.sortValue ?? 0}`
+      : Prisma.sql`"sortValue" < ${cursor?.sortValue ?? 0}`;
   const cursorFilter = cursor
     ? Prisma.sql`
         WHERE
           "statusRank" > ${cursor.statusRank}
           OR (
             "statusRank" = ${cursor.statusRank}
+            AND ${cursorSortComparison}
+          )
+          OR (
+            "statusRank" = ${cursor.statusRank}
+            AND "sortValue" = ${cursor.sortValue}
             AND "effectiveAt" < ${cursor.effectiveAt}
           )
           OR (
             "statusRank" = ${cursor.statusRank}
+            AND "sortValue" = ${cursor.sortValue}
             AND "effectiveAt" = ${cursor.effectiveAt}
             AND id < ${cursor.id}
           )
@@ -131,10 +155,8 @@ export function buildListingFeedQuery(
     WITH ranked AS (
       SELECT
         id,
-        CASE status::text
-          WHEN 'sold' THEN 1
-          ELSE 0
-        END AS "statusRank",
+        ${rankExpression} AS "statusRank",
+        ${sortValueExpression} AS "sortValue",
         COALESCE(posted_at, first_fetched_at) AS "effectiveAt"
       FROM listings
       WHERE TRUE
@@ -147,12 +169,44 @@ export function buildListingFeedQuery(
         ${minPriceFilter}
         ${maxPriceFilter}
     )
-    SELECT id, "statusRank", "effectiveAt"
+    SELECT id, "statusRank", "sortValue", "effectiveAt"
     FROM ranked
     ${cursorFilter}
-    ORDER BY "statusRank" ASC, "effectiveAt" DESC, id DESC
+    ORDER BY
+      "statusRank" ASC,
+      "sortValue" ${sortValueDirection},
+      "effectiveAt" DESC,
+      id DESC
     LIMIT ${input.limit + 1}
   `;
+}
+
+function statusRankExpression(sort: ListingSort): Prisma.Sql {
+  if (sort === "available-first") {
+    return Prisma.sql`CASE status::text
+      WHEN 'available' THEN 0
+      WHEN 'unknown' THEN 1
+      ELSE 2
+    END`;
+  }
+
+  if (sort === "sold-first") {
+    return Prisma.sql`CASE status::text
+      WHEN 'sold' THEN 0
+      ELSE 1
+    END`;
+  }
+
+  return Prisma.sql`CASE status::text
+    WHEN 'sold' THEN 1
+    ELSE 0
+  END`;
+}
+
+function listingSortValueExpression(sort: ListingSort): Prisma.Sql {
+  if (sort === "price-high") return Prisma.sql`COALESCE(price, -1)`;
+  if (sort === "price-low") return Prisma.sql`COALESCE(price, 2147483647)`;
+  return Prisma.sql`0`;
 }
 
 function escapeLikePattern(value: string): string {

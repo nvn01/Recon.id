@@ -39,6 +39,12 @@ import {
 } from "~/data/listing-filter";
 import { buildListingFeedInput } from "~/data/listing-query";
 import {
+  listingSortOptions,
+  parseListingSort,
+  setListingSortParam,
+  type ListingSort,
+} from "~/data/listing-sort";
+import {
   distributeAcrossColumns,
   getMasonryColumnCount,
 } from "~/data/masonry-layout";
@@ -81,6 +87,16 @@ function CarouselArrowIcon({ direction }: { direction: "left" | "right" }) {
     <svg viewBox="0 0 24 24" aria-hidden="true">
       <path d={direction === "left" ? "m15 5-7 7 7 7" : "m9 5 7 7-7 7"} />
     </svg>
+  );
+}
+
+function SortIcon() {
+  return (
+    <span className="sort-icon" aria-hidden="true">
+      <i />
+      <i />
+      <i />
+    </span>
   );
 }
 
@@ -478,6 +494,132 @@ function FilterControl({
             </button>
           </div>
         </section>
+      ) : null}
+    </div>
+  );
+}
+
+function SortControl({
+  sort,
+  onChange,
+}: {
+  sort: ListingSort;
+  onChange: (value: ListingSort) => void;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const optionRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const menuId = useId();
+  const selectedIndex = Math.max(
+    0,
+    listingSortOptions.findIndex((option) => option.value === sort),
+  );
+  const selectedOption = listingSortOptions[selectedIndex]!;
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    function handleOutsidePointer(event: PointerEvent) {
+      if (!rootRef.current?.contains(event.target as Node)) setIsOpen(false);
+    }
+
+    function handleEscape(event: KeyboardEvent) {
+      if (event.key !== "Escape") return;
+      setIsOpen(false);
+      triggerRef.current?.focus();
+    }
+
+    document.addEventListener("pointerdown", handleOutsidePointer);
+    document.addEventListener("keydown", handleEscape);
+    return () => {
+      document.removeEventListener("pointerdown", handleOutsidePointer);
+      document.removeEventListener("keydown", handleEscape);
+    };
+  }, [isOpen]);
+
+  function focusOption(index: number) {
+    requestAnimationFrame(() => optionRefs.current[index]?.focus());
+  }
+
+  function chooseSort(value: ListingSort) {
+    onChange(value);
+    setIsOpen(false);
+    requestAnimationFrame(() => triggerRef.current?.focus());
+  }
+
+  function handleTriggerKeyDown(event: React.KeyboardEvent<HTMLButtonElement>) {
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      setIsOpen(true);
+      focusOption(selectedIndex);
+    }
+  }
+
+  function handleOptionKeyDown(
+    event: React.KeyboardEvent<HTMLButtonElement>,
+    index: number,
+  ) {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      const option = listingSortOptions[index];
+      if (option) chooseSort(option.value);
+      return;
+    }
+
+    if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+
+    event.preventDefault();
+    const lastIndex = listingSortOptions.length - 1;
+    const nextIndex =
+      event.key === "Home"
+        ? 0
+        : event.key === "End"
+          ? lastIndex
+          : event.key === "ArrowDown"
+            ? (index + 1) % listingSortOptions.length
+            : (index - 1 + listingSortOptions.length) %
+              listingSortOptions.length;
+    optionRefs.current[nextIndex]?.focus();
+  }
+
+  return (
+    <div ref={rootRef} className="sort-control" data-open={isOpen}>
+      <button
+        ref={triggerRef}
+        type="button"
+        className="sort-trigger"
+        aria-haspopup="menu"
+        aria-expanded={isOpen}
+        aria-controls={menuId}
+        aria-label={`Urutkan listing, saat ini ${selectedOption.label}`}
+        onClick={() => setIsOpen((open) => !open)}
+        onKeyDown={handleTriggerKeyDown}
+      >
+        <SortIcon />
+        <span className="sort-current">{selectedOption.label}</span>
+        <span className="sort-chevron" aria-hidden="true" />
+      </button>
+
+      {isOpen ? (
+        <div id={menuId} className="sort-menu" role="menu">
+          {listingSortOptions.map((option, index) => (
+            <button
+              key={option.value}
+              ref={(element) => {
+                optionRefs.current[index] = element;
+              }}
+              type="button"
+              role="menuitemradio"
+              aria-checked={option.value === sort}
+              className={option.value === sort ? "is-selected" : undefined}
+              onClick={() => chooseSort(option.value)}
+              onKeyDown={(event) => handleOptionKeyDown(event, index)}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
       ) : null}
     </div>
   );
@@ -970,6 +1112,7 @@ export function ReconFeed({ scope }: ReconFeedProps) {
   const [refreshAnnouncement, setRefreshAnnouncement] = useState("");
   const [selectedListing, setSelectedListing] = useState<Listing | null>(null);
   const query = (searchParams.get("q") ?? "").trim().slice(0, 80);
+  const sort = parseListingSort(searchParams.get("sort"));
   const parsedFilters = useMemo(
     () => parseListingFilters(new URLSearchParams(searchParams.toString())),
     [searchParams],
@@ -982,8 +1125,8 @@ export function ReconFeed({ scope }: ReconFeedProps) {
     [parsedFilters, scope],
   );
   const feedInput = useMemo(
-    () => buildListingFeedInput(scope, filters, query),
-    [filters, query, scope],
+    () => buildListingFeedInput(scope, filters, query, sort),
+    [filters, query, scope, sort],
   );
   const feedQuery = api.listings.feed.useInfiniteQuery(feedInput, {
     ...manualListingRefreshQueryOptions,
@@ -1019,10 +1162,7 @@ export function ReconFeed({ scope }: ReconFeedProps) {
     }
 
     if (
-      hasUnseenListingRevision(
-        seenListingRevision.current,
-        currentRevision,
-      )
+      hasUnseenListingRevision(seenListingRevision.current, currentRevision)
     ) {
       const unseenCount = countUnseenListings(
         seenListingCount.current,
@@ -1081,6 +1221,15 @@ export function ReconFeed({ scope }: ReconFeedProps) {
     const targetPath = scope.type === "platform" ? "/collection/all" : pathname;
 
     router.push(withQuery(targetPath, next), { scroll: false });
+  }
+
+  function changeSort(nextSort: ListingSort) {
+    const next = setListingSortParam(
+      new URLSearchParams(searchParams.toString()),
+      nextSort,
+    );
+
+    router.push(withQuery(pathname, next), { scroll: false });
   }
 
   async function refreshFeed() {
@@ -1153,9 +1302,7 @@ export function ReconFeed({ scope }: ReconFeedProps) {
               onApply={changeFilters}
               onClear={() => changeFilters(emptyListingFilters)}
             />
-            <span className="feed-order-label" aria-label="Urutan terbaru">
-              Terbaru
-            </span>
+            <SortControl sort={sort} onChange={changeSort} />
           </div>
         </div>
       </ReconHeader>
