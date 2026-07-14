@@ -1,12 +1,50 @@
 import io
 import unittest
 import urllib.error
-from unittest.mock import patch
+from types import SimpleNamespace
+from unittest.mock import call, patch
 
 from scraper.reddit import reddit
 
 
 class RedditFetchTests(unittest.TestCase):
+    def test_fetch_flair_feeds_keeps_all_sources_and_waits_between_them(self):
+        flairs = [
+            "WTS: Computers & Peripherals",
+            "WTS: Electronics",
+            "WTS: Video Games & Consoles",
+            "WTS: Smartphones & Tablets",
+        ]
+        args = SimpleNamespace(
+            limit=15,
+            subreddit="jualbeliindonesia",
+            user_agent=reddit.DEFAULT_USER_AGENT,
+            retries=2,
+            retry_wait=20,
+            retry_jitter_seconds=1.0,
+            timeout=30,
+            feed_delay_seconds=3.0,
+        )
+
+        with (
+            patch("scraper.reddit.reddit.fetch_text", return_value="<feed />") as fetch_text,
+            patch("scraper.reddit.reddit.parse_feed", side_effect=lambda _xml, _limit: []) as parse_feed,
+            patch("scraper.reddit.reddit.time.sleep") as sleep,
+        ):
+            posts = reddit.fetch_flair_feeds(args, flairs)
+
+        self.assertEqual(posts, [])
+        self.assertEqual(fetch_text.call_count, 4)
+        self.assertEqual(parse_feed.call_count, 4)
+        self.assertEqual(
+            [
+                urllib.parse.parse_qs(urllib.parse.urlparse(item.args[0]).query)["q"][0]
+                for item in fetch_text.call_args_list
+            ],
+            [f'flair:"{flair}"' for flair in flairs],
+        )
+        self.assertEqual(sleep.call_args_list, [call(3.0), call(3.0), call(3.0)])
+
     def test_canonical_url_rejects_non_reddit_hosts(self):
         self.assertEqual(reddit.canonical_url("https://evil.example/comments/abc/"), "")
         self.assertEqual(

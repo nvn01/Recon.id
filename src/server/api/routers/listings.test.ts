@@ -47,3 +47,35 @@ describe("listingsRouter.feed", () => {
     } satisfies Partial<TRPCError>);
   });
 });
+
+describe("listingsRouter.version", () => {
+  it("exposes only the opaque listing revision", async () => {
+    const caller = createCaller(
+      vi.fn().mockResolvedValue([
+        {
+          rowCount: "7",
+          latestFirstFetchedAt: new Date("2026-07-14T04:30:00.000Z"),
+        },
+      ]),
+    );
+
+    await expect(caller.version()).resolves.toEqual({
+      revision: expect.stringMatching(/^[\w-]{43}$/),
+    });
+  });
+
+  it("does not expose unexpected database error details", async () => {
+    const caller = createCaller(
+      vi
+        .fn()
+        .mockRejectedValue(
+          new Error("connect ECONNREFUSED postgresql://internal-host/recon"),
+        ),
+    );
+
+    await expect(caller.version()).rejects.toMatchObject({
+      code: "INTERNAL_SERVER_ERROR",
+      message: "Unable to check for new listings",
+    } satisfies Partial<TRPCError>);
+  });
+});

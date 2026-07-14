@@ -392,6 +392,43 @@ class RuntimeGuardrailTests(unittest.TestCase):
         self.assertTrue(result["ok"])
         self.assertEqual(result["status"], "cooldown_skip")
 
+    def test_reddit_config_passes_all_flairs_and_feed_delay_to_connector(self):
+        args = SimpleNamespace(
+            limit=1,
+            reddit=None,
+            ignore_cooldown=False,
+            no_state=True,
+            ai_parse=False,
+            ai_prefer=False,
+        )
+        flairs = [
+            "WTS: Computers & Peripherals",
+            "WTS: Electronics",
+            "WTS: Video Games & Consoles",
+            "WTS: Smartphones & Tablets",
+        ]
+        config = {
+            "run": {},
+            "reddit": {
+                "wts_computers": {
+                    "enabled": True,
+                    "limit": 1,
+                    "flairs": flairs,
+                    "feed_delay_seconds": 3.0,
+                }
+            },
+        }
+
+        with patch(
+            "scraper.reddit.reddit.guarded_run_once",
+            return_value=(0, [], "success"),
+        ) as guarded_run_once:
+            run_reddit(args, config)
+
+        reddit_args = guarded_run_once.call_args.args[0]
+        self.assertEqual(reddit_args.flairs, flairs)
+        self.assertEqual(reddit_args.feed_delay_seconds, 3.0)
+
 
 def sample_instagram_listing(account: str) -> dict[str, object]:
     return {
