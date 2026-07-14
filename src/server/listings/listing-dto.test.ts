@@ -93,8 +93,9 @@ describe("toListingDto", () => {
     ).toEqual(["Bandung"]);
   });
 
-  it("presents historical zero or placeholder-small prices as unknown", () => {
+  it("presents historical zero or known placeholder prices as unknown", () => {
     expect(toListingDto({ ...listing, price: 0 }).price).toBeNull();
     expect(toListingDto({ ...listing, price: 123 }).price).toBeNull();
+    expect(toListingDto({ ...listing, price: 123_456 }).price).toBeNull();
   });
 });

@@ -17,7 +17,7 @@ describe("getListingFacets", () => {
         {
           value: "GPU",
           count: 4,
-          minPrice: 0,
+          minPrice: 123_456,
           coverImageUrl: "javascript:alert(1)",
           coverAltText: null,
         },
