@@ -1,18 +1,14 @@
 import "~/styles/globals.css";
 
 import { type Metadata } from "next";
-import {
-  Bricolage_Grotesque,
-  Geist,
-  Geist_Mono,
-} from "next/font/google";
+import { Bricolage_Grotesque, Geist, Geist_Mono } from "next/font/google";
 
 import { TRPCReactProvider } from "~/trpc/react";
 
 export const metadata: Metadata = {
   title: {
-    default: "RECON — Temukan gear incaranmu",
-    template: "%s — RECON",
+    default: "RECON - Temukan gear incaranmu",
+    template: "%s - RECON",
   },
   description:
     "Temukan listing komputer, komponen, dan gaming gear preloved dari berbagai platform dalam satu feed.",

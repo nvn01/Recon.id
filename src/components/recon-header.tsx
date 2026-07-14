@@ -4,6 +4,8 @@ import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { type ReactNode } from "react";
 
+import { RefreshArrowIcon } from "~/components/refresh-arrow-icon";
+
 function SearchIcon() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -29,11 +31,29 @@ export function ReconMark() {
   );
 }
 
-export function ReconHeader({ children }: { children?: ReactNode }) {
+export type FeedRefreshControl = {
+  newCount: number;
+  isRefreshing: boolean;
+  onRefresh: () => void;
+};
+
+export function ReconHeader({
+  children,
+  refreshControl,
+}: {
+  children?: ReactNode;
+  refreshControl?: FeedRefreshControl;
+}) {
   const pathname = usePathname();
   const router = useRouter();
   const searchParams = useSearchParams();
   const query = searchParams.get("q") ?? "";
+
+  function searchPath() {
+    return pathname === "/platform" || pathname === "/collection"
+      ? "/collection/all"
+      : pathname;
+  }
 
   function submitSearch(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -46,25 +66,21 @@ export function ReconHeader({ children }: { children?: ReactNode }) {
     else next.delete("q");
 
     const suffix = next.toString();
-    const targetPath = pathname === "/platform" ? "/collection/all" : pathname;
+    const targetPath = searchPath();
     router.push(`${targetPath}${suffix ? `?${suffix}` : ""}`);
   }
 
   function clearSearch() {
     const next = new URLSearchParams(searchParams.toString());
     next.delete("q");
-    const targetPath = pathname === "/platform" ? "/collection/all" : pathname;
+    const targetPath = searchPath();
     router.push(`${targetPath}${next.size ? `?${next.toString()}` : ""}`);
   }
 
   return (
     <header className="site-header">
       <div className="header-inner">
-        <Link
-          className="wordmark"
-          href="/collection/all"
-          aria-label="RECON home"
-        >
+        <Link className="wordmark" href="/collection" aria-label="RECON home">
           <ReconMark />
           <span>RECON</span>
         </Link>
@@ -98,13 +114,43 @@ export function ReconHeader({ children }: { children?: ReactNode }) {
         </form>
 
         <div className="header-actions">
-          <Link href="/platform" className="platform-action">
-            Platform
-          </Link>
-          <div className="header-status" aria-label="Status pemantauan">
-            <span className="live-dot" />
-            <span>SCAN AKTIF</span>
-          </div>
+          {refreshControl ? (
+            <button
+              type="button"
+              className="feed-refresh-button"
+              data-state={
+                refreshControl.isRefreshing
+                  ? "loading"
+                  : refreshControl.newCount > 0
+                    ? "new"
+                    : "idle"
+              }
+              onClick={refreshControl.onRefresh}
+              disabled={refreshControl.isRefreshing}
+              aria-label={
+                refreshControl.isRefreshing
+                  ? "Memperbarui listing"
+                  : refreshControl.newCount > 0
+                    ? `Tampilkan ${refreshControl.newCount} listing baru`
+                    : "Periksa listing baru"
+              }
+            >
+              {refreshControl.isRefreshing ? (
+                <RefreshArrowIcon />
+              ) : (
+                <span className="live-dot" />
+              )}
+              {refreshControl.newCount > 0 && !refreshControl.isRefreshing ? (
+                <span className="feed-refresh-label">
+                  {refreshControl.newCount} listing baru
+                </span>
+              ) : null}
+            </button>
+          ) : (
+            <span className="header-presence" aria-label="Pemantauan aktif">
+              <span className="live-dot" />
+            </span>
+          )}
         </div>
       </div>
       {children ? <div className="header-subnav">{children}</div> : null}

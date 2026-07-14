@@ -15,6 +15,7 @@ export type DummyListing = {
   location: string;
   seller: string;
   postedLabel: string;
+  sourceUrl: string;
   imageUrl: string;
   previewImageUrls?: string[];
   imagePageUrl: string;
@@ -60,7 +61,7 @@ export const platformMeta: Record<
 const img = (id: string) =>
   `https://images.unsplash.com/${id}?auto=format&fit=crop&w=1200&q=82`;
 
-export const dummyListings: DummyListing[] = [
+const dummyListingFixtures: Array<Omit<DummyListing, "sourceUrl">> = [
   {
     id: "recon-001",
     title: "RTX 3090 Founders Edition 24GB",
@@ -71,7 +72,7 @@ export const dummyListings: DummyListing[] = [
     status: "available",
     category: "gpu",
     brand: "NVIDIA",
-    condition: "Bekas — sangat baik",
+    condition: "Bekas - sangat baik",
     location: "Jakarta Selatan",
     seller: "pixel.parts",
     postedLabel: "8 menit lalu",
@@ -96,7 +97,7 @@ export const dummyListings: DummyListing[] = [
     status: "available",
     category: "monitor",
     brand: "LG",
-    condition: "Bekas — baik",
+    condition: "Bekas - baik",
     location: "Bandung",
     seller: "Raka Pratama",
     postedLabel: "14 menit lalu",
@@ -121,7 +122,7 @@ export const dummyListings: DummyListing[] = [
     status: "available",
     category: "peripheral",
     brand: "Keychron",
-    condition: "Bekas — sangat baik",
+    condition: "Bekas - sangat baik",
     location: "Yogyakarta",
     seller: "u/analogweekend",
     postedLabel: "22 menit lalu",
@@ -142,10 +143,10 @@ export const dummyListings: DummyListing[] = [
     status: "available",
     category: "laptop",
     brand: "Apple",
-    condition: "Bekas — sangat baik",
+    condition: "Bekas - sangat baik",
     location: "Surabaya",
     seller: "secondbyte.id",
-    postedLabel: "31 menit lalu",
+    postedLabel: "30 menit lalu",
     imageUrl: img("photo-1594972765410-9fe8c0e4e984"),
     previewImageUrls: [
       img("photo-1716681863790-45ee0db408ff"),
@@ -167,7 +168,7 @@ export const dummyListings: DummyListing[] = [
     status: "available",
     category: "pc-build",
     brand: "Custom",
-    condition: "Bekas — sangat baik",
+    condition: "Bekas - sangat baik",
     location: "Tangerang Selatan",
     seller: "Faisal Build",
     postedLabel: "42 menit lalu",
@@ -186,13 +187,13 @@ export const dummyListings: DummyListing[] = [
     id: "recon-006",
     title: "Headset gaming wireless low latency",
     description:
-      "Dongle lengkap, earcup baru diganti. Baterai sekitar 25 jam per pengisian.",
+      "Dongle lengkap, earcup baru diganti, dan koneksi 2.4 GHz stabil tanpa putus saat dipakai bermain. Baterai sekitar 25 jam per pengisian, mikrofon dan semua tombol normal, serta bantalan kepala masih rapat. Bonus kabel pengisian dan pouch bawaan. Bisa dites langsung sebelum transaksi.",
     price: 1250000,
     platform: "instagram",
     status: "unknown",
     category: "peripheral",
     brand: "SteelSeries",
-    condition: "Bekas — baik",
+    condition: "Bekas - baik",
     location: "Depok",
     seller: "gearagain",
     postedLabel: "1 jam lalu",
@@ -205,7 +206,7 @@ export const dummyListings: DummyListing[] = [
   },
   {
     id: "recon-007",
-    title: "Minimal workspace set — monitor + laptop",
+    title: "Minimal workspace set - monitor + laptop",
     description:
       "Monitor 24 inch, laptop stand aluminium, dan USB-C dock. Bisa ambil satuan.",
     price: 3200000,
@@ -213,7 +214,7 @@ export const dummyListings: DummyListing[] = [
     status: "available",
     category: "monitor",
     brand: "Dell",
-    condition: "Bekas — baik",
+    condition: "Bekas - baik",
     location: "Jakarta Pusat",
     seller: "u/sundaydeclutter",
     postedLabel: "1 jam lalu",
@@ -238,7 +239,7 @@ export const dummyListings: DummyListing[] = [
     status: "available",
     category: "laptop",
     brand: "ASUS",
-    condition: "Bekas — baik",
+    condition: "Bekas - baik",
     location: "Semarang",
     seller: "Bagas Nugroho",
     postedLabel: "2 jam lalu",
@@ -263,7 +264,7 @@ export const dummyListings: DummyListing[] = [
     status: "available",
     category: "gaming",
     brand: "Mixed",
-    condition: "Bekas — sangat baik",
+    condition: "Bekas - sangat baik",
     location: "Bekasi",
     seller: "setup.swap",
     postedLabel: "2 jam lalu",
@@ -288,7 +289,7 @@ export const dummyListings: DummyListing[] = [
     status: "sold",
     category: "gpu",
     brand: "Gigabyte",
-    condition: "Bekas — baik",
+    condition: "Bekas - baik",
     location: "Malang",
     seller: "u/framechaser",
     postedLabel: "3 jam lalu",
@@ -309,10 +310,10 @@ export const dummyListings: DummyListing[] = [
     status: "available",
     category: "pc-build",
     brand: "Custom",
-    condition: "Bekas — sangat baik",
+    condition: "Bekas - sangat baik",
     location: "Bogor",
     seller: "Dimas Arya",
-    postedLabel: "3 jam lalu",
+    postedLabel: "5 jam lalu",
     imageUrl: img("photo-1763905180930-892ee8d37ea6"),
     imagePageUrl:
       "https://unsplash.com/photos/computer-setup-with-monitor-keyboard-and-webcam-dSFV8clfe98",
@@ -330,10 +331,10 @@ export const dummyListings: DummyListing[] = [
     status: "available",
     category: "laptop",
     brand: "Lenovo",
-    condition: "Bekas — sangat baik",
+    condition: "Bekas - sangat baik",
     location: "Jakarta Barat",
     seller: "notebook.archive",
-    postedLabel: "4 jam lalu",
+    postedLabel: "8 jam lalu",
     imageUrl: img("photo-1594972765410-9fe8c0e4e984"),
     imagePageUrl:
       "https://unsplash.com/photos/macbook-air-on-white-table-noW0zN8Vb4E",
@@ -351,10 +352,10 @@ export const dummyListings: DummyListing[] = [
     status: "available",
     category: "peripheral",
     brand: "Custom",
-    condition: "Bekas — sangat baik",
+    condition: "Bekas - sangat baik",
     location: "Denpasar",
     seller: "u/thocktherapy",
-    postedLabel: "5 jam lalu",
+    postedLabel: "1 hari lalu",
     imageUrl: img("photo-1664441156356-574882b11b6a"),
     imagePageUrl:
       "https://unsplash.com/photos/a-close-up-of-a-computer-keyboard-U-VLVzcc68M",
@@ -372,10 +373,10 @@ export const dummyListings: DummyListing[] = [
     status: "unknown",
     category: "monitor",
     brand: "Xiaomi",
-    condition: "Bekas — baik",
+    condition: "Bekas - baik",
     location: "Solo",
     seller: "Naufal Tech",
-    postedLabel: "5 jam lalu",
+    postedLabel: "2 hari lalu",
     imageUrl: img("photo-1634891392987-e91db6bf9557"),
     imagePageUrl:
       "https://unsplash.com/photos/two-computer-monitors-sitting-on-top-of-a-white-desk-wcoXr9o83o8",
@@ -393,10 +394,10 @@ export const dummyListings: DummyListing[] = [
     status: "available",
     category: "gaming",
     brand: "Valve",
-    condition: "Bekas — seperti baru",
+    condition: "Bekas - seperti baru",
     location: "Makassar",
     seller: "handheld.hub",
-    postedLabel: "6 jam lalu",
+    postedLabel: "4 hari lalu",
     imageUrl: img("photo-1675049626914-b2e051e92f23"),
     imagePageUrl:
       "https://unsplash.com/photos/a-computer-desk-with-two-monitors-and-a-keyboard-FpTTnUxS45g",
@@ -414,10 +415,10 @@ export const dummyListings: DummyListing[] = [
     status: "available",
     category: "monitor",
     brand: "Dell",
-    condition: "Bekas — baik",
+    condition: "Bekas - baik",
     location: "Tangerang",
     seller: "u/deskreset",
-    postedLabel: "7 jam lalu",
+    postedLabel: "7 hari lalu",
     imageUrl: img("photo-1639506060085-2a01a8a84c34"),
     imagePageUrl:
       "https://unsplash.com/photos/a-desk-with-a-laptop-and-a-monitor-on-it-TTHm86CTwXQ",
@@ -435,10 +436,10 @@ export const dummyListings: DummyListing[] = [
     status: "available",
     category: "laptop",
     brand: "ASUS",
-    condition: "Bekas — seperti baru",
+    condition: "Bekas - seperti baru",
     location: "Jakarta Utara",
     seller: "Kevin Wijaya",
-    postedLabel: "8 jam lalu",
+    postedLabel: "11 hari lalu",
     imageUrl: img("photo-1716681863790-45ee0db408ff"),
     imagePageUrl:
       "https://unsplash.com/photos/a-laptop-computer-sitting-on-top-of-a-desk-JyuI90QJ4ww",
@@ -456,10 +457,10 @@ export const dummyListings: DummyListing[] = [
     status: "sold",
     category: "peripheral",
     brand: "Sony",
-    condition: "Bekas — baik",
+    condition: "Bekas - baik",
     location: "Bandung",
     seller: "audio.secondlife",
-    postedLabel: "9 jam lalu",
+    postedLabel: "14 hari lalu",
     imageUrl: img("photo-1648241776507-7e3ae32698e6"),
     imagePageUrl:
       "https://unsplash.com/photos/a-pair-of-headphones-sitting-on-top-of-a-desk-ScLBbRi1OJo",
@@ -468,6 +469,25 @@ export const dummyListings: DummyListing[] = [
     tags: ["sony", "headset", "wireless"],
   },
 ];
+
+function listingSourceUrl(listing: Omit<DummyListing, "sourceUrl">) {
+  if (listing.platform === "instagram") {
+    return `https://www.instagram.com/p/${listing.id}/`;
+  }
+
+  if (listing.platform === "facebook") {
+    return `https://www.facebook.com/marketplace/item/${listing.id}/`;
+  }
+
+  return `https://www.reddit.com/r/jualbeliindonesia/comments/${listing.id}/`;
+}
+
+export const dummyListings: DummyListing[] = dummyListingFixtures.map(
+  (listing) => ({
+    ...listing,
+    sourceUrl: listingSourceUrl(listing),
+  }),
+);
 
 export function formatRupiah(value: number | null) {
   if (value === null) return "Harga belum terbaca";
