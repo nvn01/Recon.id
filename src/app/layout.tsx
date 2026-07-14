@@ -1,18 +1,27 @@
 import "~/styles/globals.css";
 
-import { type Metadata } from "next";
+import { type Metadata, type Viewport } from "next";
 import { Bricolage_Grotesque, Geist, Geist_Mono } from "next/font/google";
 
 import { TRPCReactProvider } from "~/trpc/react";
 
 export const metadata: Metadata = {
+  applicationName: "RECON",
   title: {
     default: "RECON - Temukan gear incaranmu",
     template: "%s - RECON",
   },
   description:
     "Temukan listing komputer, komponen, dan gaming gear preloved dari berbagai platform dalam satu feed.",
-  icons: [{ rel: "icon", url: "/favicon.ico" }],
+  appleWebApp: {
+    capable: true,
+    title: "RECON",
+    statusBarStyle: "black-translucent",
+  },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#0b2f20",
 };
 
 const geist = Geist({

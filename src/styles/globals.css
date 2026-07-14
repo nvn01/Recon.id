@@ -119,57 +119,38 @@ img {
 .wordmark {
   display: inline-flex;
   align-items: center;
-  gap: 10px;
+  gap: 9px;
   min-height: 44px;
   font-family: var(--font-bricolage), sans-serif;
-  font-size: 24px;
+  font-size: 23px;
   font-weight: 800;
-  letter-spacing: -0.05em;
+  letter-spacing: -0.045em;
 }
 
 .recon-mark {
-  position: relative;
   display: inline-grid;
-  width: 28px;
-  height: 28px;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 auto;
   place-items: center;
-  border: 2px solid var(--ink);
-  border-radius: 50%;
-}
-
-.recon-mark::before,
-.recon-mark::after,
-.recon-mark span:first-child,
-.recon-mark span:last-child {
-  position: absolute;
-  content: "";
-  background: var(--surface);
-}
-
-.recon-mark::before {
-  width: 7px;
-  height: 32px;
-}
-
-.recon-mark::after {
-  width: 32px;
-  height: 7px;
-}
-
-.recon-mark span:first-child {
-  z-index: 1;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
+  border-radius: 11px;
   background: var(--lime);
+  box-shadow:
+    inset 0 0 0 1px rgba(11, 47, 32, 0.12),
+    0 5px 14px rgba(11, 47, 32, 0.08);
+  transition:
+    background-color 160ms ease,
+    transform 160ms ease;
 }
 
-.recon-mark span:last-child {
-  z-index: 0;
-  width: 15px;
-  height: 15px;
-  border: 1.5px solid var(--ink);
-  border-radius: 50%;
+.recon-mark img {
+  width: 26px;
+  height: 26px;
+}
+
+.wordmark:hover .recon-mark {
+  background: #bcff38;
+  transform: translateY(-1px) rotate(-2deg);
 }
 
 .search-box {

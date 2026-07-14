@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { type ReactNode } from "react";
@@ -25,8 +26,13 @@ function CloseIcon() {
 export function ReconMark() {
   return (
     <span className="recon-mark" aria-hidden="true">
-      <span />
-      <span />
+      <Image
+        src="/brand/recon-mark-forest.svg"
+        alt=""
+        width={28}
+        height={28}
+        priority
+      />
     </span>
   );
 }
