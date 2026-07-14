@@ -19,6 +19,7 @@ describe("listingFeedInputSchema", () => {
         minPrice: 1_000_000,
         maxPrice: 10_000_000,
         limit: 12,
+        direction: "forward",
       }),
     ).toEqual({
       platforms: ["instagram", "facebook"],
@@ -30,6 +31,7 @@ describe("listingFeedInputSchema", () => {
       minPrice: 1_000_000,
       maxPrice: 10_000_000,
       limit: 12,
+      direction: "forward",
     });
   });
 
@@ -54,6 +56,7 @@ describe("listingFeedInputSchema", () => {
     { maxPrice: 2_000_000_001 },
     { minPrice: 5_000_000, maxPrice: 1_000_000 },
     { cursor: "x".repeat(513) },
+    { direction: "backward" },
     { unexpected: true },
   ])("rejects invalid or excessive input: %j", (input) => {
     expect(() => listingFeedInputSchema.parse(input)).toThrow();
