@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { decodeListingCursor, encodeListingCursor } from "./cursor";
-import { getListingFeed } from "./feed";
+import { buildListingFeedQuery, getListingFeed } from "./feed";
 
 const baseListing = {
   id: "listing-a",
@@ -30,6 +30,16 @@ const baseListing = {
 };
 
 describe("getListingFeed", () => {
+  it("keeps available and unknown in one recency bucket and ranks only sold last", () => {
+    const query = buildListingFeedQuery({ limit: 24 });
+    const sql = query.strings.join("?");
+
+    expect(sql).toContain("WHEN 'sold' THEN 1");
+    expect(sql).toContain("ELSE 0");
+    expect(sql).not.toContain("WHEN 'available'");
+    expect(sql).not.toContain("WHEN 'unknown'");
+  });
+
   it("preserves ranked query order, maps DTOs, and emits the last returned row as cursor", async () => {
     const queryRaw = vi.fn().mockResolvedValue([
       {
