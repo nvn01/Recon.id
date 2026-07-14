@@ -317,6 +317,59 @@ class RuntimeGuardrailTests(unittest.TestCase):
         skipped = [account for account in second["accounts"] if account.get("skipped_by_cooldown")]
         self.assertEqual([account["account"] for account in skipped], ["blocked.shop", "auth.shop"])
 
+    def test_instagram_login_redirect_uses_account_cooldown_without_fake_http_status(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            state_path = Path(tmpdir) / "instagram_accounts.json"
+            log_path = Path(tmpdir) / "instagram_accounts.jsonl"
+            calls: list[list[str]] = []
+
+            def fake_run_accounts(accounts, **_kwargs):
+                calls.append(list(accounts))
+                return [], [
+                    {
+                        "account": "redirect.shop",
+                        "ok": False,
+                        "http_status": 200,
+                        "cooldown_eligible": True,
+                        "returned_count": 0,
+                        "normalized_count": 0,
+                        "skipped_count": 0,
+                        "error": "Instagram redirected to /accounts/login/",
+                        "latest_shortcode": None,
+                    }
+                ]
+
+            args = SimpleNamespace(
+                instagram_account=None,
+                limit=1,
+                no_state=False,
+                ignore_cooldown=False,
+                ai_parse=False,
+                ai_prefer=False,
+            )
+            config = {
+                "run": {},
+                "instagram": {
+                    "accounts": {
+                        "names": ["redirect.shop"],
+                        "cooldown_seconds": 600,
+                        "retries": 1,
+                    }
+                },
+            }
+
+            with (
+                patch("scraper.main.DEFAULT_INSTAGRAM_STATE_FILE", state_path),
+                patch("scraper.main.DEFAULT_INSTAGRAM_LOG_FILE", log_path),
+                patch("scraper.main.run_accounts", side_effect=fake_run_accounts),
+            ):
+                first = run_instagram(args, config)
+                second = run_instagram(args, config)
+
+        self.assertEqual(first["status"], "degraded")
+        self.assertEqual(second["status"], "cooldown_skip")
+        self.assertEqual(calls, [["redirect.shop"]])
+
     def test_facebook_cli_target_does_not_inherit_config_target_group(self):
         captured_args = None
 

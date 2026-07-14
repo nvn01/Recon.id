@@ -1,8 +1,17 @@
 from __future__ import annotations
 
+import tempfile
 import unittest
+from pathlib import Path
+from unittest.mock import patch
 
-from scraper.reddit.nvidia_parser import SYSTEM_PROMPT, build_prompt, merge_ai_results
+from scraper.reddit.nvidia_parser import (
+    SYSTEM_PROMPT,
+    NvidiaParseClient,
+    NvidiaParserError,
+    build_prompt,
+    merge_ai_results,
+)
 
 
 class NvidiaParserPromptTests(unittest.TestCase):
@@ -71,6 +80,119 @@ class NvidiaParserPromptTests(unittest.TestCase):
         analyses = [{"externalId": "ig-1", "isListing": False}]
 
         self.assertEqual(merge_ai_results(listings, analyses), [])
+
+    def test_non_json_response_does_not_trigger_unguided_retry(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            client = NvidiaParseClient(
+                api_key="test",
+                base_url="https://example.test/v1",
+                model="test-model",
+                timeout=1,
+                state_path=Path(tmpdir) / "nvidia_ai.json",
+            )
+            error = NvidiaParserError("NVIDIA parser returned non-JSON content")
+
+            with patch.object(client, "_request", side_effect=error) as request:
+                with self.assertRaises(NvidiaParserError):
+                    client.parse_batch([{"externalId": "item-1"}])
+
+        self.assertEqual(request.call_count, 1)
+
+    def test_guided_json_rejection_retries_once_without_guidance(self):
+        analysis = {"externalId": "item-1", "isListing": False}
+        with tempfile.TemporaryDirectory() as tmpdir:
+            client = NvidiaParseClient(
+                api_key="test",
+                base_url="https://example.test/v1",
+                model="test-model",
+                timeout=1,
+                state_path=Path(tmpdir) / "nvidia_ai.json",
+            )
+            guided_rejection = NvidiaParserError(
+                "NVIDIA parser HTTP 400: nvext guided_json is unsupported"
+            )
+
+            with patch.object(client, "_request", side_effect=[guided_rejection, [analysis]]) as request:
+                result = client.parse_batch([{"externalId": "item-1"}])
+
+        self.assertEqual(result, [analysis])
+        self.assertEqual(request.call_count, 2)
+        self.assertIn("nvext", request.call_args_list[0].args[0])
+        self.assertNotIn("nvext", request.call_args_list[1].args[0])
+
+    def test_capacity_failure_opens_shared_circuit_before_next_request(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            state_path = Path(tmpdir) / "nvidia_ai.json"
+            first = NvidiaParseClient(
+                api_key="test",
+                base_url="https://example.test/v1",
+                model="test-model",
+                timeout=1,
+                state_path=state_path,
+            )
+            capacity_error = NvidiaParserError(
+                "NVIDIA parser HTTP 503: ResourceExhausted request limit reached"
+            )
+            with patch.object(first, "_request", side_effect=capacity_error):
+                with self.assertRaises(NvidiaParserError):
+                    first.parse_batch([{"externalId": "item-1"}])
+
+            second = NvidiaParseClient(
+                api_key="test",
+                base_url="https://example.test/v1",
+                model="test-model",
+                timeout=1,
+                state_path=state_path,
+            )
+            with patch.object(second, "_request") as request:
+                with self.assertRaisesRegex(NvidiaParserError, "cooling down"):
+                    second.parse_batch([{"externalId": "item-2"}])
+
+        request.assert_not_called()
+
+    def test_two_invalid_outputs_open_shared_circuit(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            state_path = Path(tmpdir) / "nvidia_ai.json"
+            for external_id in ("item-1", "item-2"):
+                client = NvidiaParseClient(
+                    api_key="test",
+                    base_url="https://example.test/v1",
+                    model="test-model",
+                    timeout=1,
+                    state_path=state_path,
+                )
+                with patch.object(
+                    client,
+                    "_request",
+                    side_effect=NvidiaParserError("NVIDIA parser returned non-JSON content"),
+                ):
+                    with self.assertRaises(NvidiaParserError):
+                        client.parse_batch([{"externalId": external_id}])
+
+            blocked = NvidiaParseClient(
+                api_key="test",
+                base_url="https://example.test/v1",
+                model="test-model",
+                timeout=1,
+                state_path=state_path,
+            )
+            with patch.object(blocked, "_request") as request:
+                with self.assertRaisesRegex(NvidiaParserError, "cooling down"):
+                    blocked.parse_batch([{"externalId": "item-3"}])
+
+        request.assert_not_called()
+
+    def test_ai_payload_has_room_for_batched_json_output(self):
+        client = NvidiaParseClient(
+            api_key="test",
+            base_url="https://example.test/v1",
+            model="test-model",
+            timeout=1,
+        )
+
+        payload = client._build_payload([{"externalId": "item-1"}], guided=True)
+
+        self.assertEqual(payload["max_tokens"], 4096)
 
 
 if __name__ == "__main__":

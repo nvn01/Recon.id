@@ -8,12 +8,55 @@ from scraper.instagram.embedded import extract_profile_posts
 from scraper.instagram.instagram import (
     InstagramFetchError,
     capture_timeline_response,
+    ensure_profile_not_login_redirect,
     fetch_profile_resilient,
+    run_accounts,
     wait_for_profile_posts,
 )
 
 
 class InstagramFetchTests(unittest.TestCase):
+    def test_account_collection_obeys_requested_limit(self):
+        payload = {
+            "data": {
+                "user": {
+                    "edge_owner_to_timeline_media": {
+                        "edges": [
+                            {
+                                "node": {
+                                    "shortcode": f"POST-{index}",
+                                    "id": str(index),
+                                    "taken_at_timestamp": 1_800_000_000 - index,
+                                }
+                            }
+                            for index in range(5)
+                        ]
+                    }
+                }
+            }
+        }
+
+        with patch("scraper.instagram.instagram.fetch_profile_resilient", return_value=(200, payload)):
+            listings, [result] = run_accounts(
+                ["shop.example"],
+                limit=2,
+                max_posts_per_account=12,
+                fetch_mode="browser",
+            )
+
+        self.assertEqual([listing["externalId"] for listing in listings], ["POST-0", "POST-1"])
+        self.assertEqual(result["normalized_count"], 2)
+
+    def test_login_redirect_is_marked_as_cooldown_eligible(self):
+        with self.assertRaises(InstagramFetchError) as raised:
+            ensure_profile_not_login_redirect(
+                "https://www.instagram.com/accounts/login/?next=%2Fshop.example%2F",
+                "Shop Example on Instagram",
+            )
+
+        self.assertTrue(raised.exception.cooldown_eligible)
+        self.assertIn("accounts/login", str(raised.exception))
+
     def test_profile_wait_keeps_pumping_until_delayed_timeline_response(self):
         timeline_payloads: list[dict] = []
         delayed_payload = {
