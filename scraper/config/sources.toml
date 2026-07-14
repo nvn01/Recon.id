@@ -27,6 +27,7 @@ lock_stale_seconds = 7200
 [scheduler.reddit]
 enabled = true
 cadence_seconds = 300
+stagger_seconds = 75
 jitter_seconds = 10
 limit = 15
 

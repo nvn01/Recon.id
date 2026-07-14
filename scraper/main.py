@@ -119,6 +119,12 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run RECON scraper connectors and optionally write valid listings to PostgreSQL.")
     parser.add_argument("--config", default=str(DEFAULT_CONFIG_PATH), help="Path to scraper source TOML config.")
     parser.add_argument("--reddit", action="store_true", help="Run Reddit connector.")
+    parser.add_argument(
+        "--reddit-flair",
+        action="append",
+        default=None,
+        help="Fetch only this configured Reddit flair. Can be repeated.",
+    )
     parser.add_argument("--instagram", action="store_true", help="Run Instagram connector.")
     parser.add_argument("--facebook", action="store_true", help="Run Facebook Marketplace connector.")
     parser.add_argument("--all", action="store_true", help="Run every enabled connector. This is the default if no connector flag is given.")
@@ -290,11 +296,12 @@ def run_reddit(args: argparse.Namespace, config: dict[str, Any]) -> dict[str, An
     reddit_config = table(config, "reddit", "wts_computers")
     limit = effective_limit(args, reddit_config, run_config)
     configured_flairs = string_list(reddit_config.get("flairs"))
+    requested_flairs = string_list(getattr(args, "reddit_flair", None))
     reddit_args = SimpleNamespace(
         limit=limit,
         subreddit=reddit_config.get("subreddit", reddit.SUBREDDIT),
         flair=reddit_config.get("flair", reddit.FLAIR),
-        flairs=configured_flairs or [str(reddit_config.get("flair") or reddit.FLAIR)],
+        flairs=requested_flairs or configured_flairs or [str(reddit_config.get("flair") or reddit.FLAIR)],
         feed_delay_seconds=float_value(reddit_config.get("feed_delay_seconds"), 5.0),
         retries=int_value(reddit_config.get("retries"), 2),
         retry_wait=int_value(reddit_config.get("retry_wait_seconds"), 20),

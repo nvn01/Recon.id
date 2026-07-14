@@ -47,9 +47,10 @@ def sample_config():
 
 
 class SchedulerTests(unittest.TestCase):
-    def test_production_config_fetches_all_reddit_wts_flairs_with_a_short_gap(self):
+    def test_production_config_rolls_reddit_flairs_without_a_request_burst(self):
         config = load_config(DEFAULT_CONFIG_PATH)
         reddit_config = config["reddit"]["wts_computers"]
+        reddit_jobs = [job for job in build_jobs(config) if job.connector == "reddit"]
 
         self.assertEqual(
             reddit_config["flairs"],
@@ -62,7 +63,15 @@ class SchedulerTests(unittest.TestCase):
         )
         self.assertEqual(len(reddit_config["urls"]), 4)
         self.assertEqual(config["scheduler"]["reddit"]["cadence_seconds"], 300)
+        self.assertEqual(config["scheduler"]["reddit"]["stagger_seconds"], 75)
         self.assertEqual(reddit_config["feed_delay_seconds"], 5.0)
+        self.assertEqual(len(reddit_jobs), 4)
+        self.assertEqual([job.initial_delay_seconds for job in reddit_jobs], [0, 75, 150, 225])
+        self.assertTrue(all(job.cadence_seconds == 300 for job in reddit_jobs))
+        self.assertEqual(
+            [job.args[2] for job in reddit_jobs],
+            reddit_config["flairs"],
+        )
 
     def test_scheduler_lock_blocks_a_second_scheduler_instance(self):
         with tempfile.TemporaryDirectory() as tmpdir:

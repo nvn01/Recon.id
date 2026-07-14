@@ -11,6 +11,7 @@ import argparse
 import json
 import os
 import random
+import re
 import subprocess
 import sys
 import time
@@ -196,6 +197,25 @@ def build_reddit_jobs(config: dict[str, Any]) -> list[ScheduleJob]:
     cadence = max(60, int_value(schedule_config.get("cadence_seconds"), 300))
     limit = max(1, int_value(schedule_config.get("limit"), int_value(source_config.get("limit"), 3)))
     jitter = max(0, int_value(schedule_config.get("jitter_seconds"), 0))
+    flairs = string_list(source_config.get("flairs"))
+    if flairs:
+        default_stagger = max(1, cadence // len(flairs))
+        stagger = min(
+            default_stagger,
+            max(5, int_value(schedule_config.get("stagger_seconds"), default_stagger)),
+        )
+        return [
+            ScheduleJob(
+                id=f"reddit:{reddit_job_slug(flair)}",
+                connector="reddit",
+                cadence_seconds=cadence,
+                args=("--reddit", "--reddit-flair", flair, "--limit", str(limit)),
+                initial_delay_seconds=index * stagger,
+                jitter_seconds=jitter,
+            )
+            for index, flair in enumerate(flairs)
+        ]
+
     return [
         ScheduleJob(
             id="reddit",
@@ -205,6 +225,10 @@ def build_reddit_jobs(config: dict[str, Any]) -> list[ScheduleJob]:
             jitter_seconds=jitter,
         )
     ]
+
+
+def reddit_job_slug(flair: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", flair.lower()).strip("-") or "feed"
 
 
 def build_instagram_jobs(config: dict[str, Any]) -> list[ScheduleJob]:

@@ -429,6 +429,39 @@ class RuntimeGuardrailTests(unittest.TestCase):
         self.assertEqual(reddit_args.flairs, flairs)
         self.assertEqual(reddit_args.feed_delay_seconds, 3.0)
 
+    def test_reddit_scheduler_can_select_one_flair_without_changing_shared_config(self):
+        args = SimpleNamespace(
+            limit=1,
+            reddit=None,
+            reddit_flair=["WTS: Electronics"],
+            ignore_cooldown=False,
+            no_state=True,
+            ai_parse=False,
+            ai_prefer=False,
+        )
+        config = {
+            "run": {},
+            "reddit": {
+                "wts_computers": {
+                    "enabled": True,
+                    "limit": 1,
+                    "flairs": [
+                        "WTS: Computers & Peripherals",
+                        "WTS: Electronics",
+                    ],
+                }
+            },
+        }
+
+        with patch(
+            "scraper.reddit.reddit.guarded_run_once",
+            return_value=(0, [], "success"),
+        ) as guarded_run_once:
+            run_reddit(args, config)
+
+        reddit_args = guarded_run_once.call_args.args[0]
+        self.assertEqual(reddit_args.flairs, ["WTS: Electronics"])
+
 
 def sample_instagram_listing(account: str) -> dict[str, object]:
     return {
