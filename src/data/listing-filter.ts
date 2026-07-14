@@ -1,36 +1,22 @@
 import {
-  dummyListings,
-  platformMeta,
+  listingPlatforms,
+  listingStatuses,
   type ListingPlatform,
-} from "~/data/dummy-listings";
+  type ListingStatus,
+} from "~/data/listings";
 
 export type ListingFilters = {
   platforms: ListingPlatform[];
+  statuses: ListingStatus[];
   locations: string[];
   conditions: string[];
   minPrice: number | null;
   maxPrice: number | null;
 };
 
-type FilterableListing = {
-  platform: ListingPlatform;
-  location: string;
-  condition: string;
-  price: number | null;
-};
-
-const listingPlatforms = Object.keys(platformMeta) as ListingPlatform[];
-
-export const listingLocations = Array.from(
-  new Set(dummyListings.map((listing) => listing.location)),
-).sort((left, right) => left.localeCompare(right, "id"));
-
-export const listingConditions = Array.from(
-  new Set(dummyListings.map((listing) => listing.condition)),
-);
-
 export const emptyListingFilters: ListingFilters = {
   platforms: [],
+  statuses: [],
   locations: [],
   conditions: [],
   minPrice: null,
@@ -55,14 +41,22 @@ function parseRepeatedValues<T extends string>(
   );
 }
 
+function parseTextValues(values: string[]) {
+  return Array.from(
+    new Set(
+      values
+        .map((value) => value.trim())
+        .filter((value) => value.length > 0 && value.length <= 80),
+    ),
+  ).slice(0, 10);
+}
+
 export function parseListingFilters(params: URLSearchParams): ListingFilters {
   return {
     platforms: parseRepeatedValues(params.getAll("platform"), listingPlatforms),
-    locations: parseRepeatedValues(params.getAll("location"), listingLocations),
-    conditions: parseRepeatedValues(
-      params.getAll("condition"),
-      listingConditions,
-    ),
+    statuses: parseRepeatedValues(params.getAll("status"), listingStatuses),
+    locations: parseTextValues(params.getAll("location")),
+    conditions: parseTextValues(params.getAll("condition")),
     minPrice: parsePrice(params.get("minPrice")),
     maxPrice: parsePrice(params.get("maxPrice")),
   };
@@ -76,6 +70,7 @@ export function setListingFilterParams(
 
   for (const key of [
     "platform",
+    "status",
     "location",
     "condition",
     "minPrice",
@@ -85,6 +80,7 @@ export function setListingFilterParams(
   }
 
   for (const platform of filters.platforms) next.append("platform", platform);
+  for (const status of filters.statuses) next.append("status", status);
   for (const location of filters.locations) next.append("location", location);
   for (const condition of filters.conditions)
     next.append("condition", condition);
@@ -94,37 +90,10 @@ export function setListingFilterParams(
   return next;
 }
 
-export function filterListings<T extends FilterableListing>(
-  listings: readonly T[],
-  filters: ListingFilters,
-) {
-  const hasPriceFilter = filters.minPrice !== null || filters.maxPrice !== null;
-
-  return listings.filter((listing) => {
-    const platformMatches =
-      filters.platforms.length === 0 ||
-      filters.platforms.includes(listing.platform);
-    const locationMatches =
-      filters.locations.length === 0 ||
-      filters.locations.includes(listing.location);
-    const conditionMatches =
-      filters.conditions.length === 0 ||
-      filters.conditions.includes(listing.condition);
-    const priceMatches =
-      !hasPriceFilter ||
-      (listing.price !== null &&
-        (filters.minPrice === null || listing.price >= filters.minPrice) &&
-        (filters.maxPrice === null || listing.price <= filters.maxPrice));
-
-    return (
-      platformMatches && locationMatches && conditionMatches && priceMatches
-    );
-  });
-}
-
 export function countActiveFilterGroups(filters: ListingFilters) {
   return [
     filters.platforms.length > 0,
+    filters.statuses.length > 0,
     filters.locations.length > 0,
     filters.conditions.length > 0,
     filters.minPrice !== null || filters.maxPrice !== null,

@@ -174,8 +174,8 @@
       <li>Internal name: RECON</li>
       <li>Public placeholder: Recon.co.id</li>
       <li>Created: 2026-07-01</li>
-      <li>Updated: 2026-07-13</li>
-      <li>Status: first-pass scraper plan active</li>
+      <li>Updated: 2026-07-14</li>
+      <li>Status: first-pass scraper plan active; implementation phases 0-6 tracked</li>
     </ul>
 
     <h2>1. Core decisions</h2>
@@ -193,6 +193,7 @@
       <li><strong>Images:</strong> store original image URLs and cache small thumbnails for future gallery/hover interactions.</li>
       <li><strong>Sold listings:</strong> keep sold items permanently with explicit status and provenance.</li>
       <li><strong>Deployment:</strong> Dockerized scraper, backend, and PostgreSQL stack on homelab first, cloud-portable later.</li>
+      <li><strong>Environment isolation:</strong> staging and production each run their own web, scraper, and PostgreSQL services in one Compose stack. Web and scraper use only that stack's internal PostgreSQL service; production never connects to staging data.</li>
     </ul>
 
     <h2>2. First-pass boundary</h2>
@@ -425,20 +426,30 @@ Backend API / query layer
       <li>Done: source-specific notes in nearby <code>AGENTS.override.md</code> files for brittle connector behavior.</li>
     </ul>
 
+    <h3>Phase 6: public feed integration (done)</h3>
+    <ul class="checklist">
+      <li>Done: replace UI dummy listings with the public read-only <code>listings.feed</code> contract and server-side React Query hydration.</li>
+      <li>Done: preserve manual 12-row cursor pagination through <strong>Muat temuan berikutnya</strong>; do not download the full catalog or use unstable offset pagination.</li>
+      <li>Done: add database-backed search, collection, platform, status, price, condition, and location filtering before pagination.</li>
+      <li>Done: add the read-only <code>listings.facets</code> query for collection counts/covers and bounded filter options.</li>
+      <li>Done: keep listing URLs and images HTTPS-only, suppress contact-like location values and historical placeholder prices (including known <code>12345</code>/<code>123456</code> dummy sequences) in public DTOs, and retain all original database rows.</li>
+      <li>Done: add honest loading, retry, empty, end-of-feed, missing-image, and missing-field states; verify URL state and desktop/mobile behavior without running the scraper locally.</li>
+    </ul>
+
     <h3>Later, not v1</h3>
     <ul>
       <li>Alerts and saved searches.</li>
       <li>User accounts and personalization.</li>
       <li>Price history and deal scoring.</li>
       <li>AI product categorization.</li>
-      <li>Public feed UI and marketing pages.</li>
+      <li>Marketing pages beyond the public discovery feed.</li>
       <li>Seller tools, consignment intake, platform fees, or payments.</li>
     </ul>
 
     <h2>8. Release and deployment</h2>
     <h3>Local development</h3>
     <ul>
-      <li>Start with database and scraper development before any public UI.</li>
+      <li>Run the public UI against the PostgreSQL service in the same local Compose stack; never point local or production UI at staging by fallback.</li>
       <li>Run PostgreSQL through Docker Compose.</li>
       <li>Run scraper manually first with <code>python main.py</code> and source-specific flags.</li>
       <li>Validate 5-minute scheduled checks in staging before using that cadence in production.</li>

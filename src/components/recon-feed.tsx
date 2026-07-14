@@ -17,47 +17,30 @@ import { RefreshArrowIcon } from "~/components/refresh-arrow-icon";
 import { stepCarouselIndex } from "~/data/carousel-navigation";
 import {
   collections,
-  dummyListings,
+  formatListedAt,
   formatRupiah,
   platformMeta,
-  type DummyListing,
+  statusMeta,
+  type FeedScope,
+  type Listing,
   type ListingPlatform,
-  type ListingStatus,
-} from "~/data/dummy-listings";
+} from "~/data/listings";
 import {
   countActiveFilterGroups,
   emptyListingFilters,
-  filterListings,
-  listingConditions,
-  listingLocations,
   parseListingFilters,
   setListingFilterParams,
   type ListingFilters,
 } from "~/data/listing-filter";
-import {
-  defaultListingSort,
-  listingSortOptions,
-  parseListingSort,
-  sortListings,
-  type ListingSort,
-} from "~/data/listing-sort";
+import { buildListingFeedInput } from "~/data/listing-query";
 import {
   distributeAcrossColumns,
   getMasonryColumnCount,
 } from "~/data/masonry-layout";
-
-type FeedScope =
-  | { type: "collection"; slug: string }
-  | { type: "platform"; slug: ListingPlatform };
+import { api } from "~/trpc/react";
 
 type ReconFeedProps = {
   scope: FeedScope;
-};
-
-const statusMeta: Record<ListingStatus, { label: string }> = {
-  available: { label: "Tersedia" },
-  unknown: { label: "Perlu cek" },
-  sold: { label: "Terjual" },
 };
 
 function ArrowIcon() {
@@ -96,16 +79,6 @@ function CarouselArrowIcon({ direction }: { direction: "left" | "right" }) {
   );
 }
 
-function SortIcon() {
-  return (
-    <span className="sort-icon" aria-hidden="true">
-      <i />
-      <i />
-      <i />
-    </span>
-  );
-}
-
 function FilterIcon() {
   return (
     <svg className="filter-icon" viewBox="0 0 24 24" aria-hidden="true">
@@ -139,35 +112,6 @@ function titleForScope(scope: FeedScope) {
   return `${collections.find((item) => item.slug === scope.slug)?.label ?? "Koleksi"} yang baru ditemukan.`;
 }
 
-function selectListingsForFeed(
-  listings: readonly DummyListing[],
-  filters: ListingFilters,
-  scope: FeedScope,
-  query: string,
-  sort: ListingSort,
-) {
-  const filtered = filterListings(listings, filters).filter((listing) => {
-    const categoryMatches =
-      scope.type !== "collection" ||
-      scope.slug === "all" ||
-      listing.category === scope.slug;
-    const haystack = [
-      listing.title,
-      listing.description,
-      listing.brand,
-      listing.location,
-      ...listing.tags,
-    ]
-      .join(" ")
-      .toLowerCase();
-    const queryMatches = !query || haystack.includes(query);
-
-    return categoryMatches && queryMatches;
-  });
-
-  return sortListings(filtered, sort);
-}
-
 type ListingFilterDraft = Omit<ListingFilters, "minPrice" | "maxPrice"> & {
   minPrice: string;
   maxPrice: string;
@@ -194,10 +138,14 @@ function conditionLabel(condition: string) {
 
 function FilterControl({
   filters,
+  locationOptions,
+  conditionOptions,
   onApply,
   onClear,
 }: {
   filters: ListingFilters;
+  locationOptions: readonly { value: string; count: number }[];
+  conditionOptions: readonly { value: string; count: number }[];
   onApply: (filters: ListingFilters) => void;
   onClear: () => void;
 }) {
@@ -351,6 +299,34 @@ function FilterControl({
               </div>
             </fieldset>
 
+            <fieldset className="filter-section">
+              <legend className="sr-only">Status</legend>
+              <div className="filter-section-heading" aria-hidden="true">
+                <span>Status</span>
+                <small>Pilih beberapa</small>
+              </div>
+              <div className="filter-choice-grid status-choices">
+                {(
+                  Object.keys(statusMeta) as Array<keyof typeof statusMeta>
+                ).map((status) => (
+                  <label key={status} className="filter-choice">
+                    <input
+                      type="checkbox"
+                      checked={draft.statuses.includes(status)}
+                      onChange={() =>
+                        setDraft((current) => ({
+                          ...current,
+                          statuses: toggleFilterValue(current.statuses, status),
+                        }))
+                      }
+                    />
+                    <span className="filter-check" aria-hidden="true" />
+                    <span>{statusMeta[status].label}</span>
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+
             <fieldset className="filter-section price-section">
               <legend className="sr-only">Harga</legend>
               <div className="filter-section-heading" aria-hidden="true">
@@ -416,25 +392,30 @@ function FilterControl({
                 <small>Pilih beberapa</small>
               </div>
               <div className="filter-choice-grid condition-choices">
-                {listingConditions.map((condition) => (
-                  <label key={condition} className="filter-choice">
+                {conditionOptions.map((condition) => (
+                  <label key={condition.value} className="filter-choice">
                     <input
                       type="checkbox"
-                      checked={draft.conditions.includes(condition)}
+                      checked={draft.conditions.includes(condition.value)}
                       onChange={() =>
                         setDraft((current) => ({
                           ...current,
                           conditions: toggleFilterValue(
                             current.conditions,
-                            condition,
+                            condition.value,
                           ),
                         }))
                       }
                     />
                     <span className="filter-check" aria-hidden="true" />
-                    <span>{conditionLabel(condition)}</span>
+                    <span>{conditionLabel(condition.value)}</span>
                   </label>
                 ))}
+                {conditionOptions.length === 0 ? (
+                  <p className="filter-options-empty">
+                    Belum ada kondisi terindeks.
+                  </p>
+                ) : null}
               </div>
             </fieldset>
 
@@ -442,28 +423,33 @@ function FilterControl({
               <legend className="sr-only">Lokasi</legend>
               <div className="filter-section-heading" aria-hidden="true">
                 <span>Lokasi</span>
-                <small>{listingLocations.length} area</small>
+                <small>{locationOptions.length} area</small>
               </div>
               <div className="filter-choice-grid location-choices">
-                {listingLocations.map((location) => (
-                  <label key={location} className="filter-choice">
+                {locationOptions.map((location) => (
+                  <label key={location.value} className="filter-choice">
                     <input
                       type="checkbox"
-                      checked={draft.locations.includes(location)}
+                      checked={draft.locations.includes(location.value)}
                       onChange={() =>
                         setDraft((current) => ({
                           ...current,
                           locations: toggleFilterValue(
                             current.locations,
-                            location,
+                            location.value,
                           ),
                         }))
                       }
                     />
                     <span className="filter-check" aria-hidden="true" />
-                    <span>{location}</span>
+                    <span>{location.value}</span>
                   </label>
                 ))}
+                {locationOptions.length === 0 ? (
+                  <p className="filter-options-empty">
+                    Belum ada lokasi terindeks.
+                  </p>
+                ) : null}
               </div>
             </fieldset>
           </div>
@@ -492,147 +478,16 @@ function FilterControl({
   );
 }
 
-function SortControl({
-  sort,
-  onChange,
-}: {
-  sort: ListingSort;
-  onChange: (value: ListingSort) => void;
-}) {
-  const [isOpen, setIsOpen] = useState(false);
-  const rootRef = useRef<HTMLDivElement>(null);
-  const triggerRef = useRef<HTMLButtonElement>(null);
-  const optionRefs = useRef<Array<HTMLButtonElement | null>>([]);
-  const menuId = useId();
-  const matchedIndex = listingSortOptions.findIndex(
-    (option) => option.value === sort,
-  );
-  const selectedIndex = matchedIndex === -1 ? 0 : matchedIndex;
-  const selectedOption =
-    listingSortOptions[selectedIndex] ?? listingSortOptions[0];
-
-  useEffect(() => {
-    if (!isOpen) return;
-
-    function handleOutsidePointer(event: PointerEvent) {
-      if (!rootRef.current?.contains(event.target as Node)) setIsOpen(false);
-    }
-
-    document.addEventListener("pointerdown", handleOutsidePointer);
-    return () =>
-      document.removeEventListener("pointerdown", handleOutsidePointer);
-  }, [isOpen]);
-
-  function focusOption(index: number) {
-    requestAnimationFrame(() => optionRefs.current[index]?.focus());
-  }
-
-  function handleTriggerKeyDown(event: React.KeyboardEvent<HTMLButtonElement>) {
-    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-      event.preventDefault();
-      setIsOpen(true);
-      focusOption(selectedIndex);
-    } else if (event.key === "Escape") {
-      setIsOpen(false);
-    }
-  }
-
-  function handleOptionKeyDown(
-    event: React.KeyboardEvent<HTMLButtonElement>,
-    index: number,
-  ) {
-    if (event.key === "Escape") {
-      event.preventDefault();
-      setIsOpen(false);
-      triggerRef.current?.focus();
-      return;
-    }
-
-    if (event.key === "Enter" || event.key === " ") {
-      event.preventDefault();
-      const option = listingSortOptions[index];
-      if (option) chooseSort(option.value);
-      return;
-    }
-
-    if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
-
-    event.preventDefault();
-    const lastIndex = listingSortOptions.length - 1;
-    const nextIndex =
-      event.key === "Home"
-        ? 0
-        : event.key === "End"
-          ? lastIndex
-          : event.key === "ArrowDown"
-            ? (index + 1) % listingSortOptions.length
-            : (index - 1 + listingSortOptions.length) %
-              listingSortOptions.length;
-    optionRefs.current[nextIndex]?.focus();
-  }
-
-  function chooseSort(value: ListingSort) {
-    onChange(value);
-    setIsOpen(false);
-    requestAnimationFrame(() => triggerRef.current?.focus());
-  }
-
-  return (
-    <div
-      ref={rootRef}
-      className="sort-control"
-      data-open={isOpen ? "true" : "false"}
-    >
-      <button
-        ref={triggerRef}
-        type="button"
-        className="sort-trigger"
-        aria-haspopup="menu"
-        aria-expanded={isOpen}
-        aria-controls={menuId}
-        aria-label={`Urutkan listing, saat ini ${selectedOption.label}`}
-        onClick={() => setIsOpen((open) => !open)}
-        onKeyDown={handleTriggerKeyDown}
-      >
-        <SortIcon />
-        <span className="sort-current">{selectedOption.label}</span>
-        <span className="sort-chevron" aria-hidden="true" />
-      </button>
-
-      {isOpen ? (
-        <div id={menuId} className="sort-menu" role="menu">
-          {listingSortOptions.map((option, index) => (
-            <button
-              key={option.value}
-              ref={(element) => {
-                optionRefs.current[index] = element;
-              }}
-              type="button"
-              role="menuitemradio"
-              aria-checked={option.value === sort}
-              className={option.value === sort ? "is-selected" : undefined}
-              onClick={() => chooseSort(option.value)}
-              onKeyDown={(event) => handleOptionKeyDown(event, index)}
-            >
-              {option.label}
-            </button>
-          ))}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
 function ListingCard({
   listing,
   priority,
   onOpen,
 }: {
-  listing: DummyListing;
+  listing: Listing;
   priority?: boolean;
-  onOpen: (listing: DummyListing) => void;
+  onOpen: (listing: Listing) => void;
 }) {
-  const images = [listing.imageUrl, ...(listing.previewImageUrls ?? [])];
+  const images = listing.images;
   const [activeImage, setActiveImage] = useState(0);
   const intentTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const carouselTimer = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -671,37 +526,44 @@ function ListingCard({
     [],
   );
 
+  const activeImageRecord = images[activeImage];
+
   return (
     <article
       className={`listing-card ${listing.status === "sold" ? "card-sold" : ""}`}
     >
       <button
         type="button"
-        className={`listing-image image-${listing.imageAspect}`}
+        className="listing-image image-square"
         onClick={() => onOpen(listing)}
         onPointerEnter={startPreview}
         onPointerLeave={() => stopPreview()}
         onPointerCancel={() => stopPreview()}
       >
         <span className="carousel-media" aria-hidden="true">
-          {images.map((imageUrl, index) => (
+          <span className="listing-image-placeholder">RECON</span>
+          {activeImageRecord ? (
             <Image
-              key={imageUrl}
-              className={`carousel-frame ${index === activeImage ? "is-active" : ""}`}
-              src={imageUrl}
+              key={activeImageRecord.sourceUrl}
+              className="carousel-frame is-active"
+              src={activeImageRecord.sourceUrl}
               alt=""
               fill
-              unoptimized={!imageUrl.startsWith("https://images.unsplash.com/")}
-              priority={priority && index === 0}
+              unoptimized
+              priority={priority && activeImage === 0}
+              referrerPolicy="no-referrer"
+              onError={(event) => {
+                event.currentTarget.style.display = "none";
+              }}
               sizes="(max-width: 520px) 48vw, (max-width: 900px) 32vw, (max-width: 1280px) 25vw, 20vw"
             />
-          ))}
+          ) : null}
         </span>
         {images.length > 1 ? (
           <span className="carousel-dots" aria-hidden="true">
-            {images.map((imageUrl, index) => (
+            {images.map((image, index) => (
               <i
-                key={imageUrl}
+                key={`${image.sourceUrl}-${index}`}
                 className={index === activeImage ? "active" : undefined}
               />
             ))}
@@ -720,7 +582,9 @@ function ListingCard({
         <span className="listing-source">
           <VerifiedIcon />
           <span>{platformMeta[listing.platform].label}</span>
-          <span className="listing-posted-at">{listing.postedLabel}</span>
+          <span className="listing-posted-at" suppressHydrationWarning>
+            {formatListedAt(listing.listedAt)}
+          </span>
         </span>
       </button>
     </article>
@@ -731,8 +595,8 @@ function MasonryFeed({
   listings,
   onOpen,
 }: {
-  listings: DummyListing[];
-  onOpen: (listing: DummyListing) => void;
+  listings: Listing[];
+  onOpen: (listing: Listing) => void;
 }) {
   const [columnCount, setColumnCount] = useState(5);
 
@@ -789,18 +653,15 @@ function previewDescription(description: string) {
   };
 }
 
-function categoryLabel(category: string) {
-  return (
-    collections.find((collection) => collection.slug === category)?.label ??
-    category
-  );
+function categoryLabel(category: string | null) {
+  return category ?? "Tidak disebutkan";
 }
 
 function ListingDialog({
   listing,
   onClose,
 }: {
-  listing: DummyListing | null;
+  listing: Listing | null;
   onClose: () => void;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
@@ -814,14 +675,13 @@ function ListingDialog({
   const description = listing
     ? previewDescription(listing.description)
     : { text: "", isTruncated: false };
-  const images = listing
-    ? [listing.imageUrl, ...(listing.previewImageUrls ?? [])]
-    : [];
+  const images = listing?.images ?? [];
   const activeImage =
     carouselState.listingId === listing?.id
       ? Math.min(carouselState.index, images.length - 1)
       : 0;
   const hasMultipleImages = images.length > 1;
+  const activeImageRecord = images[activeImage];
 
   function closeDialog() {
     pointerStartX.current = null;
@@ -917,33 +777,29 @@ function ListingDialog({
           >
             <div
               className="dialog-carousel-track"
-              style={{
-                transform: `translate3d(-${activeImage * 100}%, 0, 0)`,
-              }}
+              style={{ transform: "translate3d(0, 0, 0)" }}
             >
-              {images.map((imageUrl, index) => (
-                <div
-                  key={`${imageUrl}-${index}`}
-                  className="dialog-carousel-slide"
-                  aria-hidden={index !== activeImage}
-                >
+              <div className="dialog-carousel-slide dialog-image-placeholder">
+                RECON
+              </div>
+              {activeImageRecord ? (
+                <div className="dialog-carousel-slide">
                   <Image
-                    src={imageUrl}
-                    alt={
-                      index === activeImage
-                        ? `${listing.imageAlt}${images.length > 1 ? `, foto ${index + 1} dari ${images.length}` : ""}`
-                        : ""
-                    }
+                    key={activeImageRecord.sourceUrl}
+                    src={activeImageRecord.sourceUrl}
+                    alt={`${activeImageRecord.altText ?? listing.title}${images.length > 1 ? `, foto ${activeImage + 1} dari ${images.length}` : ""}`}
                     fill
                     draggable={false}
-                    priority={index === 0}
-                    unoptimized={
-                      !imageUrl.startsWith("https://images.unsplash.com/")
-                    }
+                    priority={activeImage === 0}
+                    unoptimized
+                    referrerPolicy="no-referrer"
+                    onError={(event) => {
+                      event.currentTarget.style.display = "none";
+                    }}
                     sizes="(max-width: 760px) 100vw, 54vw"
                   />
                 </div>
-              ))}
+              ) : null}
             </div>
 
             {hasMultipleImages ? (
@@ -971,9 +827,9 @@ function ListingDialog({
                   {activeImage + 1} / {images.length}
                 </span>
                 <div className="dialog-carousel-dots" aria-label="Pilih foto">
-                  {images.map((imageUrl, index) => (
+                  {images.map((image, index) => (
                     <button
-                      key={`${imageUrl}-dot-${index}`}
+                      key={`${image.sourceUrl}-dot-${index}`}
                       type="button"
                       className={
                         index === activeImage ? "is-active" : undefined
@@ -995,7 +851,9 @@ function ListingDialog({
               <VerifiedIcon />
               <span>{platformMeta[listing.platform].label}</span>
               <span aria-hidden="true">·</span>
-              <span>{listing.postedLabel}</span>
+              <span suppressHydrationWarning>
+                {formatListedAt(listing.listedAt)}
+              </span>
             </div>
             <h2 id={titleId}>{listing.title}</h2>
             <p className="dialog-price">{formatRupiah(listing.price)}</p>
@@ -1027,19 +885,23 @@ function ListingDialog({
               </div>
               <div>
                 <dt>Merek</dt>
-                <dd>{listing.brand}</dd>
+                <dd>{listing.brand ?? "Tidak disebutkan"}</dd>
               </div>
               <div>
                 <dt>Kondisi</dt>
-                <dd>{listing.condition}</dd>
+                <dd>{listing.conditionText ?? "Tidak disebutkan"}</dd>
               </div>
               <div>
                 <dt>Lokasi</dt>
-                <dd>{listing.location}</dd>
+                <dd>
+                  {listing.locationTexts.length > 0
+                    ? listing.locationTexts.join(", ")
+                    : "Tidak disebutkan"}
+                </dd>
               </div>
               <div>
                 <dt>Penjual</dt>
-                <dd>{listing.seller}</dd>
+                <dd>{listing.sellerName ?? "Tidak disebutkan"}</dd>
               </div>
               <div>
                 <dt>Status</dt>
@@ -1068,14 +930,11 @@ export function ReconFeed({ scope }: ReconFeedProps) {
   const pathname = usePathname();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [visibleCount, setVisibleCount] = useState(12);
+  const utils = api.useUtils();
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [refreshAnnouncement, setRefreshAnnouncement] = useState("");
-  const [selectedListing, setSelectedListing] = useState<DummyListing | null>(
-    null,
-  );
-  const query = (searchParams.get("q") ?? "").trim().toLowerCase();
-  const sort = parseListingSort(searchParams.get("sort"));
+  const [selectedListing, setSelectedListing] = useState<Listing | null>(null);
+  const query = (searchParams.get("q") ?? "").trim().slice(0, 80);
   const parsedFilters = useMemo(
     () => parseListingFilters(new URLSearchParams(searchParams.toString())),
     [searchParams],
@@ -1087,14 +946,42 @@ export function ReconFeed({ scope }: ReconFeedProps) {
         : parsedFilters,
     [parsedFilters, scope],
   );
-
-  const filteredListings = useMemo(
-    () => selectListingsForFeed(dummyListings, filters, scope, query, sort),
-    [filters, query, scope, sort],
+  const feedInput = useMemo(
+    () => buildListingFeedInput(scope, filters, query),
+    [filters, query, scope],
+  );
+  const feedQuery = api.listings.feed.useInfiniteQuery(feedInput, {
+    initialCursor: undefined,
+    getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
+  });
+  const facetsQuery = api.listings.facets.useQuery(undefined, {
+    staleTime: 5 * 60 * 1000,
+  });
+  const listings = useMemo(() => {
+    const uniqueListings = new Map<string, Listing>();
+    for (const page of feedQuery.data?.pages ?? []) {
+      for (const listing of page.items) uniqueListings.set(listing.id, listing);
+    }
+    return Array.from(uniqueListings.values());
+  }, [feedQuery.data]);
+  const locationOptions = useMemo(
+    () =>
+      mergeSelectedFacetOptions(
+        facetsQuery.data?.locations ?? [],
+        filters.locations,
+      ),
+    [facetsQuery.data?.locations, filters.locations],
+  );
+  const conditionOptions = useMemo(
+    () =>
+      mergeSelectedFacetOptions(
+        facetsQuery.data?.conditions ?? [],
+        filters.conditions,
+      ),
+    [facetsQuery.data?.conditions, filters.conditions],
   );
 
   const baseParams = new URLSearchParams(searchParams.toString());
-  baseParams.delete("status");
 
   function collectionHref(slug: string) {
     const next = new URLSearchParams(baseParams.toString());
@@ -1106,16 +993,6 @@ export function ReconFeed({ scope }: ReconFeedProps) {
     return withQuery(`/collection/${slug}`, next);
   }
 
-  function changeSort(value: ListingSort) {
-    const next = new URLSearchParams(searchParams.toString());
-
-    if (value === defaultListingSort) next.delete("sort");
-    else next.set("sort", value);
-
-    setVisibleCount(12);
-    router.push(withQuery(pathname, next), { scroll: false });
-  }
-
   function changeFilters(nextFilters: ListingFilters) {
     const next = setListingFilterParams(
       new URLSearchParams(searchParams.toString()),
@@ -1123,7 +1000,6 @@ export function ReconFeed({ scope }: ReconFeedProps) {
     );
     const targetPath = scope.type === "platform" ? "/collection/all" : pathname;
 
-    setVisibleCount(12);
     router.push(withQuery(targetPath, next), { scroll: false });
   }
 
@@ -1142,15 +1018,14 @@ export function ReconFeed({ scope }: ReconFeedProps) {
     });
 
     try {
-      await new Promise<void>((resolve) => window.setTimeout(resolve, 800));
-      setVisibleCount(12);
-      setRefreshAnnouncement("Tampilan contoh sudah diperbarui.");
+      await utils.listings.feed.reset(feedInput, { throwOnError: true });
+      setRefreshAnnouncement("Temuan terbaru sudah dimuat.");
+    } catch {
+      setRefreshAnnouncement("Temuan belum berhasil diperbarui. Coba lagi.");
     } finally {
       setIsRefreshing(false);
     }
   }
-
-  const shownListings = filteredListings.slice(0, visibleCount);
 
   return (
     <div className="app-shell">
@@ -1182,10 +1057,14 @@ export function ReconFeed({ scope }: ReconFeedProps) {
           <div className="feed-controls">
             <FilterControl
               filters={filters}
+              locationOptions={locationOptions}
+              conditionOptions={conditionOptions}
               onApply={changeFilters}
               onClear={() => changeFilters(emptyListingFilters)}
             />
-            <SortControl sort={sort} onChange={changeSort} />
+            <span className="feed-order-label" aria-label="Urutan terbaru">
+              Terbaru
+            </span>
           </div>
         </div>
       </ReconHeader>
@@ -1193,7 +1072,7 @@ export function ReconFeed({ scope }: ReconFeedProps) {
       <main className="feed-main">
         <h1 className="sr-only">{titleForScope(scope)}</h1>
         <p className="sr-only" aria-live="polite">
-          {filteredListings.length} listing cocok
+          {listings.length} listing sudah dimuat
         </p>
         <p className="sr-only" aria-live="polite">
           {refreshAnnouncement}
@@ -1201,8 +1080,8 @@ export function ReconFeed({ scope }: ReconFeedProps) {
 
         <div
           className="feed-refresh-stage"
-          data-refreshing={isRefreshing}
-          aria-busy={isRefreshing}
+          data-refreshing={isRefreshing || feedQuery.isPending}
+          aria-busy={isRefreshing || feedQuery.isPending}
         >
           <div className="feed-refresh-indicator" aria-hidden={!isRefreshing}>
             <FeedRefreshSpinner />
@@ -1226,11 +1105,20 @@ export function ReconFeed({ scope }: ReconFeedProps) {
               </div>
             ) : null}
 
-            {shownListings.length > 0 ? (
-              <MasonryFeed
-                listings={shownListings}
-                onOpen={setSelectedListing}
-              />
+            {feedQuery.isPending ? (
+              <FeedSkeleton />
+            ) : feedQuery.isError ? (
+              <section className="empty-state feed-error-state" role="alert">
+                <h2>Temuan belum berhasil dimuat.</h2>
+                <p>
+                  Koneksi ke data RECON sedang bermasalah. Coba sekali lagi.
+                </p>
+                <button type="button" onClick={() => void feedQuery.refetch()}>
+                  Coba lagi
+                </button>
+              </section>
+            ) : listings.length > 0 ? (
+              <MasonryFeed listings={listings} onOpen={setSelectedListing} />
             ) : (
               <section className="empty-state">
                 <h2>Belum ada listing yang cocok.</h2>
@@ -1239,17 +1127,20 @@ export function ReconFeed({ scope }: ReconFeedProps) {
               </section>
             )}
 
-            {visibleCount < filteredListings.length ? (
+            {feedQuery.hasNextPage ? (
               <div className="load-more-wrap">
                 <button
                   type="button"
-                  onClick={() => setVisibleCount((count) => count + 6)}
+                  disabled={feedQuery.isFetchingNextPage}
+                  onClick={() => void feedQuery.fetchNextPage()}
                 >
-                  Muat temuan berikutnya
-                  <span>{filteredListings.length - visibleCount} tersisa</span>
+                  {feedQuery.isFetchingNextPage
+                    ? "Memuat temuan…"
+                    : "Muat temuan berikutnya"}
+                  <span>12 temuan per muat</span>
                 </button>
               </div>
-            ) : shownListings.length > 0 ? (
+            ) : listings.length > 0 && !feedQuery.isError ? (
               <p className="feed-end">Semua listing sudah ditampilkan.</p>
             ) : null}
           </div>
@@ -1257,7 +1148,7 @@ export function ReconFeed({ scope }: ReconFeedProps) {
 
         <footer className="feed-footer">
           <p>RECON</p>
-          <p>Listing contoh dengan foto dari Unsplash.</p>
+          <p>Temuan publik dari sumber aslinya.</p>
         </footer>
       </main>
 
@@ -1265,6 +1156,31 @@ export function ReconFeed({ scope }: ReconFeedProps) {
         listing={selectedListing}
         onClose={() => setSelectedListing(null)}
       />
+    </div>
+  );
+}
+
+function mergeSelectedFacetOptions(
+  options: readonly { value: string; count: number }[],
+  selected: readonly string[],
+) {
+  const merged = new Map(options.map((option) => [option.value, option]));
+  for (const value of selected) {
+    if (!merged.has(value)) merged.set(value, { value, count: 0 });
+  }
+  return Array.from(merged.values());
+}
+
+function FeedSkeleton() {
+  return (
+    <div className="feed-skeleton" aria-label="Memuat temuan">
+      {Array.from({ length: 10 }, (_, index) => (
+        <div className="feed-skeleton-card" key={index} aria-hidden="true">
+          <span />
+          <i />
+          <i />
+        </div>
+      ))}
     </div>
   );
 }

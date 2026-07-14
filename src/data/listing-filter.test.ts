@@ -4,7 +4,6 @@ import {
   countActiveFilterGroups,
   parseListingFilters,
   setListingFilterParams,
-  type ListingFilters,
 } from "~/data/listing-filter";
 
 describe("listing filters", () => {

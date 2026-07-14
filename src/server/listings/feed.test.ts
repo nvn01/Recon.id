@@ -7,7 +7,6 @@ const baseListing = {
   id: "listing-a",
   platform: "REDDIT",
   sourceUrl: "https://www.reddit.com/r/test/comments/a",
-  externalId: "a",
   title: "Listing A",
   description: "Description A",
   category: null,
@@ -19,7 +18,6 @@ const baseListing = {
   status: "AVAILABLE",
   postedAt: new Date("2026-07-12T10:00:00Z"),
   firstFetchedAt: new Date("2026-07-12T10:01:00Z"),
-  lastFetchedAt: new Date("2026-07-12T10:05:00Z"),
   images: [
     {
       sourceUrl: "https://preview.redd.it/a.jpg",
@@ -64,7 +62,6 @@ describe("getListingFeed", () => {
         ...baseListing,
         id: "listing-b",
         sourceUrl: "https://www.reddit.com/r/test/comments/b",
-        externalId: "b",
         title: "Listing B",
       },
     ]);
@@ -123,8 +120,9 @@ describe("getListingFeed", () => {
     });
 
     const sql = queryRaw.mock.calls[0]?.[0] as { values?: unknown[] };
-    const queryText = (queryRaw.mock.calls[0]?.[0] as { strings?: string[] })
-      .strings?.join("?");
+    const queryText = (
+      queryRaw.mock.calls[0]?.[0] as { strings?: string[] }
+    ).strings?.join("?");
     expect(queryText).toContain("category IN");
     expect(queryText).toContain("location_texts && ARRAY");
     expect(queryText).toContain("condition_text IN");

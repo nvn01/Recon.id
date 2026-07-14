@@ -4,11 +4,8 @@ import Link from "next/link";
 import { Suspense } from "react";
 
 import { ReconHeader } from "~/components/recon-header";
-import {
-  collections,
-  dummyListings,
-  formatRupiah,
-} from "~/data/dummy-listings";
+import { collections, formatRupiah } from "~/data/listings";
+import { api } from "~/trpc/server";
 
 export const metadata: Metadata = {
   title: "Koleksi",
@@ -24,35 +21,33 @@ const categoryDescriptions: Record<CategorySlug, string> = {
   peripheral: "Keyboard, audio, mouse, dan aksesori untuk meja kerja.",
   monitor: "Monitor tunggal, ultrawide, dan paket setup layar.",
   gaming: "Konsol, handheld, dan gear untuk ruang bermain.",
+  smartphone: "Ponsel bekas dan perangkat mobile yang baru ditemukan.",
 };
 
-const categoryCards = collections.flatMap((collection) => {
-  if (collection.slug === "all") return [];
+export default async function CollectionDirectoryPage() {
+  const facets = await api.listings.facets();
+  const categoryCards = collections.flatMap((collection) => {
+    if (collection.slug === "all") return [];
 
-  const listings = dummyListings.filter(
-    (listing) => listing.category === collection.slug,
-  );
-  const cover =
-    listings.find((listing) => listing.status !== "sold") ?? listings[0];
+    const categoryValues: readonly string[] = collection.categories;
+    const matching = facets.categories.filter((category) =>
+      categoryValues.includes(category.value),
+    );
+    const prices = matching.flatMap((category) =>
+      category.minPrice === null ? [] : [category.minPrice],
+    );
+    const cover = matching.find((category) => category.coverImageUrl !== null);
 
-  if (!cover) return [];
-
-  const prices = listings.flatMap((listing) =>
-    listing.price === null ? [] : [listing.price],
-  );
-
-  return [
-    {
-      ...collection,
-      cover,
-      count: listings.length,
-      description: categoryDescriptions[collection.slug],
-      lowestPrice: prices.length > 0 ? Math.min(...prices) : null,
-    },
-  ];
-});
-
-export default function CollectionDirectoryPage() {
+    return [
+      {
+        ...collection,
+        cover,
+        count: matching.reduce((total, category) => total + category.count, 0),
+        description: categoryDescriptions[collection.slug],
+        lowestPrice: prices.length > 0 ? Math.min(...prices) : null,
+      },
+    ];
+  });
   return (
     <div className="app-shell">
       <Suspense fallback={<div className="header-placeholder" />}>
@@ -79,13 +74,24 @@ export default function CollectionDirectoryPage() {
               href={`/collection/${category.slug}`}
               className={`collection-directory-card collection-directory-${category.slug}`}
             >
-              <Image
-                src={category.cover.imageUrl}
-                alt=""
-                fill
-                priority={index < 2}
-                sizes="(max-width: 760px) calc(100vw - 24px), (max-width: 1100px) 50vw, 60vw"
-              />
+              {category.cover?.coverImageUrl ? (
+                <Image
+                  src={category.cover.coverImageUrl}
+                  alt={category.cover.coverAltText ?? ""}
+                  fill
+                  priority={index < 2}
+                  unoptimized
+                  referrerPolicy="no-referrer"
+                  sizes="(max-width: 760px) calc(100vw - 24px), (max-width: 1100px) 50vw, 60vw"
+                />
+              ) : (
+                <span
+                  className="collection-card-placeholder"
+                  aria-hidden="true"
+                >
+                  {category.mark}
+                </span>
+              )}
               <span className="collection-card-scrim" aria-hidden="true" />
               <div className="collection-card-copy">
                 <div>

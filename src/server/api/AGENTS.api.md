@@ -4,13 +4,18 @@ Read this file with the root `AGENTS.md` when changing the Next.js/tRPC API.
 
 ## Current Contract
 
-- `listings.feed` is the only listing procedure. It is public, read-only, and
-  intended for the future RECON feed UI.
-- Input accepts optional unique `platforms` and `statuses` arrays, a default
-  limit of 24 capped at 50, and an opaque cursor capped at 512 characters.
+- `listings.feed` and `listings.facets` are public, read-only procedures used by
+  the RECON discovery UI.
+- Feed input accepts bounded unique platform, status, category, location, and
+  condition arrays; an 80-character search query; integer minimum/maximum
+  prices; a default limit of 24 capped at 50; and an opaque cursor capped at
+  512 characters. The UI deliberately requests 12 rows per page.
 - The response preserves the full normalized listing description and images,
-  maps enum values to lowercase, adds the fixed `IDR` currency label, and does
-  not expose Prisma timestamps such as `createdAt` or `updatedAt`.
+  maps enum values to lowercase, adds the fixed `IDR` currency label and one
+  `listedAt` date, and does not expose Prisma timestamps or scraper-only IDs.
+- `listings.facets` returns bounded category, location, and condition summaries.
+  Category summaries include count, public-safe minimum price, and an optional
+  HTTPS cover image. Facets are navigation aids, not mutable catalog metadata.
 - Do not add total counts to the cursor feed. They add a second changing query
   and are not needed for infinite scrolling.
 
@@ -37,6 +42,10 @@ and ordered images. Prisma may issue a separate batched relation query for the
 images; that is still bounded and is not N+1. Keep this ranked-ID plus batched
 readback shape, and never introduce `$queryRawUnsafe`.
 
+All search and filter predicates must be applied in the ranked-ID query before
+the page boundary. Search uses escaped parameterized `ILIKE` predicates; never
+interpolate a raw search pattern or apply client-only filtering to one page.
+
 ## Security Boundary
 
 - Listing and image URLs returned by the DTO must use HTTPS and contain no URL
@@ -44,9 +53,16 @@ readback shape, and never introduce `$queryRawUnsafe`.
   fails closed.
 - The API returns URLs only. It does not proxy, fetch, download, or cache remote
   images.
+- Public prices below IDR 10,000 and known dummy sequences such as `12345` and
+  `123456` are returned as unknown because historical values in those groups
+  include seller placeholders. Contact-like, URL-like, multiline, and
+  oversized location strings are omitted. Stored rows are not rewritten by
+  this presentation rule.
 - Unexpected feed failures must return the generic error message "Unable to
   load listing feed." Server diagnostics may record the error class but must
   not log or return database messages, URLs, SQL, or credentials.
+- Unexpected facet failures must return the generic error message "Unable to
+  load listing filters." with the same diagnostic restrictions.
 - `/api/*` responses receive strict JSON-oriented CSP and
   `Cache-Control: no-store`; the application-wide CSP remains report-only until
   UI nonce/hash work is implemented.
@@ -56,12 +72,15 @@ readback shape, and never introduce `$queryRawUnsafe`.
   give the web container a SELECT-only `DATABASE_URL` and keep scraper/migration
   credentials separate. Do not create or rotate those remote credentials
   without Novandra's explicit approval.
+- Staging and production are separate self-contained Compose stacks. Each web
+  container must resolve the `postgres` service on its own internal network;
+  never add a staging database hostname or cross-environment fallback.
 
 ## Deferred Surface
 
 Do not add connector health, scrape runs, listing writes, takedown/hide,
-authentication, search, arbitrary sorting, or thumbnail caching until a product
-or UI requirement calls for it.
+authentication, arbitrary sorting, or thumbnail caching until a product or UI
+requirement calls for it.
 
 ## Verification
 
@@ -74,7 +93,8 @@ npm run check
 npm run build
 ```
 
-The feed tests must cover input caps, cursor validation, ranked ordering,
-filter parameterization, stable page boundaries, DTO allowlisting, and unsafe
-URL handling. Use a bounded read-only staging smoke for real PostgreSQL query
+The listing tests must cover input caps, cursor validation, ranked ordering,
+search/filter parameterization, stable page boundaries, DTO allowlisting,
+unsafe URL handling, public placeholder suppression, facets, and URL-to-query
+mapping. Use a bounded read-only staging smoke for real PostgreSQL query
 behavior after feed-query changes.

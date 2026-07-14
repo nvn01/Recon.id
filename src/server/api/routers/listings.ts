@@ -4,6 +4,7 @@ import { createTRPCRouter, publicProcedure } from "~/server/api/trpc";
 import { InvalidListingCursorError } from "~/server/listings/cursor";
 import { listingFeedInputSchema } from "~/server/listings/feed-input";
 import { getListingFeed } from "~/server/listings/feed";
+import { getListingFacets } from "~/server/listings/facets";
 
 export const listingsRouter = createTRPCRouter({
   feed: publicProcedure
@@ -28,4 +29,17 @@ export const listingsRouter = createTRPCRouter({
         });
       }
     }),
+  facets: publicProcedure.query(async ({ ctx }) => {
+    try {
+      return await getListingFacets(ctx.db);
+    } catch (error) {
+      console.error("[listings.facets] unexpected failure", {
+        name: error instanceof Error ? error.name : "UnknownError",
+      });
+      throw new TRPCError({
+        code: "INTERNAL_SERVER_ERROR",
+        message: "Unable to load listing filters",
+      });
+    }
+  }),
 });

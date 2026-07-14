@@ -102,6 +102,7 @@ export function ReconHeader({
             name="q"
             type="search"
             defaultValue={query}
+            maxLength={80}
             placeholder="Cari GPU, laptop, keyboard…"
             autoComplete="off"
           />

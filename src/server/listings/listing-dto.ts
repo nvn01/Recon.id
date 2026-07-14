@@ -4,7 +4,6 @@ export const listingFeedSelect = {
   id: true,
   platform: true,
   sourceUrl: true,
-  externalId: true,
   title: true,
   description: true,
   category: true,
@@ -16,7 +15,6 @@ export const listingFeedSelect = {
   status: true,
   postedAt: true,
   firstFetchedAt: true,
-  lastFetchedAt: true,
   images: {
     select: {
       sourceUrl: true,
@@ -54,20 +52,20 @@ export function toListingDto(listing: ListingFeedRecord) {
     id: listing.id,
     platform: platformValues[listing.platform],
     sourceUrl: listing.sourceUrl,
-    externalId: listing.externalId,
     title: listing.title,
     description: listing.description,
     category: listing.category,
     brand: listing.brand,
-    price: listing.price,
+    price: normalizePublicPrice(listing.price),
     currency: "IDR" as const,
-    locationTexts: listing.locationTexts,
+    locationTexts: listing.locationTexts.flatMap((value) => {
+      const location = sanitizePublicLocation(value);
+      return location ? [location] : [];
+    }),
     conditionText: listing.conditionText,
     sellerName: listing.sellerName,
     status: statusValues[listing.status],
-    postedAt: listing.postedAt,
-    firstFetchedAt: listing.firstFetchedAt,
-    lastFetchedAt: listing.lastFetchedAt,
+    listedAt: listing.postedAt ?? listing.firstFetchedAt,
     images: [...listing.images]
       .filter((image) => isSafeHttpsUrl(image.sourceUrl))
       .sort((left, right) => left.position - right.position)
@@ -79,7 +77,9 @@ export function toListingDto(listing: ListingFeedRecord) {
   };
 }
 
-function isSafeHttpsUrl(value: string): boolean {
+export type ListingDto = ReturnType<typeof toListingDto>;
+
+export function isSafeHttpsUrl(value: string): boolean {
   try {
     const url = new URL(value);
     return (
@@ -88,4 +88,24 @@ function isSafeHttpsUrl(value: string): boolean {
   } catch {
     return false;
   }
+}
+
+export function sanitizePublicLocation(value: string): string | null {
+  const location = value.trim();
+  if (!location || location.length > 80 || /[\r\n]/.test(location)) {
+    return null;
+  }
+  if (/https?:\/\/|www\.|@/i.test(location) || /\d{6,}/.test(location)) {
+    return null;
+  }
+  return location;
+}
+
+export function normalizePublicPrice(value: number | null): number | null {
+  return value !== null &&
+    value >= 10_000 &&
+    value !== 12_345 &&
+    value !== 123_456
+    ? value
+    : null;
 }

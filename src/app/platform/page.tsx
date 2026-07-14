@@ -2,7 +2,11 @@ import Link from "next/link";
 import { Suspense } from "react";
 
 import { ReconHeader } from "~/components/recon-header";
-import { platformMeta, type ListingPlatform } from "~/data/dummy-listings";
+import {
+  listingPlatforms,
+  platformMeta,
+  type ListingPlatform,
+} from "~/data/listings";
 
 export default function PlatformDirectoryPage() {
   return (
@@ -15,11 +19,12 @@ export default function PlatformDirectoryPage() {
           <p className="eyebrow">Pilih sumber / 03 aktif</p>
           <h1>Satu barang, banyak tempat mencarinya.</h1>
           <p>
-            Buka satu platform untuk melihat listing yang RECON temukan dari sumber itu saja.
+            Buka satu platform untuk melihat listing yang RECON temukan dari
+            sumber itu saja.
           </p>
         </div>
         <div className="platform-grid">
-          {(Object.keys(platformMeta) as ListingPlatform[]).map((platform, index) => {
+          {listingPlatforms.map((platform: ListingPlatform, index) => {
             const meta = platformMeta[platform];
             return (
               <Link

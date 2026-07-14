@@ -1,21 +1,28 @@
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
 
-import { ReconFeed } from "~/components/recon-feed";
-import { collections } from "~/data/dummy-listings";
+import { ReconFeedPage } from "~/components/recon-feed-page";
+import { collections } from "~/data/listings";
 
 type CollectionPageProps = {
   params: Promise<{ collection: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 };
 
-export default async function CollectionPage({ params }: CollectionPageProps) {
+export default async function CollectionPage({
+  params,
+  searchParams,
+}: CollectionPageProps) {
   const { collection } = await params;
 
   if (!collections.some((item) => item.slug === collection)) notFound();
 
   return (
     <Suspense fallback={<div className="page-loading">Menyusun temuan…</div>}>
-      <ReconFeed scope={{ type: "collection", slug: collection }} />
+      <ReconFeedPage
+        scope={{ type: "collection", slug: collection }}
+        searchParams={searchParams}
+      />
     </Suspense>
   );
 }

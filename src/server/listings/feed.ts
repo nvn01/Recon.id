@@ -84,6 +84,33 @@ export function buildListingFeedQuery(
   const statusFilter = input.statuses
     ? Prisma.sql`AND status::text IN (${Prisma.join(input.statuses)})`
     : Prisma.empty;
+  const categoryFilter = input.categories
+    ? Prisma.sql`AND category IN (${Prisma.join(input.categories)})`
+    : Prisma.empty;
+  const locationFilter = input.locations
+    ? Prisma.sql`AND location_texts && ARRAY[${Prisma.join(input.locations)}]::text[]`
+    : Prisma.empty;
+  const conditionFilter = input.conditions
+    ? Prisma.sql`AND condition_text IN (${Prisma.join(input.conditions)})`
+    : Prisma.empty;
+  const searchPattern = input.q ? `%${escapeLikePattern(input.q)}%` : undefined;
+  const searchFilter = searchPattern
+    ? Prisma.sql`AND (
+        title ILIKE ${searchPattern} ESCAPE CHR(92)
+        OR description ILIKE ${searchPattern} ESCAPE CHR(92)
+        OR COALESCE(brand, '') ILIKE ${searchPattern} ESCAPE CHR(92)
+        OR COALESCE(category, '') ILIKE ${searchPattern} ESCAPE CHR(92)
+        OR COALESCE(seller_name, '') ILIKE ${searchPattern} ESCAPE CHR(92)
+      )`
+    : Prisma.empty;
+  const minPriceFilter =
+    input.minPrice !== undefined
+      ? Prisma.sql`AND price >= ${input.minPrice}`
+      : Prisma.empty;
+  const maxPriceFilter =
+    input.maxPrice !== undefined
+      ? Prisma.sql`AND price <= ${input.maxPrice}`
+      : Prisma.empty;
   const cursorFilter = cursor
     ? Prisma.sql`
         WHERE
@@ -113,6 +140,12 @@ export function buildListingFeedQuery(
       WHERE TRUE
         ${platformFilter}
         ${statusFilter}
+        ${categoryFilter}
+        ${locationFilter}
+        ${conditionFilter}
+        ${searchFilter}
+        ${minPriceFilter}
+        ${maxPriceFilter}
     )
     SELECT id, "statusRank", "effectiveAt"
     FROM ranked
@@ -120,4 +153,8 @@ export function buildListingFeedQuery(
     ORDER BY "statusRank" ASC, "effectiveAt" DESC, id DESC
     LIMIT ${input.limit + 1}
   `;
+}
+
+function escapeLikePattern(value: string): string {
+  return value.replace(/[\\%_]/g, "\\$&");
 }
