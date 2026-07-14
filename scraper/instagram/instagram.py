@@ -43,13 +43,22 @@ class InstagramAccountResult:
     skipped_count: int
     error: str | None
     latest_shortcode: str | None
+    cooldown_eligible: bool = False
 
 
 class InstagramFetchError(RuntimeError):
-    def __init__(self, message: str, status: int | None = None, retry_after_seconds: int | None = None) -> None:
+    def __init__(
+        self,
+        message: str,
+        status: int | None = None,
+        retry_after_seconds: int | None = None,
+        *,
+        cooldown_eligible: bool = False,
+    ) -> None:
         super().__init__(message)
         self.status = status
         self.retry_after_seconds = retry_after_seconds
+        self.cooldown_eligible = cooldown_eligible
 
 
 def run_accounts(
@@ -95,7 +104,8 @@ def run_accounts(
             posts = extract_posts(payload)
             selected: list[dict[str, Any]] = []
             skipped_count = 0
-            for post in posts[:max_posts_per_account]:
+            post_limit = min(max_posts_per_account, max(1, limit))
+            for post in posts[:post_limit]:
                 selected.append(normalize_post(account, post, fetched_at))
             listings.extend(selected)
             results.append(
@@ -109,6 +119,7 @@ def run_accounts(
                     skipped_count=skipped_count,
                     error=None,
                     latest_shortcode=posts[0].get("shortcode") if posts else None,
+                    cooldown_eligible=False,
                 ).__dict__
             )
         except InstagramFetchError as exc:
@@ -123,6 +134,7 @@ def run_accounts(
                     skipped_count=0,
                     error=str(exc),
                     latest_shortcode=None,
+                    cooldown_eligible=exc.cooldown_eligible,
                 ).__dict__
             )
     return listings, results
@@ -240,6 +252,8 @@ def fetch_profile_browser(
                 if status >= 400:
                     raise InstagramFetchError(f"Instagram browser HTTP {status}", status=status)
 
+                ensure_profile_not_login_redirect(page.url, page.title())
+
                 posts, script_count = wait_for_profile_posts(
                     page,
                     timeline_payloads,
@@ -272,6 +286,17 @@ def fetch_profile_browser(
         raise
     except (PlaywrightError, PlaywrightTimeoutError) as exc:
         raise InstagramFetchError(f"Instagram browser fetch failed: {exc}") from exc
+
+
+def ensure_profile_not_login_redirect(url: str, title: str) -> None:
+    final_path = urllib.parse.urlparse(url).path[:160]
+    if not final_path.startswith("/accounts/login"):
+        return
+    raise InstagramFetchError(
+        "Instagram profile redirected to login "
+        f"(finalPath={final_path!r}, title={title[:120]!r})",
+        cooldown_eligible=True,
+    )
 
 
 def wait_for_profile_posts(

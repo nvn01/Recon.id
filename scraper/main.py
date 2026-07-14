@@ -449,7 +449,10 @@ def run_instagram(args: argparse.Namespace, config: dict[str, Any]) -> dict[str,
     fetched_results = [result for result in account_results if not result.get("skipped_by_cooldown")]
     failed_accounts = [result for result in fetched_results if not result["ok"]]
     cooldown_accounts = [
-        result for result in failed_accounts if result.get("http_status") in INSTAGRAM_COOLDOWN_HTTP_STATUSES
+        result
+        for result in failed_accounts
+        if result.get("http_status") in INSTAGRAM_COOLDOWN_HTTP_STATUSES
+        or bool(result.get("cooldown_eligible"))
     ]
     ok = not failed_accounts and not invalid and ai_parse_error is None
     statuses = sorted({result["http_status"] for result in account_results if result["http_status"] is not None})
@@ -461,7 +464,10 @@ def run_instagram(args: argparse.Namespace, config: dict[str, Any]) -> dict[str,
             clear_cooldown(account_state)
             account_state["last_success_at"] = now_iso()
             account_state["last_error"] = None
-        elif result.get("http_status") in INSTAGRAM_COOLDOWN_HTTP_STATUSES:
+        elif (
+            result.get("http_status") in INSTAGRAM_COOLDOWN_HTTP_STATUSES
+            or bool(result.get("cooldown_eligible"))
+        ):
             set_cooldown(account_state, cooldown, str(result.get("error") or "Instagram rate limited or blocked"))
         else:
             account_state["last_error"] = result.get("error")

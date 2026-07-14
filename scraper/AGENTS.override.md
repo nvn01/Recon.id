@@ -70,6 +70,10 @@ old probe scripts or historical access experiments.
 - Scheduled Facebook jobs use batched NVIDIA semantic parsing. Collector fields
   such as card price, location, and sold flags are source evidence only; local
   code must not translate them into database semantic values.
+- NVIDIA capacity errors immediately open a shared five-minute parser cooldown.
+  Two consecutive invalid model outputs open the same cooldown. Only an explicit
+  guided-JSON request rejection may retry once without `nvext`; other failures
+  must not create an immediate duplicate model request.
 - Persistent profile and login CLI modes are diagnostics only. Never commit
   `.facebook-profile*`.
 

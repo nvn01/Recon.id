@@ -11,8 +11,10 @@ retry_base_seconds = 2.0
 retry_max_seconds = 30.0
 retry_jitter_seconds = 1.0
 lock_stale_seconds = 900
-ai_batch_size = 5
-ai_rate_limit_seconds = 2.0
+# Keep model output small enough for reliable strict JSON and leave capacity
+# between requests on the shared NVIDIA endpoint.
+ai_batch_size = 2
+ai_rate_limit_seconds = 5.0
 
 [scheduler]
 # Production-shaped scheduler defaults. This runs source-specific one-shot

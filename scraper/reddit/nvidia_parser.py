@@ -5,12 +5,17 @@ import os
 import time
 import urllib.error
 import urllib.request
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
 
 DEFAULT_BASE_URL = "https://integrate.api.nvidia.com/v1"
 DEFAULT_MODEL = "nvidia/nemotron-3-nano-30b-a3b"
+DEFAULT_STATE_FILE = Path(__file__).resolve().parents[1] / ".state" / "nvidia_ai.json"
+DEFAULT_COOLDOWN_SECONDS = 300
+INVALID_OUTPUT_FAILURE_THRESHOLD = 2
+MAX_OUTPUT_TOKENS = 4096
 
 SYSTEM_PROMPT = """
 You are RECON's strict semantic parser for Indonesian second-hand technology listings.
@@ -188,18 +193,79 @@ def enrich_listings_with_nvidia(
 
 
 class NvidiaParseClient:
-    def __init__(self, *, api_key: str, base_url: str, model: str, timeout: int) -> None:
+    def __init__(
+        self,
+        *,
+        api_key: str,
+        base_url: str,
+        model: str,
+        timeout: int,
+        state_path: Path | None = None,
+        cooldown_seconds: int = DEFAULT_COOLDOWN_SECONDS,
+    ) -> None:
         self.api_key = api_key
         self.base_url = base_url
         self.model = model
         self.timeout = timeout
+        self.state_path = state_path or DEFAULT_STATE_FILE
+        self.cooldown_seconds = max(60, cooldown_seconds)
 
     def parse_batch(self, listings: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        self._ensure_circuit_closed()
         payload = self._build_payload(listings, guided=True)
         try:
-            return self._request(payload)
-        except NvidiaParserError:
-            return self._request(self._build_payload(listings, guided=False))
+            analyses = self._request(payload)
+        except NvidiaParserError as exc:
+            if not is_guided_json_rejection(exc):
+                self._record_failure(exc)
+                raise
+            try:
+                analyses = self._request(self._build_payload(listings, guided=False))
+            except NvidiaParserError as fallback_exc:
+                self._record_failure(fallback_exc)
+                raise
+
+        try:
+            validate_ai_batch_result(listings, analyses)
+        except NvidiaParserError as exc:
+            self._record_failure(exc)
+            raise
+        self._record_success()
+        return analyses
+
+    def _ensure_circuit_closed(self) -> None:
+        state = load_circuit_state(self.state_path)
+        cooldown_until = parse_datetime(state.get("cooldown_until"))
+        if not cooldown_until:
+            return
+        remaining = int((cooldown_until - now_utc()).total_seconds())
+        if remaining <= 0:
+            self._record_success()
+            return
+        reason = str(state.get("last_failure_kind") or "AI failure")
+        raise NvidiaParserError(f"NVIDIA parser cooling down for {remaining}s after {reason}")
+
+    def _record_failure(self, exc: NvidiaParserError) -> None:
+        kind = classify_nvidia_error(exc)
+        state = load_circuit_state(self.state_path)
+        failures = int(state.get("consecutive_failures") or 0) + 1
+        should_open = kind in {"capacity", "rate_limit"} or (
+            kind == "invalid_output" and failures >= INVALID_OUTPUT_FAILURE_THRESHOLD
+        )
+        next_state: dict[str, Any] = {
+            "consecutive_failures": failures,
+            "last_failure_at": now_utc().isoformat(),
+            "last_failure_kind": kind,
+            "cooldown_until": None,
+        }
+        if should_open:
+            next_state["cooldown_until"] = (
+                now_utc() + timedelta(seconds=self.cooldown_seconds)
+            ).isoformat()
+        save_circuit_state(self.state_path, next_state)
+
+    def _record_success(self) -> None:
+        self.state_path.unlink(missing_ok=True)
 
     def _request(self, payload: dict[str, Any]) -> list[dict[str, Any]]:
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
@@ -244,12 +310,85 @@ class NvidiaParseClient:
             ],
             "temperature": 0.0,
             "top_p": 0.7,
-            "max_tokens": 2048,
+            "max_tokens": MAX_OUTPUT_TOKENS,
             "stream": False,
         }
         if guided:
             payload["nvext"] = {"guided_json": PARSE_SCHEMA}
         return payload
+
+
+def validate_ai_batch_result(
+    listings: list[dict[str, Any]],
+    analyses: list[dict[str, Any]],
+) -> None:
+    expected_ids = [str(listing.get("externalId") or "") for listing in listings]
+    returned_ids = [
+        str(item.get("externalId") or "")
+        for item in analyses
+        if isinstance(item, dict)
+    ]
+    if len(returned_ids) != len(expected_ids) or set(returned_ids) != set(expected_ids):
+        raise NvidiaParserError("NVIDIA parser did not return exactly one result for every listing")
+
+
+def is_guided_json_rejection(exc: NvidiaParserError) -> bool:
+    message = str(exc).lower()
+    rejected_request = "http 400" in message or "http 422" in message
+    guided_marker = any(marker in message for marker in ("guided_json", "nvext", "json schema"))
+    return rejected_request and guided_marker
+
+
+def classify_nvidia_error(exc: NvidiaParserError) -> str:
+    message = str(exc).lower()
+    if "http 429" in message or "rate limit" in message:
+        return "rate_limit"
+    if "http 503" in message or "resourceexhausted" in message or "request limit reached" in message:
+        return "capacity"
+    if any(
+        marker in message
+        for marker in (
+            "non-json",
+            "invalid response json",
+            "exactly one result",
+            "json root was not an object",
+        )
+    ):
+        return "invalid_output"
+    if "request failed" in message:
+        return "transport"
+    return "other"
+
+
+def load_circuit_state(path: Path) -> dict[str, Any]:
+    try:
+        loaded = json.loads(path.read_text(encoding="utf-8"))
+    except (FileNotFoundError, OSError, json.JSONDecodeError):
+        return {}
+    return loaded if isinstance(loaded, dict) else {}
+
+
+def save_circuit_state(path: Path, state: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp_path = path.with_suffix(f"{path.suffix}.tmp")
+    temp_path.write_text(json.dumps(state, separators=(",", ":")) + "\n", encoding="utf-8")
+    temp_path.replace(path)
+
+
+def parse_datetime(value: Any) -> datetime | None:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def now_utc() -> datetime:
+    return datetime.now(timezone.utc)
 
 
 def build_prompt(listings: list[dict[str, Any]]) -> str:
