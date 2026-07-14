@@ -6,7 +6,6 @@ const listing: ListingFeedRecord = {
   id: "listing-1",
   platform: "INSTAGRAM",
   sourceUrl: "https://www.instagram.com/p/example/",
-  externalId: "example",
   title: "RTX 4070",
   description: "Full seller caption",
   category: "GPU",
@@ -18,7 +17,6 @@ const listing: ListingFeedRecord = {
   status: "AVAILABLE",
   postedAt: null,
   firstFetchedAt: new Date("2026-07-12T10:00:00Z"),
-  lastFetchedAt: new Date("2026-07-12T10:05:00Z"),
   images: [
     {
       sourceUrl: "https://scontent.example/image-2.jpg",
@@ -93,5 +91,10 @@ describe("toListingDto", () => {
         ],
       }).locationTexts,
     ).toEqual(["Bandung"]);
+  });
+
+  it("presents historical zero or placeholder-small prices as unknown", () => {
+    expect(toListingDto({ ...listing, price: 0 }).price).toBeNull();
+    expect(toListingDto({ ...listing, price: 123 }).price).toBeNull();
   });
 });
