@@ -38,7 +38,8 @@ export function ReconHeader({ children }: { children?: ReactNode }) {
   function submitSearch(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const data = new FormData(event.currentTarget);
-    const value = String(data.get("q") ?? "").trim();
+    const searchValue = data.get("q");
+    const value = typeof searchValue === "string" ? searchValue.trim() : "";
     const next = new URLSearchParams(searchParams.toString());
 
     if (value) next.set("q", value);
@@ -59,7 +60,11 @@ export function ReconHeader({ children }: { children?: ReactNode }) {
   return (
     <header className="site-header">
       <div className="header-inner">
-        <Link className="wordmark" href="/collection/all" aria-label="RECON home">
+        <Link
+          className="wordmark"
+          href="/collection/all"
+          aria-label="RECON home"
+        >
           <ReconMark />
           <span>RECON</span>
         </Link>
@@ -79,7 +84,11 @@ export function ReconHeader({ children }: { children?: ReactNode }) {
             autoComplete="off"
           />
           {query ? (
-            <button type="button" className="clear-search" onClick={clearSearch}>
+            <button
+              type="button"
+              className="clear-search"
+              onClick={clearSearch}
+            >
               <CloseIcon />
               <span className="sr-only">Hapus pencarian</span>
             </button>

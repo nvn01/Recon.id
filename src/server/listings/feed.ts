@@ -105,9 +105,8 @@ export function buildListingFeedQuery(
       SELECT
         id,
         CASE status::text
-          WHEN 'available' THEN 0
-          WHEN 'unknown' THEN 1
-          ELSE 2
+          WHEN 'sold' THEN 1
+          ELSE 0
         END AS "statusRank",
         COALESCE(posted_at, first_fetched_at) AS "effectiveAt"
       FROM listings

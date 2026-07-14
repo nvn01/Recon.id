@@ -19,15 +19,16 @@ Read this file with the root `AGENTS.md` when changing the Next.js/tRPC API.
 The canonical order is fixed:
 
 ```text
-available -> unknown -> sold
+available + unknown (same rank) -> sold
 COALESCE(posted_at, first_fetched_at) DESC
 id DESC
 ```
 
 Never sort the public feed by `lastFetchedAt`; scraper refreshes would move old
-listings back to the top. The cursor contains a version, status rank, effective
-timestamp, and ID. Changing this order is a breaking API change and requires
-new cursor-version handling plus pagination regression tests.
+listings back to the top. The cursor contains version 2, status rank, effective
+timestamp, and ID. Version 1 cursors from the old three-rank ordering are
+rejected. Changing this order is a breaking API change and requires new
+cursor-version handling plus pagination regression tests.
 
 `feed.ts` uses one parameterized Prisma SQL query for ranked IDs because the
 status CASE expression and nullable timestamp fallback are not representable as

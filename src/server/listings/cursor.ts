@@ -1,8 +1,8 @@
 import { z } from "zod";
 
 const encodedCursorSchema = z.object({
-  v: z.literal(1),
-  r: z.number().int().min(0).max(2),
+  v: z.literal(2),
+  r: z.number().int().min(0).max(1),
   t: z.string().datetime({ offset: true }),
   i: z.string().min(1).max(128),
 });
@@ -22,7 +22,7 @@ export class InvalidListingCursorError extends Error {
 
 export function encodeListingCursor(cursor: ListingCursor): string {
   const encoded = encodedCursorSchema.parse({
-    v: 1,
+    v: 2,
     r: cursor.statusRank,
     t: cursor.effectiveAt.toISOString(),
     i: cursor.id,

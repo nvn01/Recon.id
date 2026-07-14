@@ -15,8 +15,12 @@ describe("listing feed cursor", () => {
     } as const;
 
     const cursor = encodeListingCursor(value);
+    const payload = JSON.parse(
+      Buffer.from(cursor, "base64url").toString("utf8"),
+    ) as unknown;
 
     expect(cursor).not.toContain("listing-123");
+    expect(payload).toMatchObject({ v: 2, r: 1 });
     expect(decodeListingCursor(cursor)).toEqual(value);
   });
 
@@ -24,13 +28,13 @@ describe("listing feed cursor", () => {
     "not base64!",
     Buffer.from("not-json").toString("base64url"),
     Buffer.from(
-      JSON.stringify({ v: 2, r: 0, t: new Date().toISOString(), i: "id" }),
+      JSON.stringify({ v: 1, r: 0, t: new Date().toISOString(), i: "id" }),
     ).toString("base64url"),
     Buffer.from(
-      JSON.stringify({ v: 1, r: 4, t: new Date().toISOString(), i: "id" }),
+      JSON.stringify({ v: 2, r: 2, t: new Date().toISOString(), i: "id" }),
     ).toString("base64url"),
     Buffer.from(
-      JSON.stringify({ v: 1, r: 0, t: "not-a-date", i: "id" }),
+      JSON.stringify({ v: 2, r: 0, t: "not-a-date", i: "id" }),
     ).toString("base64url"),
   ])("rejects malformed or unsupported cursors", (cursor) => {
     expect(() => decodeListingCursor(cursor)).toThrow(

@@ -24,10 +24,16 @@ type ReconFeedProps = {
   scope: FeedScope;
 };
 
-const statusMeta: Record<ListingStatus, { label: string; className: string }> = {
-  available: { label: "Tersedia", className: "is-available" },
-  unknown: { label: "Perlu cek", className: "is-unknown" },
-  sold: { label: "Terjual", className: "is-sold" },
+const statusMeta: Record<ListingStatus, { label: string }> = {
+  available: { label: "Tersedia" },
+  unknown: { label: "Perlu cek" },
+  sold: { label: "Terjual" },
+};
+
+const listingStatusRank: Record<ListingStatus, number> = {
+  available: 0,
+  unknown: 0,
+  sold: 1,
 };
 
 function ArrowIcon() {
@@ -38,18 +44,14 @@ function ArrowIcon() {
   );
 }
 
-function SlidersIcon() {
+function VerifiedIcon() {
   return (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M4 7h10m4 0h2M4 17h2m4 0h10M14 5v4M6 15v4" />
-    </svg>
-  );
-}
-
-function SortIcon() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M5 7h14M8 12h8m-5 5h2" />
+    <svg viewBox="0 0 16 16" aria-hidden="true">
+      <path
+        className="verified-burst"
+        d="M10.07.87a2.89 2.89 0 0 0-4.14 0l-.62.64-.89-.01A2.89 2.89 0 0 0 1.5 4.42l.01.89-.64.62a2.89 2.89 0 0 0 0 4.14l.64.62-.01.89a2.89 2.89 0 0 0 2.92 2.92l.89-.01.62.64a2.89 2.89 0 0 0 4.14 0l.62-.64.89.01a2.89 2.89 0 0 0 2.92-2.92l-.01-.89.64-.62a2.89 2.89 0 0 0 0-4.14l-.64-.62.01-.89a2.89 2.89 0 0 0-2.92-2.92l-.89.01Z"
+      />
+      <path className="verified-check" d="m4.6 8.15 2.25 2.25 4.6-4.7" />
     </svg>
   );
 }
@@ -83,16 +85,6 @@ function titleForScope(scope: FeedScope) {
   return `${collections.find((item) => item.slug === scope.slug)?.label ?? "Koleksi"} yang baru ditemukan.`;
 }
 
-function PlatformBadge({ platform }: { platform: ListingPlatform }) {
-  const meta = platformMeta[platform];
-  return (
-    <span className={`platform-badge platform-${meta.accent}`}>
-      <span aria-hidden="true">{meta.short}</span>
-      {meta.label}
-    </span>
-  );
-}
-
 function ListingCard({
   listing,
   priority,
@@ -102,7 +94,6 @@ function ListingCard({
   priority?: boolean;
   onOpen: (listing: DummyListing) => void;
 }) {
-  const status = statusMeta[listing.status];
   const images = [listing.imageUrl, ...(listing.previewImageUrls ?? [])];
   const [activeImage, setActiveImage] = useState(0);
   const intentTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -143,7 +134,9 @@ function ListingCard({
   );
 
   return (
-    <article className={`listing-card ${listing.status === "sold" ? "card-sold" : ""}`}>
+    <article
+      className={`listing-card ${listing.status === "sold" ? "card-sold" : ""}`}
+    >
       <button
         type="button"
         className={`listing-image image-${listing.imageAspect}`}
@@ -166,27 +159,20 @@ function ListingCard({
           ))}
         </span>
         <span className="image-price">{formatRupiah(listing.price)}</span>
-        <span className={`status-pill ${status.className}`}>
-          {status.label}
-        </span>
         {images.length > 1 ? (
           <span className="carousel-dots" aria-hidden="true">
             {images.map((imageUrl, index) => (
-              <i key={imageUrl} className={index === activeImage ? "active" : undefined} />
+              <i
+                key={imageUrl}
+                className={index === activeImage ? "active" : undefined}
+              />
             ))}
           </span>
         ) : null}
-        <span className="quick-view">
-          Lihat detail <ArrowIcon />
-        </span>
         <span className="sr-only">{listing.title}</span>
       </button>
 
       <div className="listing-copy">
-        <div className="listing-meta-row">
-          <PlatformBadge platform={listing.platform} />
-          <span>{listing.postedLabel}</span>
-        </div>
         <button
           type="button"
           className="listing-title"
@@ -194,7 +180,10 @@ function ListingCard({
         >
           {listing.title}
         </button>
-        <p className="listing-place">{listing.location}</p>
+        <p className="listing-source">
+          <VerifiedIcon />
+          {platformMeta[listing.platform].label}
+        </p>
       </div>
     </article>
   );
@@ -250,10 +239,6 @@ function ListingDialog({
             />
           </div>
           <div className="dialog-copy">
-            <div className="dialog-topline">
-              <PlatformBadge platform={listing.platform} />
-              <span>{listing.postedLabel}</span>
-            </div>
             <h2>{listing.title}</h2>
             <p className="dialog-price">{formatRupiah(listing.price)}</p>
             <p className="dialog-description">{listing.description}</p>
@@ -285,7 +270,8 @@ function ListingDialog({
                 Sumber foto demo <ArrowIcon />
               </a>
               <p>
-                Data masih dummy. Tombol listing asli akan aktif saat feed API dipasang.
+                Data masih dummy. Tombol listing asli akan aktif saat feed API
+                dipasang.
               </p>
             </div>
           </div>
@@ -298,40 +284,47 @@ function ListingDialog({
 export function ReconFeed({ scope }: ReconFeedProps) {
   const searchParams = useSearchParams();
   const [visibleCount, setVisibleCount] = useState(12);
-  const [selectedListing, setSelectedListing] = useState<DummyListing | null>(null);
+  const [selectedListing, setSelectedListing] = useState<DummyListing | null>(
+    null,
+  );
   const query = (searchParams.get("q") ?? "").trim().toLowerCase();
-  const selectedPlatforms = searchParams.getAll("platform") as ListingPlatform[];
-  const selectedStatuses = searchParams.getAll("status") as ListingStatus[];
+  const selectedPlatforms = searchParams.getAll(
+    "platform",
+  ) as ListingPlatform[];
 
   const filteredListings = useMemo(() => {
-    return dummyListings.filter((listing) => {
-      const categoryMatches =
-        scope.type !== "collection" ||
-        scope.slug === "all" ||
-        listing.category === scope.slug;
-      const platformMatches =
-        scope.type === "platform"
-          ? listing.platform === scope.slug
-          : selectedPlatforms.length === 0 ||
-            selectedPlatforms.includes(listing.platform);
-      const statusMatches =
-        selectedStatuses.length === 0 || selectedStatuses.includes(listing.status);
-      const haystack = [
-        listing.title,
-        listing.description,
-        listing.brand,
-        listing.location,
-        ...listing.tags,
-      ]
-        .join(" ")
-        .toLowerCase();
-      const queryMatches = !query || haystack.includes(query);
+    return dummyListings
+      .filter((listing) => {
+        const categoryMatches =
+          scope.type !== "collection" ||
+          scope.slug === "all" ||
+          listing.category === scope.slug;
+        const platformMatches =
+          scope.type === "platform"
+            ? listing.platform === scope.slug
+            : selectedPlatforms.length === 0 ||
+              selectedPlatforms.includes(listing.platform);
+        const haystack = [
+          listing.title,
+          listing.description,
+          listing.brand,
+          listing.location,
+          ...listing.tags,
+        ]
+          .join(" ")
+          .toLowerCase();
+        const queryMatches = !query || haystack.includes(query);
 
-      return categoryMatches && platformMatches && statusMatches && queryMatches;
-    });
-  }, [query, scope, selectedPlatforms, selectedStatuses]);
+        return categoryMatches && platformMatches && queryMatches;
+      })
+      .sort(
+        (first, second) =>
+          listingStatusRank[first.status] - listingStatusRank[second.status],
+      );
+  }, [query, scope, selectedPlatforms]);
 
   const baseParams = new URLSearchParams(searchParams.toString());
+  baseParams.delete("status");
 
   function collectionHref(slug: string) {
     const next = new URLSearchParams(baseParams.toString());
@@ -362,18 +355,8 @@ export function ReconFeed({ scope }: ReconFeedProps) {
     return withQuery(`/platform/${platform}`, next);
   }
 
-  function statusHref(status: ListingStatus | "all") {
-    const next = clearKey(baseParams, "status");
-    if (status !== "all") next.append("status", status);
-    const path =
-      scope.type === "platform"
-        ? `/platform/${scope.slug}`
-        : `/collection/${scope.slug}`;
-    return withQuery(path, next);
-  }
-
-  const currentPlatform = scope.type === "platform" ? scope.slug : selectedPlatforms[0];
-  const currentStatus = selectedStatuses.length === 1 ? selectedStatuses[0] : undefined;
+  const currentPlatform =
+    scope.type === "platform" ? scope.slug : selectedPlatforms[0];
   const shownListings = filteredListings.slice(0, visibleCount);
 
   return (
@@ -397,55 +380,26 @@ export function ReconFeed({ scope }: ReconFeedProps) {
             })}
           </nav>
 
-          <div className="header-filter-actions">
-            <div className="platform-filters" aria-label="Filter platform">
+          <div className="platform-filters" aria-label="Filter platform">
             <Link
               href={platformHref("all")}
               className={!currentPlatform ? "active" : undefined}
             >
               Semua sumber
             </Link>
-            {(Object.keys(platformMeta) as ListingPlatform[]).map((platform) => (
-              <Link
-                key={platform}
-                href={platformHref(platform)}
-                className={currentPlatform === platform ? "active" : undefined}
-              >
-                {platformMeta[platform].label}
-              </Link>
-            ))}
-            </div>
-
-            <details className="filter-menu">
-              <summary>
-                <SlidersIcon />
-                Filter
-                {currentStatus ? <span className="filter-count">1</span> : null}
-              </summary>
-              <div className="filter-popover">
-                <p>Status listing</p>
+            {(Object.keys(platformMeta) as ListingPlatform[]).map(
+              (platform) => (
                 <Link
-                  href={statusHref("all")}
-                  className={!currentStatus ? "active" : undefined}
+                  key={platform}
+                  href={platformHref(platform)}
+                  className={
+                    currentPlatform === platform ? "active" : undefined
+                  }
                 >
-                  Semua status
+                  {platformMeta[platform].label}
                 </Link>
-                {(Object.keys(statusMeta) as ListingStatus[]).map((status) => (
-                  <Link
-                    key={status}
-                    href={statusHref(status)}
-                    className={currentStatus === status ? "active" : undefined}
-                  >
-                    {statusMeta[status].label}
-                  </Link>
-                ))}
-                <div className="sort-note">
-                  <span>Urutan</span>
-                  Tersedia dulu, lalu terbaru
-                </div>
-              </div>
-            </details>
-            <span className="sort-chip"><SortIcon /> Terbaru dulu</span>
+              ),
+            )}
           </div>
         </div>
       </ReconHeader>
@@ -461,12 +415,14 @@ export function ReconFeed({ scope }: ReconFeedProps) {
             <p>
               Hasil pencarian untuk <strong>“{query}”</strong>
             </p>
-            <Link href={withQuery(
-              scope.type === "platform"
-                ? `/platform/${scope.slug}`
-                : `/collection/${scope.slug}`,
-              clearKey(baseParams, "q"),
-            )}>
+            <Link
+              href={withQuery(
+                scope.type === "platform"
+                  ? `/platform/${scope.slug}`
+                  : `/collection/${scope.slug}`,
+                clearKey(baseParams, "q"),
+              )}
+            >
               Hapus pencarian
             </Link>
           </div>
@@ -494,7 +450,10 @@ export function ReconFeed({ scope }: ReconFeedProps) {
 
         {visibleCount < filteredListings.length ? (
           <div className="load-more-wrap">
-            <button type="button" onClick={() => setVisibleCount((count) => count + 6)}>
+            <button
+              type="button"
+              onClick={() => setVisibleCount((count) => count + 6)}
+            >
               Muat temuan berikutnya
               <span>{filteredListings.length - visibleCount} tersisa</span>
             </button>
@@ -509,7 +468,10 @@ export function ReconFeed({ scope }: ReconFeedProps) {
         </footer>
       </main>
 
-      <ListingDialog listing={selectedListing} onClose={() => setSelectedListing(null)} />
+      <ListingDialog
+        listing={selectedListing}
+        onClose={() => setSelectedListing(null)}
+      />
     </div>
   );
 }
