@@ -61,7 +61,8 @@ class SchedulerTests(unittest.TestCase):
             ],
         )
         self.assertEqual(len(reddit_config["urls"]), 4)
-        self.assertEqual(reddit_config["feed_delay_seconds"], 3.0)
+        self.assertEqual(config["scheduler"]["reddit"]["cadence_seconds"], 300)
+        self.assertEqual(reddit_config["feed_delay_seconds"], 5.0)
 
     def test_scheduler_lock_blocks_a_second_scheduler_instance(self):
         with tempfile.TemporaryDirectory() as tmpdir:

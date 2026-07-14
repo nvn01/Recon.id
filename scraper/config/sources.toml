@@ -26,7 +26,7 @@ lock_stale_seconds = 7200
 
 [scheduler.reddit]
 enabled = true
-cadence_seconds = 60
+cadence_seconds = 300
 jitter_seconds = 10
 limit = 15
 
@@ -86,7 +86,7 @@ flairs = [
   "WTS: Video Games & Consoles",
   "WTS: Smartphones & Tablets",
 ]
-feed_delay_seconds = 3.0
+feed_delay_seconds = 5.0
 limit = 15
 retries = 2
 retry_wait_seconds = 20

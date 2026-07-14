@@ -295,7 +295,7 @@ def run_reddit(args: argparse.Namespace, config: dict[str, Any]) -> dict[str, An
         subreddit=reddit_config.get("subreddit", reddit.SUBREDDIT),
         flair=reddit_config.get("flair", reddit.FLAIR),
         flairs=configured_flairs or [str(reddit_config.get("flair") or reddit.FLAIR)],
-        feed_delay_seconds=float_value(reddit_config.get("feed_delay_seconds"), 3.0),
+        feed_delay_seconds=float_value(reddit_config.get("feed_delay_seconds"), 5.0),
         retries=int_value(reddit_config.get("retries"), 2),
         retry_wait=int_value(reddit_config.get("retry_wait_seconds"), 20),
         retry_jitter_seconds=float_value(
