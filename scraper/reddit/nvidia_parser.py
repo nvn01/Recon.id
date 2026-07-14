@@ -12,6 +12,98 @@ from typing import Any
 DEFAULT_BASE_URL = "https://integrate.api.nvidia.com/v1"
 DEFAULT_MODEL = "nvidia/nemotron-3-nano-30b-a3b"
 
+SYSTEM_PROMPT = """
+You are RECON's strict listing-enrichment reviewer for Indonesian second-hand technology listings.
+You receive batches from Reddit, Instagram, or Facebook Marketplace and must return only JSON that
+matches the supplied schema. Do not use Markdown, explanations, notes, confidence, or extra keys.
+
+Output discipline:
+- Return exactly one result for every input item, with the exact same externalId. Do not omit,
+  duplicate, rename, reorder across items, or invent an externalId.
+- Treat ruleParsed values as provisional candidates. Keep a candidate when it is correct, but
+  correct it when the title or description shows that it is wrong.
+- Inspect the title, description, platform, and ruleParsed values together. Do not return null just
+  to avoid reasoning. Make the best evidence-based inference unless a rule below explicitly requires
+  null.
+- Never copy a whole title, description, URL, phone number, seller advertisement, or specification
+  block into conditionText, locationTexts, category, or brand.
+- price is the seller's asking price normalized to integer rupiah. Market knowledge may choose the
+  scale of a seller-written shorthand, but must not invent a different base asking price.
+- status must be AVAILABLE, SOLD, UNKNOWN, or null. Preserve a valid ruleParsed status unless the
+  listing itself contains a clear contradictory sold or availability signal.
+- category is the broad type of the primary item being sold. brand is the manufacturer of that
+  primary item, not the seller and not a component mentioned in its specifications.
+
+Facebook Marketplace rules:
+- Facebook card text is compact and may combine price, title, and location. Separate those concepts;
+  never treat the entire card line as one extracted field.
+
+- conditionText:
+  1. If explicit wording exists, extract a concise condition phrase of at most 80 characters.
+  2. "mulus normal no minus" -> "Bekas - mulus, normal, no minus".
+  3. "minus layar" -> "Bekas - minus layar".
+  4. "baru", "BNIB", "BNOB", or "masih segel" -> a concise Baru/BNIB/BNOB condition matching
+     the seller's wording.
+  5. "second", "bekas", or "pemakaian" without more detail ->
+     "Bekas - detail kondisi tidak disebutkan".
+  6. If no condition evidence exists, infer that a normal Facebook Marketplace second-hand listing
+     is "Bekas - detail kondisi tidak disebutkan". Do not guess "mulus", "normal", a numeric grade,
+     or "no minus" without evidence.
+  7. A condition must not be the product title, specs, location, price, contact instruction, URL, or
+     seller promotion.
+
+- category and brand:
+  1. Identify the primary product from the title before considering specs or bundled accessories.
+  2. A laptop containing Core i5, RAM, SSD, Radeon, NVIDIA, or VGA remains category Laptop; those are
+     specifications, not the primary product category. Its brand is the laptop maker.
+  3. A monitor containing VGA, HDMI, IPS, GPU-related compatibility, or a bundled cable remains
+     category Monitor.
+  4. A motherboard containing DDR3/DDR4/DDR5, RAM support, CPU names, or an M.2 slot remains category
+     Motherboard.
+  5. PS2/PS3/PS4/PS5, Xbox, and Nintendo console hardware -> Game Console. A game disc/cartridge ->
+     Game. A stick, controller, gamepad, or Joy-Con sold separately -> Controller.
+  6. Steam Deck, ROG Ally, Legion Go, and similar portable PCs -> Handheld PC.
+  7. ROG Ally -> brand ASUS even when Xbox compatibility is mentioned. An HP laptop with Intel or
+     NVIDIA specs -> brand HP. An LG monitor with VGA/HDMI -> brand LG.
+  8. Infer from distinctive model families when possible. Use null only when neither text nor a known
+     model family supports a brand or category.
+
+- locationTexts:
+  1. Return only public geographic place names such as city, regency, district, or area.
+  2. Keep a valid ruleParsed location, but remove values that are actually product text.
+  3. "COD Laptop Second Murah ..." does not make "Laptop Second Murah ..." a location. COD is a
+     transaction method unless followed by a real place name.
+  4. Never return a phone number, price, delivery method, product title, seller slogan, or full address.
+
+- price:
+  1. Return null for Gratis/Free/Rp0, "tanya harga", "ask price", DM/PM/chat/inbox-for-price, or an
+     obvious contact-only/dummy price such as 12345, 123456, repeated placeholder digits, or another
+     number whose surrounding text clearly says the real price must be requested from the seller.
+  2. Bare small values such as 1, 100, 200, 450, 800, 1900, 2650, or 3000 are not automatically dummy
+     values. Infer the intended rupiah scale from the primary product and realistic Indonesian used
+     pricing.
+  3. PS4 2650 -> 2650000; PS4 3000 -> 3000000; a low-end used laptop priced 1 can mean 1000000;
+     mouse/keyboard 100 can mean 100000; controller 200 can mean 200000; monitor 800 can mean 800000;
+     PS5 11 can mean 11000000 when that scale fits the exact product.
+  4. Do not assume every value below 100 means millions. Steam Deck 65 can mean 6500000 rather than
+     65000000; a PS4 controller 85 can mean 85000 rather than 85000000.
+  5. Standard shorthand remains exact: 9.6jt -> 9600000, 3.5 juta -> 3500000, 350rb -> 350000.
+  6. If ruleParsed price has an implausible scale but the seller's raw number and product make one
+     scale clearly more likely, return the corrected scale. If the number is a contact placeholder,
+     return null instead of estimating a market price.
+
+Instagram-specific examples remain: Rode VideoMic -> brand Rode and category Audio or Peripheral;
+Xiaomi 13 Ultra -> brand Xiaomi and category Smartphone; Call of Duty / Black Ops -> brand Activision
+and category Game; Genki Sase Switch -> brand Genki and category Controller; Moza R3 -> brand Moza and
+category Peripheral; Gigabyte H610M -> brand Gigabyte and category Motherboard; XPG CORE REACTOR PSU ->
+brand ADATA and category Power Supply; Attack Shark R3 -> brand Attack Shark and category Mouse;
+Corsair K100/K70 -> brand Corsair and category Keyboard; BenQ Zowie XL2411K -> brand BenQ and category
+Monitor.
+
+Do not extract model, specs, warranty, minus details, evidence, confidence, or notes as new output
+keys. Those remain available in the original description.
+""".strip()
+
 PARSE_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
@@ -135,12 +227,7 @@ class NvidiaParseClient:
             "messages": [
                 {
                     "role": "system",
-                    "content": (
-                        "You extract Indonesian used computer, laptop, PC part, gaming, console, and peripheral sale listing fields. "
-                        "Instagram consignment captions often start with hashtags or marketing copy before the actual product line; "
-                        "use the actual product/model text, not seller slogans. Return only JSON. "
-                        "Use null only when the title and description do not support a field."
-                    ),
+                    "content": SYSTEM_PROMPT,
                 },
                 {"role": "user", "content": prompt},
             ],
@@ -175,21 +262,8 @@ def build_prompt(listings: list[dict[str, Any]]) -> str:
         )
 
     return (
-        "Extract listing fields from these Indonesian used-item sale listings.\n"
-        "Rules:\n"
-        "- price must be integer rupiah, no punctuation, no currency string.\n"
-        "- Shorthand Indonesian prices: 9.6jt = 9600000, 3.5 juta = 3500000, 350rb = 350000.\n"
-        "- Facebook Marketplace sellers often omit the thousands suffix. Use the product type and realistic Indonesian used-market range: PS4 price 3000 = 3000000, PS4 price 2650 = 2650000, console price 1900 = 1900000, and PlayStation price 450 = 450000 or 390 = 390000. Very small whole numbers such as PS5 price 11 can mean 11000000 when that is realistic for the product.\n"
-        "- Only expand a Facebook shorthand price when the title/description clearly identifies the product and the expanded amount is reasonable for that product type; otherwise return null.\n"
-        "- If price is ambiguous, return null.\n"
-        "- status must be AVAILABLE, SOLD, UNKNOWN, or null.\n"
-        "- locationTexts must be an array. Return multiple public areas/cities when the post gives more than one.\n"
-        "- Keep conditionText as short text copied or lightly normalized from the post.\n"
-        "- category must be a broad product group such as Laptop, Desktop PC, PC Case, Power Supply, GPU, CPU, RAM, Storage, Motherboard, Monitor, Keyboard, Mouse, Network Adapter, Peripheral, Audio, Controller, Game Console, Game, Smartphone, Drawing Tablet, or Handheld PC.\n"
-        "- brand must be the product brand or manufacturer only, not the seller name.\n"
-        "- Instagram examples: Rode VideoMic -> brand Rode and category Peripheral or Audio; Xiaomi 13 Ultra -> brand Xiaomi and category Smartphone; Call of Duty / Black Ops -> brand Activision and category Game; Genki Sase Switch -> brand Genki and category Controller; Moza R3 -> brand Moza and category Peripheral; Gigabyte H610M -> brand Gigabyte and category Motherboard.\n"
-        "- More real Instagram examples: XPG CORE REACTOR PSU -> brand ADATA and category Power Supply; Attack Shark R3 -> brand Attack Shark and category Mouse; Corsair K100/K70 -> brand Corsair and category Keyboard; BenQ Zowie XL2411K -> brand BenQ and category Monitor.\n"
-        "- Do not extract model, specs, warranty, minus, evidence, confidence, or notes. Those remain in the original description field.\n"
+        "Review and enrich every listing below according to the system instructions.\n"
+        "Return one item per input in the same order, using each externalId exactly once.\n"
         f"Return JSON matching this schema: {json.dumps(PARSE_SCHEMA, ensure_ascii=False)}\n\n"
         f"Items:\n{json.dumps({'items': items}, ensure_ascii=False)}"
     )
@@ -222,7 +296,21 @@ def merge_ai_results(
 
 
 def apply_field(item: dict[str, Any], analysis: dict[str, Any], field: str, *, prefer_ai: bool) -> None:
-    value = analysis.get(field)
+    raw_value = analysis.get(field)
+    if (
+        field == "price"
+        and prefer_ai
+        and "price" in analysis
+        and raw_value is None
+        and str(item.get("platform") or "").upper() == "FACEBOOK"
+    ):
+        # A successfully parsed AI item uses null as an explicit decision that a
+        # Facebook price is free, contact-only, or a dummy placeholder. Request
+        # failures never reach this branch, so they cannot erase an existing value.
+        item[field] = None
+        return
+
+    value = raw_value
     if field == "price":
         value = normalize_ai_price(value)
     elif field == "locationTexts":

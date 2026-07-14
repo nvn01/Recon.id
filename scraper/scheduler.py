@@ -269,6 +269,7 @@ def build_facebook_jobs(config: dict[str, Any]) -> list[ScheduleJob]:
     target_groups = string_list(schedule_config.get("target_groups")) or string_list(source_config.get("target_groups"))
     split_targets = bool_value(schedule_config.get("split_targets"), default=False)
     ai_parse = bool_value(schedule_config.get("ai_parse"), default=False)
+    ai_prefer = bool_value(schedule_config.get("ai_prefer"), default=False)
 
     if split_targets:
         targets_file = resolve_facebook_targets_path(source_config.get("targets_file"))
@@ -283,6 +284,7 @@ def build_facebook_jobs(config: dict[str, Any]) -> list[ScheduleJob]:
                 browser=browser,
                 headless=headless,
                 ai_parse=ai_parse,
+                ai_prefer=ai_prefer,
             )
 
     job_args: list[str] = ["--facebook", "--limit", str(limit)]
@@ -296,6 +298,8 @@ def build_facebook_jobs(config: dict[str, Any]) -> list[ScheduleJob]:
         job_args.extend(["--facebook-browser", browser])
     if ai_parse:
         job_args.append("--ai-parse")
+        if ai_prefer:
+            job_args.append("--ai-prefer")
 
     return [
         ScheduleJob(
@@ -318,6 +322,7 @@ def build_facebook_target_jobs(
     browser: str,
     headless: bool,
     ai_parse: bool,
+    ai_prefer: bool,
 ) -> list[ScheduleJob]:
     target_stagger = max(0, int_value(schedule_config.get("target_stagger_seconds"), 60))
     target_cadence_override = int_value(schedule_config.get("target_cadence_seconds"), 0)
@@ -334,6 +339,8 @@ def build_facebook_target_jobs(
             job_args.extend(["--facebook-browser", browser])
         if ai_parse:
             job_args.append("--ai-parse")
+            if ai_prefer:
+                job_args.append("--ai-prefer")
 
         jobs.append(
             ScheduleJob(
