@@ -51,6 +51,7 @@ export const listingFeedInputSchema = z
     maxPrice: priceSchema.optional(),
     limit: z.number().int().min(1).max(50).default(24),
     cursor: z.string().min(1).max(512).optional(),
+    direction: z.literal("forward").optional(),
   })
   .strict()
   .superRefine((input, context) => {

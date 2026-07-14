@@ -36,3 +36,16 @@ Date: 2026-07-14
 - Chrome desktop and 390 x 844 mobile interaction checks
 
 Docker Desktop was unavailable for the final local browser session, so the browser deliberately exercised the generic database-error state. Filter/search URL behavior, responsive layout, error privacy, and request shape were still verified. The new SQL shapes were checked read-only against the staging PostgreSQL container. No scraper command, container restart, image deploy, write query, or data migration was performed.
+
+## Live staging pagination regression
+
+The first deployment exposed one integration gap that local database-less browser QA could not exercise: tRPC infinite queries add `direction: "forward"` to next-page input, while the strict feed schema rejected that standard field.
+
+- RED: `npx vitest run src/server/listings/feed-input.test.ts` executed the new forward-direction contract and failed with `unrecognized_keys: direction`; checkpoint `7831008`.
+- GREEN: the feed input now accepts only the supported `forward` direction and continues to reject `backward` or unrelated keys.
+- Targeted result: 24/24 feed-input tests passed.
+- Full result: 57/57 tests passed.
+- Coverage: 95.41% statements, 92.94% branches, 96.55% functions, and 96.22% lines.
+- Production checks: `npm run check` and `npm run build` passed.
+
+This guarantees that **Muat temuan berikutnya** can send the tRPC forward-page metadata without weakening the rest of the strict public input boundary.
