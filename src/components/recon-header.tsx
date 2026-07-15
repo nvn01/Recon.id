@@ -87,7 +87,7 @@ export function ReconHeader({
   return (
     <header className="site-header">
       <div className="header-inner">
-        <Link className="wordmark" href="/collection" aria-label="RECON home">
+        <Link className="wordmark" href="/collection/all" aria-label="RECON home">
           <ReconMark />
           <span>RECON</span>
         </Link>

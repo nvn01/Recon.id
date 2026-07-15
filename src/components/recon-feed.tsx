@@ -693,7 +693,9 @@ function ListingCard({
         onPointerCancel={() => stopPreview()}
       >
         <span className="carousel-media" aria-hidden="true">
-          <span className="listing-image-placeholder">RECON</span>
+          <span
+            className={`listing-image-placeholder ${activeImageRecord ? "is-loading" : "is-missing"}`}
+          />
           {activeImageRecord ? (
             <Image
               key={activeImageRecord.sourceUrl}
@@ -945,9 +947,10 @@ function ListingDialog({
               className="dialog-carousel-track"
               style={{ transform: "translate3d(0, 0, 0)" }}
             >
-              <div className="dialog-carousel-slide dialog-image-placeholder">
-                RECON
-              </div>
+              <div
+                className={`dialog-carousel-slide dialog-image-placeholder ${activeImageRecord ? "is-loading" : "is-missing"}`}
+                aria-hidden="true"
+              />
               {activeImageRecord ? (
                 <div className="dialog-carousel-slide">
                   <Image

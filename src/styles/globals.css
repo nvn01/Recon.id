@@ -1173,18 +1173,55 @@ img {
 
 .listing-image-placeholder,
 .dialog-image-placeholder {
-  display: grid;
+  position: relative;
+  isolation: isolate;
+  display: block;
   width: 100%;
   height: 100%;
-  place-items: center;
+  overflow: hidden;
   background:
-    radial-gradient(circle at 72% 28%, rgba(196, 255, 85, 0.58), transparent 31%),
+    radial-gradient(
+      circle at 76% 24%,
+      rgba(200, 255, 90, 0.2),
+      transparent 34%
+    ),
+    linear-gradient(145deg, #17442f, #0b2f20 58%, #071d14);
+}
+
+.listing-image-placeholder.is-loading::after,
+.dialog-image-placeholder.is-loading::after {
+  position: absolute;
+  inset: -35%;
+  background: linear-gradient(
+    105deg,
+    transparent 35%,
+    rgba(200, 255, 90, 0.08) 43%,
+    rgba(239, 255, 207, 0.48) 50%,
+    rgba(200, 255, 90, 0.08) 57%,
+    transparent 65%
+  );
+  content: "";
+  transform: translate3d(-58%, 0, 0);
+  animation: media-placeholder-shimmer 1.35s cubic-bezier(0.4, 0, 0.2, 1)
+    infinite;
+  will-change: transform;
+}
+
+.listing-image-placeholder.is-missing,
+.dialog-image-placeholder.is-missing {
+  background:
+    radial-gradient(
+      circle at 76% 24%,
+      rgba(200, 255, 90, 0.16),
+      transparent 32%
+    ),
     linear-gradient(145deg, #123e2b, #071d14);
-  color: rgba(255, 255, 255, 0.82);
-  font-family: var(--font-bricolage), sans-serif;
-  font-size: clamp(18px, 2vw, 30px);
-  font-weight: 760;
-  letter-spacing: 0.08em;
+}
+
+@keyframes media-placeholder-shimmer {
+  to {
+    transform: translate3d(58%, 0, 0);
+  }
 }
 
 .carousel-frame {
@@ -1421,9 +1458,16 @@ img {
 .feed-skeleton-card i {
   display: block;
   border-radius: 10px;
-  background: linear-gradient(90deg, #dce2de 20%, #edf0ed 50%, #dce2de 80%);
-  background-size: 220% 100%;
-  animation: feed-skeleton-pulse 1.3s ease-in-out infinite;
+  background: linear-gradient(
+    105deg,
+    #dce9e0 20%,
+    #efffcf 42%,
+    #c8ff5a 50%,
+    #efffcf 58%,
+    #dce9e0 80%
+  );
+  background-size: 240% 100%;
+  animation: feed-skeleton-shimmer 1.35s cubic-bezier(0.4, 0, 0.2, 1) infinite;
 }
 
 .feed-skeleton-card span {
@@ -1442,9 +1486,9 @@ img {
   margin-top: 7px;
 }
 
-@keyframes feed-skeleton-pulse {
+@keyframes feed-skeleton-shimmer {
   to {
-    background-position: -220% 0;
+    background-position: -240% 0;
   }
 }
 
@@ -1860,8 +1904,13 @@ img {
   outline-offset: -1px;
 }
 
-.collection-directory-card img {
+.collection-card-media {
+  position: absolute;
   z-index: -2;
+  inset: 0;
+}
+
+.collection-card-media img {
   object-fit: cover;
   filter: saturate(0.88) contrast(0.96);
   transition:
@@ -1869,7 +1918,7 @@ img {
     opacity 180ms ease-out;
 }
 
-.collection-directory-card:hover img {
+.collection-directory-card:hover .collection-card-media img {
   filter: saturate(1) contrast(1);
 }
 
