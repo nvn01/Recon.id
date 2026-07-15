@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import patch
 
+from scraper.candidate_pool import CandidatePool
 from scraper.scheduler import (
     build_jobs,
     coalesce_due_jobs,
@@ -104,6 +105,67 @@ class SchedulerTests(unittest.TestCase):
         self.assertNotIn(fixture_url, command)
         self.assertEqual(child_env["SCRAPER_DATABASE_URL"], fixture_url)
         self.assertNotIn(fixture_url, result.command)
+
+    def test_run_job_queues_raw_candidates_without_ai_or_database_write(self):
+        [job] = [item for item in build_jobs(sample_config()) if item.id == "reddit"]
+        listing = {
+            "platform": "REDDIT",
+            "sourceUrl": "https://reddit.com/r/example/comments/queued",
+            "externalId": "queued",
+            "title": "Raw seller title",
+            "description": "Raw seller text",
+            "category": "OTHER",
+            "brand": None,
+            "price": None,
+            "locationTexts": [],
+            "conditionText": None,
+            "sellerName": "seller",
+            "status": "UNKNOWN",
+            "postedAt": None,
+            "firstFetchedAt": "2026-07-15T00:00:00+00:00",
+            "lastFetchedAt": "2026-07-15T00:00:00+00:00",
+            "images": [],
+        }
+        output = {
+            "ok": True,
+            "summary": {"listings": 1},
+            "connectors": [
+                {
+                    "connector": "reddit",
+                    "ok": True,
+                    "status": "success",
+                    "normalized": 1,
+                    "validated": 1,
+                    "validationErrors": [],
+                    "listings": [listing],
+                    "candidates": [{**listing, "_sourceFacts": {"priceAmount": 1_000_000}}],
+                }
+            ],
+        }
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            pool = CandidatePool(Path(tmpdir) / "pool.sqlite3")
+            with patch("scraper.scheduler.subprocess.run") as runner:
+                runner.return_value.returncode = 0
+                runner.return_value.stdout = json.dumps(output)
+                runner.return_value.stderr = ""
+                result = run_job(
+                    job,
+                    config_path="scraper/config/sources.toml",
+                    write_db=False,
+                    database_url=None,
+                    timeout=30,
+                    queue_candidates=True,
+                    candidate_pool=pool,
+                )
+
+            command = runner.call_args.args[0]
+            self.assertNotIn("--write-db", command)
+            self.assertNotIn("--ai-parse", command)
+            self.assertEqual(pool.stats()["pending"], 1)
+            self.assertEqual(result.summary["candidatePool"]["enqueued"], 1)
+            [queued] = pool.lease_batch(batch_size=1, max_wait_seconds=0)
+            self.assertEqual(queued.payload["_sourceFacts"]["priceAmount"], 1_000_000)
 
     def test_operational_report_job_is_read_only_and_keeps_database_url_in_environment(self):
         fixture_url = "postgresql://reporter:test-placeholder-123@postgres:5432/recon"

@@ -6,10 +6,22 @@ old probe scripts or historical access experiments.
 
 ## Current Runtime Shape
 
-- `scraper.scheduler` is the container entrypoint. The deployed scraper is a
-  profile-gated one-shot job, not an always-running worker.
+- `scraper.scheduler` is the image entrypoint. Its default one-shot command
+  queues candidates; the production-shaped Compose service runs it continuously.
+- Scheduled collectors perform raw fetch and contract validation only. They
+  never call NVIDIA or PostgreSQL.
+- `scraper.candidate_pool` keeps stable-evidence versions in ignored
+  `.state/candidate_pool.sqlite3`. Fetch timestamps and signed image query
+  parameters do not create duplicate AI work.
+- Queue envelopes may carry the existing bounded `_sourceFacts` dictionary for
+  AI review. It must affect the evidence fingerprint, remain out of scheduler
+  logs, and be stripped by contract validation before PostgreSQL writes.
+- `scraper.ai_manager` leases mixed-platform batches, runs the mandatory NVIDIA
+  semantic parser, and only then writes validated listings to PostgreSQL. Failed
+  AI or storage batches return to the pool with a bounded retry delay.
 - `scraper.main` orchestrates individual connectors and is read-only unless
-  `--write-db` is supplied.
+  `--write-db` is supplied. That direct flag still enables AI parsing for
+  controlled one-shot diagnostics; it is not the scheduled path.
 - Source URLs, account names, cadence, browser selection, and safe defaults live
   in `config/sources.toml`.
 - Facebook's reviewed category targets live in
@@ -26,6 +38,8 @@ old probe scripts or historical access experiments.
 ### Reddit
 
 - Use the public RSS feed for scheduled discovery.
+- The four configured flairs start 60 seconds apart and each repeat every 240
+  seconds, producing one scheduled RSS request per minute.
 - Keep `image_mode = "rss"`; do not add per-post JSON or gallery requests to the
   scheduled path.
 - Preserve TLS verification. Transient certificate or transport failures get
@@ -46,7 +60,11 @@ old probe scripts or historical access experiments.
   data arrives rather than adding a fixed sleep.
 - Keep `--instagram-browser-mode headless` only as a diagnostic A/B control. The
   proven Debian production path is headed Chrome under Xvfb.
-- Scheduled Instagram jobs send raw post candidates to batched NVIDIA parsing.
+- Scheduled Instagram accounts start 45 seconds apart and repeat every 315
+  seconds, completing the first seven-account sweep in 4m30s.
+- Any access, login-wall, 401, 403, or 429 result opens a platform-wide
+  Instagram cooldown before another scheduled account is attempted.
+- Scheduled Instagram jobs send raw post candidates to the durable pool.
   AI decides whether each post is a listing and owns title, category, brand,
   price, condition, location, and status. If parsing fails, do not write the
   incomplete candidates.
@@ -77,6 +95,8 @@ old probe scripts or historical access experiments.
   Two consecutive invalid model outputs open the same cooldown. Only an explicit
   guided-JSON request rejection may retry once without `nvext`; other failures
   must not create an immediate duplicate model request.
+- The three reviewed hot targets start 60 seconds apart and each repeat every
+  180 seconds.
 - Persistent profile and login CLI modes are diagnostics only. Never commit
   `.facebook-profile*`.
 
@@ -144,7 +164,7 @@ Staging is the authoritative environment for browser/network behavior:
 ssh root@100.100.20.3
 cd /docker/recon
 docker compose --env-file .env.staging -f compose.yml pull scraper
-docker compose --env-file .env.staging -f compose.yml --profile scraper run --rm scraper
+docker compose --env-file .env.staging -f compose.yml --profile scraper run --rm scraper python -m scraper.main --all --write-db
 ```
 
 Current deployment facts:
@@ -153,7 +173,11 @@ Current deployment facts:
 - Project directory: `/docker/recon`
 - Scraper image: `novn01/recon-scraper:stagging`
 - Runtime env: `/docker/recon/.env.staging`
-- Default image command: `scraper.scheduler --once --write-db`
+- Default image command: `scraper.scheduler --once --queue-candidates`
+- A continuous deployment must run collector and AI-manager services from the
+  same scraper image with the same `.state` and `.logs` volumes. The collector
+  command is `scraper.scheduler --queue-candidates`; the manager command is
+  `scraper.ai_manager --write-db`.
 - Chrome/Xvfb startup must remain behind `tini`; do not duplicate Compose `init`
   or browser flags in the service command.
 

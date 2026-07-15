@@ -28,33 +28,31 @@ lock_stale_seconds = 7200
 
 [scheduler.reddit]
 enabled = true
-ai_parse = true
-cadence_seconds = 300
-stagger_seconds = 75
+# Four flairs repeat every four minutes, with one RSS request starting each minute.
+cadence_seconds = 240
+stagger_seconds = 60
 jitter_seconds = 10
 limit = 15
 
 [scheduler.instagram]
 enabled = true
-ai_parse = true
-# Seven public profiles share one ten-minute cycle: one profile starts roughly
-# every 85 seconds and each profile repeats every 600 seconds.
-cadence_seconds = 600
-stagger_seconds = 85
+# Seven public profiles start 45 seconds apart. The first sweep completes in
+# 4m30s and each profile repeats every 5m15s.
+cadence_seconds = 315
+stagger_seconds = 45
 jitter_seconds = 10
 limit = 10
 per_account = true
 
 [scheduler.facebook]
 enabled = true
-ai_parse = true
 # Let the stricter Facebook AI reviewer correct populated-but-wrong rule values.
 # This affects enrichment precedence only; collection and browser behavior stay unchanged.
 # Rotate reviewed hot targets one at a time instead of hammering all Marketplace
 # searches together. With the current hot target count this yields about one
 # browser-backed Marketplace search per minute, while each target repeats slower.
-cadence_seconds = 600
-target_cadence_seconds = 600
+cadence_seconds = 180
+target_cadence_seconds = 180
 target_stagger_seconds = 60
 jitter_seconds = 30
 limit = 10
@@ -62,6 +60,22 @@ headless = true
 browser = "chrome"
 split_targets = true
 target_groups = ["hot"]
+
+[candidate_pool]
+# Raw normalized candidates stay scraper-side until centralized AI parsing.
+path = ".state/candidate_pool.sqlite3"
+
+[ai_manager]
+# Mix platforms in small batches, but flush a lone candidate after 30 seconds.
+pool_path = ".state/candidate_pool.sqlite3"
+log_file = ".logs/ai_manager.jsonl"
+lock_file = ".state/ai_manager.lock"
+batch_size = 2
+max_wait_seconds = 30.0
+poll_seconds = 2.0
+rate_limit_seconds = 5.0
+retry_seconds = 300
+lease_seconds = 300
 
 [scheduler.operational_report]
 enabled = true

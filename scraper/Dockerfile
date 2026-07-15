@@ -24,4 +24,4 @@ COPY --chown=scraper:scraper . ./scraper
 USER scraper
 
 ENTRYPOINT ["tini", "--", "xvfb-run", "-a", "--server-args=-screen 0 1365x768x24"]
-CMD ["python", "-m", "scraper.scheduler", "--once", "--write-db"]
+CMD ["python", "-m", "scraper.scheduler", "--once", "--queue-candidates"]

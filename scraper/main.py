@@ -140,6 +140,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--ignore-cooldown", action="store_true", help="Ignore active local connector cooldown state.")
     parser.add_argument("--lock-stale-seconds", type=int, default=900, help="Remove orchestrator lock files older than this many seconds.")
     parser.add_argument("--ai-parse", action="store_true", help="Run required batched NVIDIA semantic parsing.")
+    parser.add_argument(
+        "--emit-candidates",
+        action="store_true",
+        help="Include scraper-internal source evidence for durable queue ingestion.",
+    )
     parser.add_argument("--headless", action="store_true", help="Force Facebook browser runs to be headless.")
     parser.add_argument("--facebook-details", action="store_true", help="Fetch Facebook detail pages for richer fields.")
     parser.add_argument("--facebook-browser", choices=("chrome", "chromium"), default=None, help="Facebook Playwright browser channel override.")
@@ -334,6 +339,7 @@ def run_reddit(args: argparse.Namespace, config: dict[str, Any]) -> dict[str, An
         user_agent=reddit.DEFAULT_USER_AGENT,
     )
     code, listings, source_status = reddit.guarded_run_once(reddit_args, include_status=True)
+    raw_listings = listings
     valid, invalid = validate_listings(listings)
     ok = code == 0 and not invalid
     status = source_status if source_status == "cooldown_skip" else connector_result_status(ok, len(valid))
@@ -351,6 +357,7 @@ def run_reddit(args: argparse.Namespace, config: dict[str, Any]) -> dict[str, An
         "validated": len(valid),
         "validationErrors": invalid,
         "listings": valid,
+        **candidate_output(args, raw_listings, valid),
     }
 
 
@@ -369,17 +376,23 @@ def run_instagram(args: argparse.Namespace, config: dict[str, Any]) -> dict[str,
     log_path = None if args.no_state else DEFAULT_INSTAGRAM_LOG_FILE
     state = default_runtime_state() if args.no_state else load_runtime_state(state_path)
     state["last_run_at"] = now_iso()
-    state["cooldown_until"] = None
     account_state_map = instagram_account_state_map(state)
     accounts_to_fetch: list[str] = []
     skipped_accounts: list[dict[str, Any]] = []
-    for account in accounts:
-        account_state = instagram_account_state(account_state_map, account)
-        cooldown_remaining = 0 if args.ignore_cooldown else cooldown_seconds_remaining(account_state)
-        if cooldown_remaining > 0:
-            skipped_accounts.append(instagram_account_skip_result(account, cooldown_remaining))
-            continue
-        accounts_to_fetch.append(account)
+    platform_cooldown_remaining = 0 if args.ignore_cooldown else cooldown_seconds_remaining(state)
+    if platform_cooldown_remaining > 0:
+        skipped_accounts = [
+            instagram_account_skip_result(account, platform_cooldown_remaining)
+            for account in accounts
+        ]
+    else:
+        for account in accounts:
+            account_state = instagram_account_state(account_state_map, account)
+            cooldown_remaining = 0 if args.ignore_cooldown else cooldown_seconds_remaining(account_state)
+            if cooldown_remaining > 0:
+                skipped_accounts.append(instagram_account_skip_result(account, cooldown_remaining))
+                continue
+            accounts_to_fetch.append(account)
 
     if accounts and not accounts_to_fetch:
         log_event(
@@ -437,6 +450,7 @@ def run_instagram(args: argparse.Namespace, config: dict[str, Any]) -> dict[str,
         headless=resolve_instagram_headless(args, instagram_config),
         browser_wait_ms=int_value(instagram_config.get("browser_wait_ms"), 8000),
     )
+    raw_listings = listings
     account_results = skipped_accounts + account_results
     ai_parse_error = None
     if args.ai_parse and listings:
@@ -474,7 +488,7 @@ def run_instagram(args: argparse.Namespace, config: dict[str, Any]) -> dict[str,
 
     if cooldown_accounts:
         reason = "; ".join(f"{item['account']}: {item['error']}" for item in cooldown_accounts[:3])
-        state["last_error"] = reason
+        set_cooldown(state, cooldown, reason)
         log_event(
             log_path,
             {
@@ -488,6 +502,7 @@ def run_instagram(args: argparse.Namespace, config: dict[str, Any]) -> dict[str,
             },
         )
     elif ok:
+        clear_cooldown(state)
         state["last_success_at"] = now_iso()
         state["last_error"] = None
         log_event(
@@ -535,6 +550,7 @@ def run_instagram(args: argparse.Namespace, config: dict[str, Any]) -> dict[str,
         "validated": len(valid),
         "validationErrors": invalid,
         "listings": valid,
+        **candidate_output(args, raw_listings, valid),
     }
 
 
@@ -665,6 +681,7 @@ def run_facebook(args: argparse.Namespace, config: dict[str, Any], egress: Egres
         proxy_url=egress.proxy_url if egress.mode == "proxy" else None,
     )
     code, listings, connector_status = facebook.guarded_run_once(facebook_args, include_status=True)
+    raw_listings = listings
     valid, invalid = validate_listings(listings)
     ok = code == 0 and not invalid
     return {
@@ -682,7 +699,31 @@ def run_facebook(args: argparse.Namespace, config: dict[str, Any], egress: Egres
         "validated": len(valid),
         "validationErrors": invalid,
         "listings": valid,
+        **candidate_output(args, raw_listings, valid),
     }
+
+
+def candidate_output(
+    args: argparse.Namespace,
+    raw_listings: list[dict[str, Any]],
+    valid_listings: list[dict[str, Any]],
+) -> dict[str, list[dict[str, Any]]]:
+    if not bool(getattr(args, "emit_candidates", False)):
+        return {}
+    raw_by_identity = {
+        str(listing.get("externalId") or listing.get("sourceUrl") or ""): listing
+        for listing in raw_listings
+        if isinstance(listing, dict)
+    }
+    candidates: list[dict[str, Any]] = []
+    for listing in valid_listings:
+        candidate = dict(listing)
+        identity = str(candidate.get("externalId") or candidate.get("sourceUrl") or "")
+        source_facts = raw_by_identity.get(identity, {}).get("_sourceFacts")
+        if isinstance(source_facts, dict):
+            candidate["_sourceFacts"] = source_facts
+        candidates.append(candidate)
+    return {"candidates": candidates}
 
 
 def write_storage(args: argparse.Namespace, listings: list[dict[str, Any]]) -> dict[str, Any]:

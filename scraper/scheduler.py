@@ -20,6 +20,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
+from scraper.candidate_pool import CandidatePool, DEFAULT_POOL_PATH
 from scraper.shared.config import DEFAULT_CONFIG_PATH, float_value, int_value, load_config, string_list, table
 from scraper.shared.runtime import AlreadyRunningError, FileLock, parse_iso_datetime
 from scraper.storage.run_log import write_run_log
@@ -68,8 +69,12 @@ class FacebookTargetPlan:
 
 def main() -> int:
     args = parse_args()
+    if args.queue_candidates and args.write_db:
+        print("--queue-candidates and --write-db are mutually exclusive", file=sys.stderr)
+        return 2
     config = load_config(args.config)
     scheduler_config = table(config, "scheduler")
+    pool_config = table(config, "candidate_pool")
     state_path = resolve_path(args.state_file or scheduler_config.get("state_file"), DEFAULT_SCHEDULER_STATE_FILE)
     log_path = resolve_path(args.log_file or scheduler_config.get("log_file"), DEFAULT_SCHEDULER_LOG_FILE)
     lock_path = resolve_path(args.lock_file or scheduler_config.get("lock_file"), DEFAULT_SCHEDULER_LOCK_FILE)
@@ -79,6 +84,10 @@ def main() -> int:
     )
     loop_sleep_seconds = max(1.0, float_value(scheduler_config.get("loop_sleep_seconds"), 30.0))
     job_timeout_seconds = max(30, int_value(scheduler_config.get("job_timeout_seconds"), 300))
+    candidate_pool = None
+    if args.queue_candidates:
+        pool_path = resolve_path(args.pool_path or pool_config.get("path"), DEFAULT_POOL_PATH)
+        candidate_pool = CandidatePool(pool_path)
 
     jobs = filter_jobs(build_jobs(config), args.connector, args.exclude_connector)
     if not jobs:
@@ -94,6 +103,7 @@ def main() -> int:
                 log_path=log_path,
                 loop_sleep_seconds=loop_sleep_seconds,
                 job_timeout_seconds=job_timeout_seconds,
+                candidate_pool=candidate_pool,
             )
     except AlreadyRunningError as exc:
         print(str(exc), file=sys.stderr)
@@ -108,6 +118,7 @@ def run_scheduler_loop(
     log_path: Path,
     loop_sleep_seconds: float,
     job_timeout_seconds: int,
+    candidate_pool: CandidatePool | None = None,
 ) -> int:
     state = load_scheduler_state(state_path)
     cycle = 0
@@ -127,6 +138,8 @@ def run_scheduler_loop(
                 write_db=args.write_db,
                 database_url=args.database_url,
                 timeout=job_timeout_seconds,
+                queue_candidates=args.queue_candidates,
+                candidate_pool=candidate_pool,
             )
             record_job_state(state, job, run, now_utc())
             save_scheduler_state(state_path, state)
@@ -152,6 +165,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-cycles", type=int, default=0, help="Stop after this many scheduler cycles.")
     parser.add_argument("--run-due-now", action="store_true", help="Treat jobs without prior attempts as due immediately.")
     parser.add_argument("--write-db", action="store_true", help="Pass --write-db to each orchestrator command.")
+    parser.add_argument(
+        "--queue-candidates",
+        action="store_true",
+        help="Store raw connector candidates for the centralized AI manager.",
+    )
+    parser.add_argument("--pool-path", default=None, help="SQLite candidate pool path override.")
     parser.add_argument(
         "--database-url",
         default=None,
@@ -241,7 +260,6 @@ def build_instagram_jobs(config: dict[str, Any]) -> list[ScheduleJob]:
     stagger = max(0, int_value(schedule_config.get("stagger_seconds"), 300))
     jitter = max(0, int_value(schedule_config.get("jitter_seconds"), 0))
     limit = max(1, int_value(schedule_config.get("limit"), 1))
-    ai_parse = bool_value(schedule_config.get("ai_parse"), default=False)
     accounts = string_list(source_config.get("names"))
     per_account = bool_value(schedule_config.get("per_account"), default=True)
 
@@ -253,7 +271,7 @@ def build_instagram_jobs(config: dict[str, Any]) -> list[ScheduleJob]:
                 id="instagram",
                 connector="instagram",
                 cadence_seconds=cadence,
-                args=("--instagram", *(("--ai-parse",) if ai_parse else ()), "--limit", str(limit)),
+                args=("--instagram", "--limit", str(limit)),
                 jitter_seconds=jitter,
             )
         ]
@@ -267,7 +285,6 @@ def build_instagram_jobs(config: dict[str, Any]) -> list[ScheduleJob]:
                 "--instagram",
                 "--instagram-account",
                 account,
-                *(("--ai-parse",) if ai_parse else ()),
                 "--limit",
                 str(limit),
             ),
@@ -292,7 +309,6 @@ def build_facebook_jobs(config: dict[str, Any]) -> list[ScheduleJob]:
     target_ids = string_list(schedule_config.get("target_ids")) or string_list(source_config.get("target_ids"))
     target_groups = string_list(schedule_config.get("target_groups")) or string_list(source_config.get("target_groups"))
     split_targets = bool_value(schedule_config.get("split_targets"), default=False)
-    ai_parse = bool_value(schedule_config.get("ai_parse"), default=False)
 
     if split_targets:
         targets_file = resolve_facebook_targets_path(source_config.get("targets_file"))
@@ -306,7 +322,6 @@ def build_facebook_jobs(config: dict[str, Any]) -> list[ScheduleJob]:
                 jitter=jitter,
                 browser=browser,
                 headless=headless,
-                ai_parse=ai_parse,
             )
 
     job_args: list[str] = ["--facebook", "--limit", str(limit)]
@@ -318,9 +333,6 @@ def build_facebook_jobs(config: dict[str, Any]) -> list[ScheduleJob]:
         job_args.append("--headless")
     if browser:
         job_args.extend(["--facebook-browser", browser])
-    if ai_parse:
-        job_args.append("--ai-parse")
-
     return [
         ScheduleJob(
             id="facebook",
@@ -341,7 +353,6 @@ def build_facebook_target_jobs(
     jitter: int,
     browser: str,
     headless: bool,
-    ai_parse: bool,
 ) -> list[ScheduleJob]:
     target_stagger = max(0, int_value(schedule_config.get("target_stagger_seconds"), 60))
     target_cadence_override = int_value(schedule_config.get("target_cadence_seconds"), 0)
@@ -356,9 +367,6 @@ def build_facebook_target_jobs(
             job_args.append("--headless")
         if browser:
             job_args.extend(["--facebook-browser", browser])
-        if ai_parse:
-            job_args.append("--ai-parse")
-
         jobs.append(
             ScheduleJob(
                 id=f"facebook:{target.id}",
@@ -598,6 +606,8 @@ def run_job(
     write_db: bool,
     database_url: str | None,
     timeout: int,
+    queue_candidates: bool = False,
+    candidate_pool: CandidatePool | None = None,
 ) -> JobRun:
     if job.module == "scraper.main":
         command = [sys.executable, "-m", job.module, "--config", config_path, *job.args, "--format", "json"]
@@ -605,6 +615,8 @@ def run_job(
         command = [sys.executable, "-m", job.module, *job.args, "--format", "json"]
     if write_db and job.module == "scraper.main":
         command.append("--write-db")
+    if queue_candidates and job.module == "scraper.main":
+        command.append("--emit-candidates")
     child_env = None
     if database_url:
         child_env = os.environ.copy()
@@ -622,8 +634,25 @@ def run_job(
         )
         output = parse_json_output(completed.stdout)
         summary = summarize_orchestrator_output(output)
+        if queue_candidates and job.module == "scraper.main":
+            if candidate_pool is None:
+                raise RuntimeError("candidate pool is required when queueing candidates")
+            try:
+                candidates = raw_candidates_from_output(output)
+                pool_summary = candidate_pool.enqueue(candidates, source_id=job.id).as_dict()
+                summary["candidatePool"] = {**pool_summary, "error": None}
+            except Exception as exc:
+                summary["ok"] = False
+                summary["candidatePool"] = {
+                    "received": 0,
+                    "new": 0,
+                    "changed": 0,
+                    "unchanged": 0,
+                    "enqueued": 0,
+                    "error": f"{type(exc).__name__}: {str(exc).replace(chr(10), ' ')[:500]}",
+                }
         status = scheduler_status(completed.returncode, summary)
-        exit_code = int(completed.returncode)
+        exit_code = int(completed.returncode) if summary.get("ok") else max(1, int(completed.returncode))
         stderr_tail = tail_text(completed.stderr)
     except subprocess.TimeoutExpired as exc:
         summary = {
@@ -660,6 +689,21 @@ def parse_json_output(stdout: str) -> dict[str, Any] | None:
     except json.JSONDecodeError:
         return None
     return loaded if isinstance(loaded, dict) else None
+
+
+def raw_candidates_from_output(output: dict[str, Any] | None) -> list[dict[str, Any]]:
+    candidates: list[dict[str, Any]] = []
+    if not output:
+        return candidates
+    for connector in output.get("connectors") or []:
+        if not isinstance(connector, dict):
+            continue
+        raw_candidates = connector.get("candidates")
+        records = raw_candidates if isinstance(raw_candidates, list) else connector.get("listings") or []
+        for listing in records:
+            if isinstance(listing, dict):
+                candidates.append(listing)
+    return candidates
 
 
 def summarize_orchestrator_output(output: dict[str, Any] | None) -> dict[str, Any]:
@@ -725,10 +769,14 @@ def format_run_summary(run: JobRun) -> str:
     inserted = storage_summary.get("inserted", 0) if isinstance(storage_summary, dict) else 0
     updated = storage_summary.get("updated", 0) if isinstance(storage_summary, dict) else 0
     duplicates = storage_summary.get("duplicates", 0) if isinstance(storage_summary, dict) else 0
+    pool_summary = run.summary.get("candidatePool") if isinstance(run.summary.get("candidatePool"), dict) else {}
+    enqueued = pool_summary.get("enqueued", 0) if isinstance(pool_summary, dict) else 0
+    unchanged = pool_summary.get("unchanged", 0) if isinstance(pool_summary, dict) else 0
     return (
         f"{run.finished_at} {run.job_id} {run.status} exit={run.exit_code} "
         f"listings={listings} requested={requested} deduped={deduplicated} "
         f"inserted={inserted} updated={updated} duplicates={duplicates} "
+        f"queued={enqueued} unchanged={unchanged} "
         f"durationMs={run.duration_ms}"
     )
 
