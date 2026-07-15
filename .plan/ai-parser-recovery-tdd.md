@@ -43,3 +43,35 @@ anonymous requests would increase platform-access pressure.
 
 - RED checkpoint: `2271236 test(scraper): reproduce AI overload failures`
 - GREEN checkpoint: `f8855eb fix(scraper): back off unstable AI parsing`
+
+## NVIDIA function lifecycle follow-up
+
+The 2026-07-15 staging audit later captured two additional NVIDIA Cloud
+Functions availability responses: HTTP 400 with `DEGRADED function cannot be
+invoked`, followed by a function-ID-specific HTTP 404. NVIDIA's lifecycle
+documentation states that a `DEGRADED` function has no active instances and
+cannot receive invocations. The implementation therefore treats only those
+specific provider-function response shapes as shared circuit triggers; generic
+client-side HTTP 400 errors remain uncircuited.
+
+Documentation:
+
+- <https://docs.nvidia.com/nvcf/function-lifecycle>
+- <https://docs.nvidia.com/nvcf/dev/generic-http-function-invocation>
+
+| Guarantee | Test or command | Result | Evidence |
+|---|---|---|---|
+| A `DEGRADED function cannot be invoked` response opens the shared five-minute circuit after one request | `test_degraded_function_failure_opens_shared_circuit_before_next_request` | RED then PASS | RED: second client reached `_request`; GREEN: second client was blocked before `_request` |
+| The observed function-ID `not found` response opens the same circuit | `test_function_not_found_failure_opens_shared_circuit_before_next_request` | RED then PASS | Same cross-client state-file guarantee as the degraded response |
+| Unrelated HTTP 400 responses do not get mislabeled as provider outages | `test_generic_bad_request_does_not_open_provider_unavailable_circuit` | PASS | Second client made its normal request and returned a valid result |
+| Full scraper suite remains green | `python -m unittest discover scraper.tests` | PASS | 92 tests passed |
+| Python style and syntax remain valid | `python -m ruff check scraper`; `python -m py_compile ...` | PASS | No findings |
+| Both production error shapes work inside the Debian scraper image | isolated bind-mounted staging probe | PASS | Each case made one initial request, opened `provider_unavailable`, and blocked the second request with zero API calls |
+
+Focused coverage for the broad `nvidia_parser.py` module is 64%; all newly
+added classifier branches and circuit behavior are directly exercised. The
+remaining uncovered lines are existing HTTP, prompt, merge, normalization, and
+environment-loading paths outside this follow-up.
+
+- RED checkpoint: `f2adebe test(scraper): reproduce NVIDIA function outage flood`
+- GREEN checkpoint: `72e9971 fix(scraper): back off unavailable NVIDIA functions`
