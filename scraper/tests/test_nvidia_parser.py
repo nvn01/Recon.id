@@ -150,6 +150,47 @@ class NvidiaParserPromptTests(unittest.TestCase):
 
         request.assert_not_called()
 
+    def test_degraded_function_failure_opens_shared_circuit_before_next_request(self):
+        self._assert_provider_unavailable_opens_shared_circuit(
+            "NVIDIA parser HTTP 400: "
+            '{"status":400,"detail":"Function id test: DEGRADED function cannot be invoked"}'
+        )
+
+    def test_function_not_found_failure_opens_shared_circuit_before_next_request(self):
+        self._assert_provider_unavailable_opens_shared_circuit(
+            "NVIDIA parser HTTP 404: "
+            '{"status":404,"detail":"Function id test version null: Specified function in '
+            'account test is not found"}'
+        )
+
+    def _assert_provider_unavailable_opens_shared_circuit(self, message: str):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            state_path = Path(tmpdir) / "nvidia_ai.json"
+            first = NvidiaParseClient(
+                api_key="test",
+                base_url="https://example.test/v1",
+                model="test-model",
+                timeout=1,
+                state_path=state_path,
+            )
+            with patch.object(first, "_request", side_effect=NvidiaParserError(message)) as request:
+                with self.assertRaises(NvidiaParserError):
+                    first.parse_batch([{"externalId": "item-1"}])
+
+            second = NvidiaParseClient(
+                api_key="test",
+                base_url="https://example.test/v1",
+                model="test-model",
+                timeout=1,
+                state_path=state_path,
+            )
+            with patch.object(second, "_request") as blocked_request:
+                with self.assertRaisesRegex(NvidiaParserError, "cooling down"):
+                    second.parse_batch([{"externalId": "item-2"}])
+
+        self.assertEqual(request.call_count, 1)
+        blocked_request.assert_not_called()
+
     def test_two_invalid_outputs_open_shared_circuit(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             state_path = Path(tmpdir) / "nvidia_ai.json"
