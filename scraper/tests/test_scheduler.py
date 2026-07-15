@@ -62,12 +62,12 @@ class SchedulerTests(unittest.TestCase):
             ],
         )
         self.assertEqual(len(reddit_config["urls"]), 4)
-        self.assertEqual(config["scheduler"]["reddit"]["cadence_seconds"], 300)
-        self.assertEqual(config["scheduler"]["reddit"]["stagger_seconds"], 75)
+        self.assertEqual(config["scheduler"]["reddit"]["cadence_seconds"], 240)
+        self.assertEqual(config["scheduler"]["reddit"]["stagger_seconds"], 60)
         self.assertEqual(reddit_config["feed_delay_seconds"], 5.0)
         self.assertEqual(len(reddit_jobs), 4)
-        self.assertEqual([job.initial_delay_seconds for job in reddit_jobs], [0, 75, 150, 225])
-        self.assertTrue(all(job.cadence_seconds == 300 for job in reddit_jobs))
+        self.assertEqual([job.initial_delay_seconds for job in reddit_jobs], [0, 60, 120, 180])
+        self.assertTrue(all(job.cadence_seconds == 240 for job in reddit_jobs))
         self.assertEqual(
             [job.args[2] for job in reddit_jobs],
             reddit_config["flairs"],
@@ -128,24 +128,25 @@ class SchedulerTests(unittest.TestCase):
         self.assertEqual(runner.call_args.kwargs["env"]["SCRAPER_DATABASE_URL"], fixture_url)
         self.assertNotIn(fixture_url, result.command)
 
-    def test_production_config_checks_all_instagram_accounts_inside_ten_minute_cycle(self):
+    def test_production_config_checks_all_instagram_accounts_inside_five_minute_cycle(self):
         config = load_config(DEFAULT_CONFIG_PATH)
         jobs = [job for job in build_jobs(config) if job.connector == "instagram"]
 
         self.assertEqual(len(jobs), 7)
-        self.assertTrue(all(job.cadence_seconds == 600 for job in jobs))
-        self.assertEqual([job.initial_delay_seconds for job in jobs], [0, 85, 170, 255, 340, 425, 510])
+        self.assertTrue(all(job.cadence_seconds == 315 for job in jobs))
+        self.assertEqual([job.initial_delay_seconds for job in jobs], [0, 45, 90, 135, 180, 225, 270])
         self.assertTrue(all(job.args[-2:] == ("--limit", "10") for job in jobs))
         self.assertEqual(config["instagram"]["accounts"]["browser"], "chrome")
         self.assertEqual(config["instagram"]["accounts"]["browser_mode"], "headed")
         self.assertEqual(config["instagram"]["accounts"]["browser_wait_ms"], 8_000)
-        self.assertTrue(all("--ai-parse" in job.args for job in jobs))
+        self.assertTrue(all("--ai-parse" not in job.args for job in jobs))
         self.assertEqual(config["scheduler"]["facebook"]["browser"], "chrome")
         self.assertEqual(config["facebook"]["marketplace"]["browser"], "chrome")
 
         facebook_jobs = [job for job in build_jobs(config) if job.connector == "facebook"]
-        self.assertTrue(all("--ai-parse" in job.args for job in facebook_jobs))
-        self.assertTrue(all("--ai-parse" in job.args for job in facebook_jobs))
+        self.assertTrue(all(job.cadence_seconds == 180 for job in facebook_jobs))
+        self.assertEqual([job.initial_delay_seconds for job in facebook_jobs], [0, 60, 120])
+        self.assertTrue(all("--ai-parse" not in job.args for job in facebook_jobs))
 
         [operations_job] = [job for job in build_jobs(config) if job.connector == "operations"]
         self.assertEqual(operations_job.cadence_seconds, 86_400)
@@ -158,12 +159,14 @@ class SchedulerTests(unittest.TestCase):
         self.assertIn("xvfb", dockerfile.lower())
         self.assertIn("tini", dockerfile.lower())
         self.assertIn('ENTRYPOINT ["tini", "--", "xvfb-run"', dockerfile)
-        self.assertIn('CMD ["python", "-m", "scraper.scheduler", "--once", "--write-db"]', dockerfile)
+        self.assertIn('CMD ["python", "-m", "scraper.scheduler", "--once", "--queue-candidates"]', dockerfile)
 
         compose = (Path(__file__).parents[2] / "docker-compose.yml").read_text(encoding="utf-8")
         scraper_service = compose.split("  scraper:", maxsplit=1)[1].split("\n  scraper-scheduler:", maxsplit=1)[0]
         self.assertNotIn("    init: true", scraper_service)
         self.assertNotIn("    command:", scraper_service)
+        self.assertIn("  scraper-ai-manager:", compose)
+        self.assertIn("scraper.ai_manager", compose)
 
     def test_build_jobs_splits_instagram_accounts_and_uses_connector_specific_args(self):
         jobs = build_jobs(sample_config())
@@ -246,7 +249,7 @@ class SchedulerTests(unittest.TestCase):
         self.assertEqual([job.id for job in due], ["instagram:chemicy.consignment"])
         for index, job in enumerate(jobs[1:], start=1):
             next_due = datetime.fromisoformat(state["jobs"][job.id]["nextDueAt"])
-            self.assertEqual((next_due - now).total_seconds(), index * 85)
+            self.assertEqual((next_due - now).total_seconds(), index * 45)
 
     def test_record_job_state_sets_next_due_from_cadence(self):
         [job] = [item for item in build_jobs(sample_config()) if item.id == "reddit"]

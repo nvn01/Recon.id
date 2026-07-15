@@ -230,7 +230,7 @@ class RuntimeGuardrailTests(unittest.TestCase):
         self.assertTrue(result["ok"])
         self.assertEqual(result["status"], "cooldown_skip")
 
-    def test_instagram_block_cooldown_is_account_scoped(self):
+    def test_instagram_block_opens_platform_cooldown_before_other_accounts_run(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             state_path = Path(tmpdir) / "instagram_accounts.json"
             log_path = Path(tmpdir) / "instagram_accounts.jsonl"
@@ -311,11 +311,11 @@ class RuntimeGuardrailTests(unittest.TestCase):
                 first = run_instagram(args, config)
                 second = run_instagram(args, config)
 
-        self.assertEqual(calls, [["blocked.shop", "auth.shop", "open.shop"], ["open.shop"]])
+        self.assertEqual(calls, [["blocked.shop", "auth.shop", "open.shop"]])
         self.assertEqual(first["status"], "degraded")
-        self.assertEqual(second["status"], "success")
+        self.assertEqual(second["status"], "cooldown_skip")
         skipped = [account for account in second["accounts"] if account.get("skipped_by_cooldown")]
-        self.assertEqual([account["account"] for account in skipped], ["blocked.shop", "auth.shop"])
+        self.assertEqual([account["account"] for account in skipped], ["blocked.shop", "auth.shop", "open.shop"])
 
     def test_instagram_login_redirect_uses_account_cooldown_without_fake_http_status(self):
         with tempfile.TemporaryDirectory() as tmpdir:
