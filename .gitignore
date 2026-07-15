@@ -2,6 +2,7 @@
 .agents/
 .codex/
 .codex-runtime/
+.plan/
 **/AGENTS.override.md
 !AGENTS.md
 !scraper/AGENTS.override.md
