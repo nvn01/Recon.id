@@ -249,7 +249,7 @@ class NvidiaParseClient:
         kind = classify_nvidia_error(exc)
         state = load_circuit_state(self.state_path)
         failures = int(state.get("consecutive_failures") or 0) + 1
-        should_open = kind in {"capacity", "rate_limit"} or (
+        should_open = kind in {"capacity", "rate_limit", "provider_unavailable"} or (
             kind == "invalid_output" and failures >= INVALID_OUTPUT_FAILURE_THRESHOLD
         )
         next_state: dict[str, Any] = {
@@ -345,6 +345,8 @@ def classify_nvidia_error(exc: NvidiaParserError) -> str:
         return "rate_limit"
     if "http 503" in message or "resourceexhausted" in message or "request limit reached" in message:
         return "capacity"
+    if is_nvidia_function_unavailable(message):
+        return "provider_unavailable"
     if any(
         marker in message
         for marker in (
@@ -358,6 +360,20 @@ def classify_nvidia_error(exc: NvidiaParserError) -> str:
     if "request failed" in message:
         return "transport"
     return "other"
+
+
+def is_nvidia_function_unavailable(message: str) -> bool:
+    degraded_function = (
+        "http 400" in message
+        and "degraded function cannot be invoked" in message
+    )
+    missing_function = (
+        "http 404" in message
+        and "function id" in message
+        and "specified function" in message
+        and "not found" in message
+    )
+    return degraded_function or missing_function
 
 
 def load_circuit_state(path: Path) -> dict[str, Any]:

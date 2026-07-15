@@ -163,6 +163,38 @@ class NvidiaParserPromptTests(unittest.TestCase):
             'account test is not found"}'
         )
 
+    def test_generic_bad_request_does_not_open_provider_unavailable_circuit(self):
+        analysis = {"externalId": "item-2", "isListing": False}
+        with tempfile.TemporaryDirectory() as tmpdir:
+            state_path = Path(tmpdir) / "nvidia_ai.json"
+            first = NvidiaParseClient(
+                api_key="test",
+                base_url="https://example.test/v1",
+                model="test-model",
+                timeout=1,
+                state_path=state_path,
+            )
+            with patch.object(
+                first,
+                "_request",
+                side_effect=NvidiaParserError("NVIDIA parser HTTP 400: invalid request"),
+            ):
+                with self.assertRaises(NvidiaParserError):
+                    first.parse_batch([{"externalId": "item-1"}])
+
+            second = NvidiaParseClient(
+                api_key="test",
+                base_url="https://example.test/v1",
+                model="test-model",
+                timeout=1,
+                state_path=state_path,
+            )
+            with patch.object(second, "_request", return_value=[analysis]) as request:
+                result = second.parse_batch([{"externalId": "item-2"}])
+
+        self.assertEqual(result, [analysis])
+        request.assert_called_once()
+
     def _assert_provider_unavailable_opens_shared_circuit(self, message: str):
         with tempfile.TemporaryDirectory() as tmpdir:
             state_path = Path(tmpdir) / "nvidia_ai.json"
