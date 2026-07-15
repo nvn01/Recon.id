@@ -758,7 +758,7 @@ function MasonryFeed({
   listings: Listing[];
   onOpen: (listing: Listing) => void;
 }) {
-  const [columnCount, setColumnCount] = useState(5);
+  const [columnCount, setColumnCount] = useState<number | null>(null);
 
   useEffect(() => {
     function updateColumnCount() {
@@ -772,12 +772,17 @@ function MasonryFeed({
 
   const columns = useMemo(
     () =>
-      distributeAcrossColumns(
-        listings.map((listing, index) => ({ listing, index })),
-        columnCount,
-      ),
+      columnCount === null
+        ? []
+        : distributeAcrossColumns(
+            listings.map((listing, index) => ({ listing, index })),
+            columnCount,
+          ),
     [columnCount, listings],
   );
+
+  if (columnCount === null) return <FeedSkeleton />;
+
   const style = { "--masonry-columns": columnCount } as CSSProperties;
 
   return (

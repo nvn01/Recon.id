@@ -155,7 +155,7 @@ img {
 
 .search-box {
   display: grid;
-  grid-template-columns: 22px 1fr auto;
+  grid-template-columns: 22px minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 10px;
   min-height: 48px;
@@ -207,6 +207,7 @@ img {
   cursor: pointer;
   font-size: 11px;
   font-weight: 700;
+  white-space: nowrap;
 }
 
 .clear-search {
