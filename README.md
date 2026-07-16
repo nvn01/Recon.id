@@ -60,5 +60,6 @@ The continuous AI manager departs once per minute with up to three ready
 candidates. Fresh candidates board before delayed retries, and an older pending
 version of the same source post is superseded instead of occupying another seat.
 Instagram timestamp/CDN refreshes update a waiting payload without creating new
-AI work. Three is the largest batch proven reliable with the current strict-JSON
-output budget. Image caching remains a separate PostgreSQL-to-R2 media-worker path.
+AI work. Three is the largest batch proven reliable with the current 8,192-token
+strict-JSON output budget and a 90-second request timeout. Image caching remains
+a separate PostgreSQL-to-R2 media-worker path.

@@ -15,7 +15,7 @@ DEFAULT_MODEL = "nvidia/nemotron-3-nano-30b-a3b"
 DEFAULT_STATE_FILE = Path(__file__).resolve().parents[1] / ".state" / "nvidia_ai.json"
 DEFAULT_COOLDOWN_SECONDS = 300
 INVALID_OUTPUT_FAILURE_THRESHOLD = 2
-MAX_OUTPUT_TOKENS = 4096
+MAX_OUTPUT_TOKENS = 8192
 
 SYSTEM_PROMPT = """
 You are RECON's strict semantic parser for Indonesian second-hand technology listings.

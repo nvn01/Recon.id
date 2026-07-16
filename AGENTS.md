@@ -247,8 +247,9 @@ two-item loop. Each departure leases up to three ready candidates across Reddit,
 Instagram, and Facebook, sends that entire train to NVIDIA in one request, and
 bulk-upserts the validated result. Candidates collected while that request is
 running wait for the next train. Fresh candidates board before delayed retries.
-Three is the largest batch live-proven against the current 4,096-token strict-
-JSON output budget; five and twenty returned truncated/non-JSON model output.
+Three is the largest batch live-proven with an 8,192-token strict-JSON output
+budget and 90-second request timeout; five and twenty returned truncated/non-
+JSON model output under the previous 4,096-token budget.
 Never restore per-platform AI workers or multiple concurrent NVIDIA parsers.
 
 Candidate fingerprints represent semantic AI work. Instagram `postedAt` and

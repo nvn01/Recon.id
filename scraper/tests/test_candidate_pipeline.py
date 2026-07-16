@@ -278,6 +278,7 @@ class AiManagerTests(unittest.TestCase):
             self.assertEqual({item["platform"] for item in calls[0][0]}, {"REDDIT", "INSTAGRAM", "FACEBOOK"})
             self.assertEqual(calls[0][1]["batch_size"], 3)
             self.assertEqual(calls[0][1]["rate_limit_seconds"], 0.0)
+            self.assertEqual(calls[0][1]["timeout"], 90)
             self.assertEqual(CandidatePool(pool_path).stats()["done"], 3)
 
     def test_manager_parses_a_mixed_batch_then_writes_and_completes_it(self):
