@@ -27,8 +27,8 @@ jobs:
         env:
           VERSION: ${{ inputs.version }}
         run: |
-          if [[ ! "$VERSION" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]]; then
-            echo "Invalid Docker tag: $VERSION"
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Invalid semantic version: $VERSION (expected X.Y.Z, for example 1.0.0)"
             exit 1
           fi
 
@@ -38,12 +38,16 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Promote stagging images
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Promote stagging image manifests
         env:
           VERSION: ${{ inputs.version }}
         run: |
           for IMAGE_NAME in "$WEB_IMAGE_NAME" "$SCRAPER_IMAGE_NAME"; do
-            docker pull "$IMAGE_NAME:$STAGGING_TAG"
-            docker tag "$IMAGE_NAME:$STAGGING_TAG" "$IMAGE_NAME:$VERSION"
-            docker push "$IMAGE_NAME:$VERSION"
+            docker buildx imagetools create \
+              --tag "$IMAGE_NAME:$VERSION" \
+              "$IMAGE_NAME:$STAGGING_TAG"
+            docker buildx imagetools inspect "$IMAGE_NAME:$VERSION"
           done
