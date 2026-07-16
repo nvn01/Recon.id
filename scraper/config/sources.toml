@@ -66,14 +66,13 @@ target_groups = ["hot"]
 path = ".state/candidate_pool.sqlite3"
 
 [ai_manager]
-# Mix platforms in small batches, but flush a lone candidate after 30 seconds.
+# One centralized train collects every platform for one minute, then sends the
+# whole ready train to NVIDIA in one request and bulk-writes the returned JSON.
 pool_path = ".state/candidate_pool.sqlite3"
 log_file = ".logs/ai_manager.jsonl"
 lock_file = ".state/ai_manager.lock"
-batch_size = 2
-max_wait_seconds = 30.0
-poll_seconds = 2.0
-rate_limit_seconds = 5.0
+train_capacity = 20
+departure_interval_seconds = 60.0
 retry_seconds = 300
 lease_seconds = 300
 
