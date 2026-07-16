@@ -99,6 +99,38 @@ class CandidatePoolTests(unittest.TestCase):
             self.assertEqual(pool.stats()["pending"], 1)
             self.assertEqual(pool.stats()["done"], 1)
 
+    def test_unchanged_refresh_updates_pending_payload_without_new_ai_work(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            pool = CandidatePool(Path(tmpdir) / "pool.sqlite3")
+            first = sample_listing(
+                "INSTAGRAM",
+                "ig-refresh",
+                image_url="https://scontent.example/v/first-render.jpg?token=first",
+            )
+            refreshed = {
+                **first,
+                "postedAt": "2026-07-15T11:04:37+00:00",
+                "lastFetchedAt": "2026-07-15T12:01:00+00:00",
+                "images": [
+                    {
+                        **first["images"][0],
+                        "sourceUrl": "https://scontent.example/v/second-render.jpg?token=second",
+                    }
+                ],
+            }
+
+            pool.enqueue([first], source_id="instagram:one", now=NOW)
+            summary = pool.enqueue([refreshed], source_id="instagram:one", now=NOW + timedelta(seconds=30))
+            [leased] = pool.lease_train(max_items=20, now=NOW + timedelta(seconds=60))
+
+            self.assertEqual(summary.unchanged, 1)
+            self.assertEqual(summary.enqueued, 0)
+            self.assertEqual(leased.payload["postedAt"], "2026-07-15T11:04:37+00:00")
+            self.assertEqual(
+                leased.payload["images"][0]["sourceUrl"],
+                "https://scontent.example/v/second-render.jpg?token=second",
+            )
+
     def test_train_leases_the_whole_ready_mixed_platform_window(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             pool = CandidatePool(Path(tmpdir) / "pool.sqlite3")
