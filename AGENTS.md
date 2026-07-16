@@ -243,6 +243,20 @@ R2. A separate media worker polls PostgreSQL for uncached Instagram images,
 uploads them to R2, and updates only their cache metadata. All three processes
 run the same fixed scraper image with separate commands and scoped env files.
 
+The supported AI-manager design is a fixed one-minute train, not an immediate
+two-item loop. Each departure leases up to 20 ready candidates across Reddit,
+Instagram, and Facebook, sends that entire train to NVIDIA in one request, and
+bulk-upserts the validated result. Candidates collected while that request is
+running wait for the next train. Fresh candidates board before delayed retries.
+Never restore per-platform AI workers or multiple concurrent NVIDIA parsers.
+
+Candidate fingerprints represent semantic AI work. Instagram `postedAt` and
+CDN image-path variations must not requeue an otherwise unchanged post. A
+refresh may update the payload of a candidate that is still waiting so the
+eventual PostgreSQL/R2 path receives current media URLs. A genuinely changed
+caption or `_sourceFacts` value creates one new version and supersedes the older
+pending version of that source post.
+
 ## Instagram Media Cache
 
 Instagram images are cached in Cloudflare R2 because signed Instagram CDN URLs
@@ -370,15 +384,18 @@ Production verification requires all of the following:
 - Recent collector logs show normal `success`, `no_new_data`, or intentional
   cooldown outcomes instead of a persistent `401`, `403`, or `429` flood.
 - AI manager logs continue to show successful parsing and storage writes.
+- AI manager train logs show `intervalSeconds: 60`, at most one NVIDIA request
+  per departure, and `boarded` matching the number processed by that request.
 - Media worker logs show bounded Instagram-only cache batches; its failures do
   not requeue AI candidates or block listing inserts.
 - Production listing counts continue to grow when new candidates are found.
 
-At launch, transient Instagram `degraded` runs recovered on later cycles. The
-AI queue fluctuated around roughly 130-150 pending candidates because the
-collector can enqueue faster than two-item AI batches are processed. Treat a
-steadily growing queue, repeated provider errors, or a stalled `done` count as
-an operational issue; do not assume a running container is healthy.
+The retired two-item loop allowed volatile Instagram versions and retries to
+grow the queue to roughly 130-150 candidates. Do not restore that behavior.
+With the train manager, new posts should normally leave within the next
+one-minute departure and backlogs drain in trains of up to 20. Treat a steadily
+growing queue, repeated provider errors, or a stalled `done` count as an
+operational issue; do not assume a running container is healthy.
 
 Rollback means restoring both `WEB_IMAGE_TAG` and `SCRAPER_IMAGE_TAG` to the
 previous known-good fixed version and reapplying Compose. Image rollback does
