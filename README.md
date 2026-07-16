@@ -56,8 +56,9 @@ in `.state/candidate_pool.sqlite3`; the manager is the only scheduled path that
 calls NVIDIA and then writes validated listings. Direct `scraper.main --write-db`
 remains available for controlled one-shot diagnostics.
 
-The continuous AI manager departs once per minute with up to 20 ready
+The continuous AI manager departs once per minute with up to three ready
 candidates. Fresh candidates board before delayed retries, and an older pending
 version of the same source post is superseded instead of occupying another seat.
 Instagram timestamp/CDN refreshes update a waiting payload without creating new
-AI work. Image caching remains a separate PostgreSQL-to-R2 media-worker path.
+AI work. Three is the largest batch proven reliable with the current strict-JSON
+output budget. Image caching remains a separate PostgreSQL-to-R2 media-worker path.
