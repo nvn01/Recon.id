@@ -242,7 +242,6 @@ is the end of the AI critical path; it must never wait for image downloads or
 R2. A separate media worker polls PostgreSQL for uncached Instagram images,
 uploads them to R2, and updates only their cache metadata. All three processes
 run the same fixed scraper image with separate commands and scoped env files.
-
 The supported AI-manager design is a fixed one-minute train, not an immediate
 two-item loop. Each departure leases up to 20 ready candidates across Reddit,
 Instagram, and Facebook, sends that entire train to NVIDIA in one request, and
