@@ -265,7 +265,7 @@ class NvidiaParserPromptTests(unittest.TestCase):
 
         payload = client._build_payload([{"externalId": "item-1"}], guided=True)
 
-        self.assertEqual(payload["max_tokens"], 4096)
+        self.assertEqual(payload["max_tokens"], 8192)
 
 
 if __name__ == "__main__":

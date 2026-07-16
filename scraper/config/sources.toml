@@ -68,13 +68,14 @@ path = ".state/candidate_pool.sqlite3"
 [ai_manager]
 # One centralized train collects every platform for one minute, then sends up
 # to three ready passengers to NVIDIA in one request and bulk-writes the JSON.
-# Three is the largest batch proven reliable against the current 4,096-token
-# strict-JSON response budget; larger live batches can return truncated JSON.
+# Three is the largest batch proven reliable with the 8,192-token strict-JSON
+# response budget; larger live batches can still return truncated JSON.
 pool_path = ".state/candidate_pool.sqlite3"
 log_file = ".logs/ai_manager.jsonl"
 lock_file = ".state/ai_manager.lock"
 train_capacity = 3
 departure_interval_seconds = 60.0
+request_timeout_seconds = 90
 retry_seconds = 300
 lease_seconds = 300
 

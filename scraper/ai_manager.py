@@ -135,6 +135,16 @@ def run_manager(args: argparse.Namespace) -> int:
             )
         ),
     )
+    request_timeout = max(
+        45,
+        int(
+            configured_value(
+                getattr(args, "request_timeout_seconds", None),
+                manager_config.get("request_timeout_seconds"),
+                90,
+            )
+        ),
+    )
     retry_seconds = max(
         1,
         int(configured_value(args.retry_seconds, manager_config.get("retry_seconds"), 300)),
@@ -166,6 +176,7 @@ def run_manager(args: argparse.Namespace) -> int:
                     listings,
                     batch_size=len(listings),
                     rate_limit_seconds=0.0,
+                    timeout=request_timeout,
                 ),
                 retry_seconds=retry_seconds,
             )
@@ -198,6 +209,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--lock-file", default=None)
     parser.add_argument("--train-capacity", type=int, default=None)
     parser.add_argument("--departure-interval-seconds", type=float, default=None)
+    parser.add_argument("--request-timeout-seconds", type=int, default=None)
     parser.add_argument("--batch-size", dest="train_capacity", type=int, help=argparse.SUPPRESS)
     parser.add_argument("--retry-seconds", type=int, default=None)
     parser.add_argument("--lease-seconds", type=int, default=None)
