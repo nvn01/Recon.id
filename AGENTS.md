@@ -10,8 +10,9 @@ The product goal is simple: users should not need to repeatedly check every mark
 
 Recon v1 entered production on 2026-07-16. The public discovery UI, read-only
 API, PostgreSQL schema, multi-source collector, centralized NVIDIA AI manager,
-and direct production ingestion path are live. Treat the current repository as
-a working production system, not an exploratory scaffold.
+independent Instagram R2 media worker, and direct production ingestion path are
+live. Treat the current repository as a working production system, not an
+exploratory scaffold.
 
 The main operational focus now is:
 
@@ -212,7 +213,7 @@ host without an explicit architecture decision.
 
 | Role | Host | Tailscale IP | Runtime directory | Services |
 | --- | --- | --- | --- | --- |
-| Production scraper | `ubserver1` on PVE1 | `100.100.20.1` | `/docker/recon-scraper` | `collector`, `ai-manager` |
+| Production scraper | `ubserver1` on PVE1 | `100.100.20.1` | `/docker/recon-scraper` | `collector`, `ai-manager`, `media-worker` |
 | Production web and data | `ubserver3` on Oracle Cloud ARM64 | `100.100.20.2` | `/docker/recon` | `postgres`, one-shot `migrate`, `web`, `cloudflared` |
 | Staging | `debian` on PVE2 | `100.100.20.3` | `/docker/recon` | Staging web, PostgreSQL, collector, and AI manager; intentionally stopped after the production launch |
 
@@ -229,15 +230,18 @@ Production database credentials are separated by role:
 
 - Migration/owner credentials apply Prisma migrations and own the schema.
 - The web app receives a SELECT-only role.
-- The AI manager receives a scraper role with SELECT/INSERT/UPDATE/DELETE.
+- The AI manager and media worker receive a scraper role with
+  SELECT/INSERT/UPDATE/DELETE.
 - The collector receives read-only database access for operational reports and
   does not receive the NVIDIA key or write credentials.
 
 The collector queues raw candidates in the shared persisted scraper state
 volume. The AI manager is the only production process that enriches queued
-candidates with NVIDIA and writes validated listings to PostgreSQL. Both
-workers run the same fixed scraper image but use separate commands and env
-files.
+candidates with NVIDIA and writes validated listings to PostgreSQL. That write
+is the end of the AI critical path; it must never wait for image downloads or
+R2. A separate media worker polls PostgreSQL for uncached Instagram images,
+uploads them to R2, and updates only their cache metadata. All three processes
+run the same fixed scraper image with separate commands and scoped env files.
 
 ## Instagram Media Cache
 
@@ -248,23 +252,28 @@ Facebook and Reddit continue to use their original image URLs.
 - Bucket: `recon-media-production`
 - Public custom domain: `https://media.app-pixel.com`
 - Object layout: `production/instagram/<sha256-prefix>/<sha256>.<extension>`
-- Upload owner: the AI manager on ubserver1, after AI normalization and before
-  the PostgreSQL write
+- Upload owner: the dedicated media worker on ubserver1, after the AI manager
+  has committed the listing to PostgreSQL
+- Worker command: `python -m scraper.media.worker`
+- Poll cadence: 60 seconds; a full batch continues immediately so a backlog can
+  drain without waiting another minute between batches
 - Backfill command: `python -m scraper.media.backfill_instagram`
 
-The AI manager validates HTTPS source hosts against Instagram/Facebook CDN
+The media worker validates HTTPS source hosts against Instagram/Facebook CDN
 suffixes, rejects private-address resolution, limits redirects and downloads,
 checks MIME type and image signatures, then uploads immutable content-addressed
-objects. An individual cache failure is non-fatal: PostgreSQL retains the
-original source URL and the UI falls back to it. The public API never fetches
-remote media and exposes the cached URL through its existing `sourceUrl` DTO
-field only when the listing platform is Instagram.
+objects. PostgreSQL is the durable media queue: an Instagram `listing_images`
+row with `cached_url IS NULL` remains pending. An individual cache failure is
+non-fatal and unrelated to AI queue completion; PostgreSQL retains the original
+source URL and the UI falls back to it. The public API never fetches remote
+media and exposes the cached URL through its existing `sourceUrl` DTO field only
+when the listing platform is Instagram.
 
 R2 write credentials and `R2_OBJECT_PREFIX=production` belong only in
-`ubserver1:/docker/recon-scraper/.env.production`. Do not give them to the
-collector, Oracle web container, or browser. Keep the R2 development URL
-disabled; production delivery uses the custom domain so Cloudflare caching is
-active.
+`ubserver1:/docker/recon-scraper/.env.media-worker`. Do not give them to the AI
+manager, collector, Oracle web container, or browser. Keep the R2 development
+URL disabled; production delivery uses the custom domain so Cloudflare caching
+is active.
 
 ## Production Runtime Files And Secrets
 
@@ -286,15 +295,17 @@ On `ubserver1:/docker/recon-scraper`:
 compose.yml
 .env.deploy
 .env.collector
-.env.production
+.env.ai-manager
+.env.media-worker
 ```
 
 `WEB_IMAGE_TAG` is stored in the Oracle `.env.production` file.
 `SCRAPER_IMAGE_TAG` is stored in the ubserver1 `.env.deploy` file. The NVIDIA
-API key is stored only in the AI manager env file on ubserver1. The Cloudflare
-tunnel token is stored only in `.env.tunnel` on ubserver3. Secret-bearing files
-were created root-owned with mode `600`; preserve that ownership and mode.
-Never print, copy into logs, or commit their values. The staging NVIDIA key was
+API key is stored only in `.env.ai-manager`; the database and R2 credentials
+used by media caching are stored in `.env.media-worker`. The Cloudflare tunnel
+token is stored only in `.env.tunnel` on ubserver3. Secret-bearing files were
+created root-owned with mode `600`; preserve that ownership and mode. Never
+print, copy into logs, or commit their values. The staging NVIDIA key was
 retained so staging can be restarted for future release validation.
 
 ## Production Deployment And Update Runbook
@@ -307,7 +318,7 @@ push/merge main
   -> verify staging and image manifests
   -> manually promote the same manifests to X.Y.Z
   -> deploy that fixed version to ubserver3 and ubserver1
-  -> verify web, database, tunnel, collector, and AI manager
+  -> verify web, database, tunnel, collector, AI manager, and media worker
 ```
 
 For a normal update:
@@ -324,8 +335,8 @@ For a normal update:
 5. On ubserver3, change only `WEB_IMAGE_TAG` to the promoted version, then pull
    and apply the Compose stack. Allow the one-shot migration service to finish
    before considering the web deployment healthy.
-6. On ubserver1, change only `SCRAPER_IMAGE_TAG`, then pull and apply the two
-   worker services.
+6. On ubserver1, change only `SCRAPER_IMAGE_TAG`, then pull and apply all three
+   scraper worker services.
 7. Run the verification checks below. Do not call the deployment complete only
    because containers started.
 
@@ -338,14 +349,15 @@ cd /docker/recon
 docker compose --env-file .env.production ps -a
 docker compose --env-file .env.production logs --tail 100 migrate web cloudflared postgres
 
-# Home collector and AI manager
+# Home collector, AI manager, and Instagram media worker
 ssh root@100.100.20.1
 cd /docker/recon-scraper
 docker compose --env-file .env.deploy ps
-docker compose --env-file .env.deploy logs --tail 120 collector ai-manager
+docker compose --env-file .env.deploy logs --tail 120 collector ai-manager media-worker
 docker inspect -f '{{.Name}} restarts={{.RestartCount}} status={{.State.Status}}' \
   recon-scraper-production-collector-1 \
-  recon-scraper-production-ai-manager-1
+  recon-scraper-production-ai-manager-1 \
+  recon-scraper-production-media-worker-1
 ```
 
 Production verification requires all of the following:
@@ -354,10 +366,12 @@ Production verification requires all of the following:
   `/collection/all`, with valid TLS.
 - PostgreSQL and web are healthy, `migrate` exits `0`, and cloudflared remains
   connected.
-- Collector and AI manager are running with restart count `0`.
+- Collector, AI manager, and media worker are running with restart count `0`.
 - Recent collector logs show normal `success`, `no_new_data`, or intentional
   cooldown outcomes instead of a persistent `401`, `403`, or `429` flood.
 - AI manager logs continue to show successful parsing and storage writes.
+- Media worker logs show bounded Instagram-only cache batches; its failures do
+  not requeue AI candidates or block listing inserts.
 - Production listing counts continue to grow when new candidates are found.
 
 At launch, transient Instagram `degraded` runs recovered on later cycles. The

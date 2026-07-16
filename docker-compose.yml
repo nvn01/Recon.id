@@ -93,10 +93,39 @@ services:
       - -m
       - scraper.ai_manager
       - --write-db
-    env_file:
-      - .env
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-recon}:${POSTGRES_PASSWORD:-recon_dev_password}@postgres:5432/${POSTGRES_DB:-recon_dev}
+      NVIDIA_API_KEY: ${NVIDIA_API_KEY:-}
+      SCRAPER_EGRESS_MODE: ${SCRAPER_EGRESS_MODE:-direct}
+      SCRAPER_ALLOW_PROXY: ${SCRAPER_ALLOW_PROXY:-false}
+      SCRAPER_PROXY_URL: ${SCRAPER_PROXY_URL:-}
+      SCRAPER_ALLOW_VPN: ${SCRAPER_ALLOW_VPN:-false}
+    volumes:
+      - ./scraper:/app/scraper
+      - scraper-logs:/app/scraper/.logs
+      - scraper-state:/app/scraper/.state
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  scraper-media-worker:
+    profiles:
+      - scraper-scheduler
+    build:
+      context: ./scraper
+    restart: unless-stopped
+    command:
+      - python
+      - -m
+      - scraper.media.worker
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-recon}:${POSTGRES_PASSWORD:-recon_dev_password}@postgres:5432/${POSTGRES_DB:-recon_dev}
+      R2_ACCOUNT_ID: ${R2_ACCOUNT_ID:-}
+      R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:-}
+      R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:-}
+      R2_BUCKET_NAME: ${R2_BUCKET_NAME:-}
+      R2_PUBLIC_BASE_URL: ${R2_PUBLIC_BASE_URL:-}
+      R2_OBJECT_PREFIX: ${R2_OBJECT_PREFIX:-production}
       SCRAPER_EGRESS_MODE: ${SCRAPER_EGRESS_MODE:-direct}
       SCRAPER_ALLOW_PROXY: ${SCRAPER_ALLOW_PROXY:-false}
       SCRAPER_PROXY_URL: ${SCRAPER_PROXY_URL:-}

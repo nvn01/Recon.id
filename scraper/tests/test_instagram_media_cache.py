@@ -5,12 +5,10 @@ import unittest
 from unittest.mock import patch
 
 from scraper.media.instagram_r2 import (
-    CachedImage,
     DownloadedImage,
     InstagramR2Cache,
     MediaCacheError,
     R2Config,
-    cache_instagram_media,
     download_instagram_image,
     validate_source_url,
 )
@@ -81,55 +79,7 @@ def config() -> R2Config:
     )
 
 
-def listing(platform: str, source_url: str = "https://scontent.cdninstagram.com/image.jpg"):
-    return {
-        "platform": platform,
-        "images": [{"sourceUrl": source_url, "position": 0, "altText": None}],
-    }
-
-
 class InstagramMediaCacheTests(unittest.TestCase):
-    def test_empty_configuration_disables_caching_without_changing_urls(self):
-        source = [listing("INSTAGRAM")]
-
-        result = cache_instagram_media(source, env={})
-
-        self.assertFalse(result.enabled)
-        self.assertEqual(result.listings, source)
-
-    def test_only_instagram_images_are_cached(self):
-        cached = CachedImage(
-            cachedUrl="https://media.app-pixel.com/production/instagram/aa/hash.jpg",
-            storageKey="production/instagram/aa/hash.jpg",
-            contentHash="a" * 64,
-            contentType="image/jpeg",
-            byteSize=100,
-            cachedAt="2026-07-16T05:00:00+00:00",
-            reused=False,
-        )
-        cache = unittest.mock.Mock()
-        cache.cache_image.return_value = cached
-
-        result = cache_instagram_media([listing("INSTAGRAM"), listing("FACEBOOK")], cache=cache)
-
-        cache.cache_image.assert_called_once()
-        self.assertEqual(result.cached, 1)
-        self.assertIn("cachedUrl", result.listings[0]["images"][0])
-        self.assertNotIn("cachedUrl", result.listings[1]["images"][0])
-
-    def test_individual_cache_failure_keeps_original_url_and_does_not_abort_batch(self):
-        cache = unittest.mock.Mock()
-        cache.cache_image.side_effect = MediaCacheError("expired")
-
-        result = cache_instagram_media([listing("INSTAGRAM")], cache=cache)
-
-        self.assertEqual(result.failed, 1)
-        self.assertEqual(
-            result.listings[0]["images"][0]["sourceUrl"],
-            "https://scontent.cdninstagram.com/image.jpg",
-        )
-        self.assertNotIn("cachedUrl", result.listings[0]["images"][0])
-
     def test_content_addressed_upload_is_immutable_and_reused(self):
         downloaded = DownloadedImage(
             body=JPEG,

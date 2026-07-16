@@ -98,25 +98,6 @@ class CachedImage:
         return fields
 
 
-@dataclass
-class MediaCacheBatch:
-    listings: list[dict[str, Any]]
-    enabled: bool = False
-    attempted: int = 0
-    cached: int = 0
-    reused: int = 0
-    failed: int = 0
-
-    def as_dict(self) -> dict[str, int | bool]:
-        return {
-            "enabled": self.enabled,
-            "attempted": self.attempted,
-            "cached": self.cached,
-            "reused": self.reused,
-            "failed": self.failed,
-        }
-
-
 class NoRedirectHandler(HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):  # noqa: ANN001, ANN201
         return None
@@ -164,38 +145,6 @@ class InstagramR2Cache:
             cachedAt=datetime.now(timezone.utc).isoformat(),
             reused=reused,
         )
-
-
-def cache_instagram_media(
-    listings: list[dict[str, Any]],
-    *,
-    cache: InstagramR2Cache | None = None,
-    env: Mapping[str, str] | None = None,
-) -> MediaCacheBatch:
-    copied = [{**listing, "images": [dict(image) for image in listing.get("images") or []]} for listing in listings]
-    if cache is None:
-        config = R2Config.from_env(env)
-        if config is None:
-            return MediaCacheBatch(listings=copied)
-        cache = InstagramR2Cache(config)
-
-    summary = MediaCacheBatch(listings=copied, enabled=True)
-    for listing in copied:
-        if str(listing.get("platform") or "").strip().upper() != "INSTAGRAM":
-            continue
-        for image in listing["images"]:
-            summary.attempted += 1
-            try:
-                cached = cache.cache_image(str(image.get("sourceUrl") or ""))
-            except MediaCacheError:
-                summary.failed += 1
-                continue
-            image.update(cached.image_fields())
-            if cached.reused:
-                summary.reused += 1
-            else:
-                summary.cached += 1
-    return summary
 
 
 def build_r2_client(config: R2Config) -> Any:

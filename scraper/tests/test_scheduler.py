@@ -229,6 +229,16 @@ class SchedulerTests(unittest.TestCase):
         self.assertNotIn("    command:", scraper_service)
         self.assertIn("  scraper-ai-manager:", compose)
         self.assertIn("scraper.ai_manager", compose)
+        self.assertIn("  scraper-media-worker:", compose)
+        self.assertIn("scraper.media.worker", compose)
+        ai_service = compose.split("  scraper-ai-manager:", maxsplit=1)[1].split(
+            "\n  scraper-media-worker:", maxsplit=1
+        )[0]
+        media_service = compose.split("  scraper-media-worker:", maxsplit=1)[1].split("\nvolumes:", maxsplit=1)[0]
+        self.assertIn("NVIDIA_API_KEY", ai_service)
+        self.assertNotIn("R2_SECRET_ACCESS_KEY", ai_service)
+        self.assertIn("R2_SECRET_ACCESS_KEY", media_service)
+        self.assertNotIn("NVIDIA_API_KEY", media_service)
 
     def test_build_jobs_splits_instagram_accounts_and_uses_connector_specific_args(self):
         jobs = build_jobs(sample_config())
