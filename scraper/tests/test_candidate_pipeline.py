@@ -9,6 +9,7 @@ from unittest.mock import patch
 
 from scraper.ai_manager import process_batch, run_manager
 from scraper.candidate_pool import CandidatePool, canonical_image_url, evidence_fingerprint
+from scraper.media.instagram_r2 import MediaCacheBatch
 from scraper.shared.config import DEFAULT_CONFIG_PATH
 
 
@@ -163,6 +164,7 @@ class AiManagerTests(unittest.TestCase):
                 database_url="postgresql://scraper:test-placeholder@postgres:5432/recon",
                 write_db=True,
                 enrich_fn=lambda listings: listings,
+                media_cache_fn=lambda listings: MediaCacheBatch(listings=listings, enabled=True, attempted=1, cached=1),
                 upsert_fn=lambda _url, listings: writes.append(listings) or SimpleNamespace(as_dict=lambda: {"inserted": 2}),
                 now=NOW,
             )
@@ -172,6 +174,7 @@ class AiManagerTests(unittest.TestCase):
             self.assertEqual(len(writes), 1)
             self.assertEqual(len(writes[0]), 2)
             self.assertNotIn("_sourceFacts", writes[0][1])
+            self.assertEqual(result["media"]["cached"], 1)
             self.assertEqual(pool.stats()["done"], 2)
 
     def test_manager_requeues_the_whole_batch_when_ai_fails(self):

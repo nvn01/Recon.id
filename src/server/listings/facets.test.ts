@@ -12,6 +12,7 @@ describe("getListingFacets", () => {
           count: 12,
           minPrice: 1_500_000,
           coverImageUrl: "https://example.com/laptop.jpg",
+          coverImageCached: false,
           coverAltText: "Laptop",
         },
         {
@@ -19,6 +20,7 @@ describe("getListingFacets", () => {
           count: 4,
           minPrice: 123_456,
           coverImageUrl: "javascript:alert(1)",
+          coverImageCached: false,
           coverAltText: null,
         },
       ])

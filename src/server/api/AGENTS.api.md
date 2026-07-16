@@ -54,8 +54,11 @@ interpolate a raw search pattern or apply client-only filtering to one page.
 - Listing and image URLs returned by the DTO must use HTTPS and contain no URL
   credentials. Unsafe image URLs are omitted; an unsafe primary listing URL
   fails closed.
-- The API returns URLs only. It does not proxy, fetch, download, or cache remote
-  images.
+- The API still returns URLs only and never performs network fetches. Instagram
+  media is downloaded by the production AI manager on `ubserver1`, stored in
+  Cloudflare R2, and recorded alongside the original source URL. For Instagram
+  only, the DTO prefers a safe HTTPS `cachedUrl` and falls back to the original
+  `sourceUrl`; Facebook and Reddit always use their original image URLs.
 - Public prices below IDR 10,000 and known dummy sequences such as `12345` and
   `123456` are returned as unknown because historical values in those groups
   include seller placeholders. Contact-like, URL-like, multiline, and
@@ -84,8 +87,8 @@ interpolate a raw search pattern or apply client-only filtering to one page.
 ## Deferred Surface
 
 Do not add connector health, scrape runs, listing writes, takedown/hide,
-authentication, arbitrary sorting, or thumbnail caching until a product or UI
-requirement calls for it.
+authentication, arbitrary sorting, or non-Instagram media caching until a
+product or UI requirement calls for it.
 
 ## Verification
 

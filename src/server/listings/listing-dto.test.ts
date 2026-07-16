@@ -20,21 +20,25 @@ const listing: ListingFeedRecord = {
   images: [
     {
       sourceUrl: "https://scontent.example/image-2.jpg",
+      cachedUrl: "https://media.app-pixel.com/production/instagram/aa/two.jpg",
       position: 2,
       altText: null,
     },
     {
       sourceUrl: "javascript:alert(1)",
+      cachedUrl: null,
       position: 1,
       altText: "unsafe",
     },
     {
       sourceUrl: "not-a-url",
+      cachedUrl: null,
       position: 3,
       altText: "malformed",
     },
     {
       sourceUrl: "https://scontent.example/image-0.jpg",
+      cachedUrl: null,
       position: 0,
       altText: "front",
     },
@@ -65,7 +69,7 @@ describe("toListingDto", () => {
           altText: "front",
         },
         {
-          sourceUrl: "https://scontent.example/image-2.jpg",
+          sourceUrl: "https://media.app-pixel.com/production/instagram/aa/two.jpg",
           position: 2,
           altText: null,
         },
@@ -77,6 +81,32 @@ describe("toListingDto", () => {
     expect(() =>
       toListingDto({ ...listing, sourceUrl: "http://example.com/listing" }),
     ).toThrow("listing source URL must use HTTPS");
+  });
+
+  it("uses original media for non-Instagram listings even if cached metadata is present", () => {
+    expect(
+      toListingDto({ ...listing, platform: "FACEBOOK" }).images[1]?.sourceUrl,
+    ).toBe("https://scontent.example/image-2.jpg");
+  });
+
+  it("falls back to the original Instagram media URL when the cached URL is unsafe", () => {
+    const images = listing.images.map((image) =>
+      image.position === 2 ? { ...image, cachedUrl: "http://media.example/image.jpg" } : image,
+    );
+    expect(toListingDto({ ...listing, images }).images[1]?.sourceUrl).toBe(
+      "https://scontent.example/image-2.jpg",
+    );
+  });
+
+  it("rejects an HTTPS cached URL outside the dedicated Cloudflare media origin", () => {
+    const images = listing.images.map((image) =>
+      image.position === 2
+        ? { ...image, cachedUrl: "https://attacker.example/production/instagram/image.jpg" }
+        : image,
+    );
+    expect(toListingDto({ ...listing, images }).images[1]?.sourceUrl).toBe(
+      "https://scontent.example/image-2.jpg",
+    );
   });
 
   it("omits location values that look like contact data or oversized parser output", () => {
