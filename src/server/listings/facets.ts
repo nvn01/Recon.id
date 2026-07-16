@@ -2,6 +2,7 @@ import { Prisma } from "../../../generated/prisma";
 
 import {
   isSafeHttpsUrl,
+  isSafeInstagramCachedUrl,
   normalizePublicPrice,
   sanitizePublicLocation,
 } from "./listing-dto";
@@ -11,6 +12,7 @@ interface CategoryFacetRow {
   count: number;
   minPrice: number | null;
   coverImageUrl: string | null;
+  coverImageCached: boolean;
   coverAltText: string | null;
 }
 
@@ -40,7 +42,10 @@ export async function getListingFacets(db: ListingFacetsDatabase) {
         count: row.count,
         minPrice: normalizePublicPrice(row.minPrice),
         coverImageUrl:
-          row.coverImageUrl && isSafeHttpsUrl(row.coverImageUrl)
+          row.coverImageUrl &&
+          (row.coverImageCached
+            ? isSafeInstagramCachedUrl(row.coverImageUrl)
+            : isSafeHttpsUrl(row.coverImageUrl))
             ? row.coverImageUrl
             : null,
         coverAltText: sanitizeFacetText(row.coverAltText, 160),
@@ -94,6 +99,7 @@ const categoryFacetQuery = Prisma.sql`
     SELECT
       id,
       category,
+      platform,
       ROW_NUMBER() OVER (
         PARTITION BY category
         ORDER BY
@@ -108,7 +114,12 @@ const categoryFacetQuery = Prisma.sql`
     stats.value,
     stats.count,
     stats."minPrice",
-    image.source_url AS "coverImageUrl",
+    CASE
+      WHEN cover.platform = 'instagram'::listing_platform
+        THEN COALESCE(image.cached_url, image.source_url)
+      ELSE image.source_url
+    END AS "coverImageUrl",
+    (cover.platform = 'instagram'::listing_platform AND image.cached_url IS NOT NULL) AS "coverImageCached",
     image.alt_text AS "coverAltText"
   FROM category_stats AS stats
   LEFT JOIN ranked_covers AS cover

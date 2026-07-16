@@ -8,25 +8,29 @@ The product goal is simple: users should not need to repeatedly check every mark
 
 ## Current Status
 
-This project is still very early. Do not treat the repository as a finished app scaffold.
+Recon v1 entered production on 2026-07-16. The public discovery UI, read-only
+API, PostgreSQL schema, multi-source collector, centralized NVIDIA AI manager,
+and direct production ingestion path are live. Treat the current repository as
+a working production system, not an exploratory scaffold.
 
-The current focus is scraper, backend, and database readiness. Some exploratory scraper tests already work, but the method is not yet standardized enough for reliable database ingestion.
-
-The main work right now is:
+The main operational focus now is:
 
 - Make scraping repeatable, source-aware, and resilient.
 - Normalize listings into a consistent data structure before writing them to the database.
 - Extract useful database fields from messy post descriptions, including category, brand, price, condition, locations, status, and seller context.
 - Avoid rate limits, temporary blocks, duplicate spam, and brittle scraping behavior.
 - Keep the system inspectable so future agents can understand what happened during each scrape run.
+- Preserve the split production topology and deploy only fixed semantic-version images.
+- Monitor connector health, AI queue throughput, production disk usage, and database growth.
 
 Phase 5 operational hardening is implemented. Every connector has a sanitized
 parser fixture, duplicate-run locks and connector cooldowns have regression
 coverage, and `scraper.operational_report` produces separate daily data-quality
-and manual-review JSON artifacts under the persisted scraper log volume. UI
-work remains intentionally separate.
+and manual-review JSON artifacts under the persisted scraper log volume.
 
-UI work is intentionally deferred until real normalized listings and backend contracts exist.
+The public UI and backend contracts are implemented. Keep scraper operations,
+database writes, and public UI concerns separated unless a requested change
+explicitly crosses those boundaries.
 
 ## Product Freshness Goal
 
@@ -200,6 +204,196 @@ Use the homelab CI/CD path for now. Keep the architecture portable so Recon can 
 
 Prefer Dockerized services for the web app, scraper, and PostgreSQL. Keep staging and production configuration separate, and never commit real secrets.
 
+## Live Production Topology
+
+Production is intentionally split because Oracle Cloud egress is unsuitable for
+Instagram and Facebook scraping. Do not collapse these services back into one
+host without an explicit architecture decision.
+
+| Role | Host | Tailscale IP | Runtime directory | Services |
+| --- | --- | --- | --- | --- |
+| Production scraper | `ubserver1` on PVE1 | `100.100.20.1` | `/docker/recon-scraper` | `collector`, `ai-manager` |
+| Production web and data | `ubserver3` on Oracle Cloud ARM64 | `100.100.20.2` | `/docker/recon` | `postgres`, one-shot `migrate`, `web`, `cloudflared` |
+| Staging | `debian` on PVE2 | `100.100.20.3` | `/docker/recon` | Staging web, PostgreSQL, collector, and AI manager; intentionally stopped after the production launch |
+
+Public production URL: `https://recon.app-pixel.com`.
+
+The Cloudflare tunnel is named `recon-production-ubserver3`. Its published
+route is `recon.app-pixel.com -> http://web:3000`. The web container has no
+public host port; Cloudflare Tunnel is the public ingress. Production
+PostgreSQL is bound on the Oracle host only at `100.100.20.2:5432` for
+Tailscale access from the home scraper. Never publish PostgreSQL on
+`0.0.0.0:5432` or point production services at staging PostgreSQL.
+
+Production database credentials are separated by role:
+
+- Migration/owner credentials apply Prisma migrations and own the schema.
+- The web app receives a SELECT-only role.
+- The AI manager receives a scraper role with SELECT/INSERT/UPDATE/DELETE.
+- The collector receives read-only database access for operational reports and
+  does not receive the NVIDIA key or write credentials.
+
+The collector queues raw candidates in the shared persisted scraper state
+volume. The AI manager is the only production process that enriches queued
+candidates with NVIDIA and writes validated listings to PostgreSQL. Both
+workers run the same fixed scraper image but use separate commands and env
+files.
+
+## Instagram Media Cache
+
+Instagram images are cached in Cloudflare R2 because signed Instagram CDN URLs
+can expire or fail for public users. This is intentionally Instagram-only:
+Facebook and Reddit continue to use their original image URLs.
+
+- Bucket: `recon-media-production`
+- Public custom domain: `https://media.app-pixel.com`
+- Object layout: `production/instagram/<sha256-prefix>/<sha256>.<extension>`
+- Upload owner: the AI manager on ubserver1, after AI normalization and before
+  the PostgreSQL write
+- Backfill command: `python -m scraper.media.backfill_instagram`
+
+The AI manager validates HTTPS source hosts against Instagram/Facebook CDN
+suffixes, rejects private-address resolution, limits redirects and downloads,
+checks MIME type and image signatures, then uploads immutable content-addressed
+objects. An individual cache failure is non-fatal: PostgreSQL retains the
+original source URL and the UI falls back to it. The public API never fetches
+remote media and exposes the cached URL through its existing `sourceUrl` DTO
+field only when the listing platform is Instagram.
+
+R2 write credentials and `R2_OBJECT_PREFIX=production` belong only in
+`ubserver1:/docker/recon-scraper/.env.production`. Do not give them to the
+collector, Oracle web container, or browser. Keep the R2 development URL
+disabled; production delivery uses the custom domain so Cloudflare caching is
+active.
+
+## Production Runtime Files And Secrets
+
+Runtime Compose and environment files live on the servers and are not the
+tracked root Compose files in this repository.
+
+On `ubserver3:/docker/recon`:
+
+```text
+compose.yml
+.env.production
+.env.tunnel
+initdb/01-roles.sh
+```
+
+On `ubserver1:/docker/recon-scraper`:
+
+```text
+compose.yml
+.env.deploy
+.env.collector
+.env.production
+```
+
+`WEB_IMAGE_TAG` is stored in the Oracle `.env.production` file.
+`SCRAPER_IMAGE_TAG` is stored in the ubserver1 `.env.deploy` file. The NVIDIA
+API key is stored only in the AI manager env file on ubserver1. The Cloudflare
+tunnel token is stored only in `.env.tunnel` on ubserver3. Secret-bearing files
+were created root-owned with mode `600`; preserve that ownership and mode.
+Never print, copy into logs, or commit their values. The staging NVIDIA key was
+retained so staging can be restarted for future release validation.
+
+## Production Deployment And Update Runbook
+
+The release path is:
+
+```text
+push/merge main
+  -> GitHub Actions verifies and publishes :stagging
+  -> verify staging and image manifests
+  -> manually promote the same manifests to X.Y.Z
+  -> deploy that fixed version to ubserver3 and ubserver1
+  -> verify web, database, tunnel, collector, and AI manager
+```
+
+For a normal update:
+
+1. Let `.github/workflows/staging.yml` finish successfully after the merge to
+   `main`.
+2. Validate the change on Debian staging. Staging is currently stopped; start
+   only the services needed for the validation and stop them again afterward.
+3. Confirm `novn01/recon.id:stagging` contains `linux/amd64` and `linux/arm64`,
+   and `novn01/recon-scraper:stagging` contains `linux/amd64`.
+4. Manually dispatch `.github/workflows/promote-production.yml` with the next
+   semantic version. This copies the exact staging manifests; it must not
+   rebuild production.
+5. On ubserver3, change only `WEB_IMAGE_TAG` to the promoted version, then pull
+   and apply the Compose stack. Allow the one-shot migration service to finish
+   before considering the web deployment healthy.
+6. On ubserver1, change only `SCRAPER_IMAGE_TAG`, then pull and apply the two
+   worker services.
+7. Run the verification checks below. Do not call the deployment complete only
+   because containers started.
+
+Useful production checks:
+
+```bash
+# Oracle web, database, migrations, and tunnel
+ssh root@100.100.20.2
+cd /docker/recon
+docker compose --env-file .env.production ps -a
+docker compose --env-file .env.production logs --tail 100 migrate web cloudflared postgres
+
+# Home collector and AI manager
+ssh root@100.100.20.1
+cd /docker/recon-scraper
+docker compose --env-file .env.deploy ps
+docker compose --env-file .env.deploy logs --tail 120 collector ai-manager
+docker inspect -f '{{.Name}} restarts={{.RestartCount}} status={{.State.Status}}' \
+  recon-scraper-production-collector-1 \
+  recon-scraper-production-ai-manager-1
+```
+
+Production verification requires all of the following:
+
+- `https://recon.app-pixel.com` reaches HTTP 200 after its expected redirect to
+  `/collection/all`, with valid TLS.
+- PostgreSQL and web are healthy, `migrate` exits `0`, and cloudflared remains
+  connected.
+- Collector and AI manager are running with restart count `0`.
+- Recent collector logs show normal `success`, `no_new_data`, or intentional
+  cooldown outcomes instead of a persistent `401`, `403`, or `429` flood.
+- AI manager logs continue to show successful parsing and storage writes.
+- Production listing counts continue to grow when new candidates are found.
+
+At launch, transient Instagram `degraded` runs recovered on later cycles. The
+AI queue fluctuated around roughly 130-150 pending candidates because the
+collector can enqueue faster than two-item AI batches are processed. Treat a
+steadily growing queue, repeated provider errors, or a stalled `done` count as
+an operational issue; do not assume a running container is healthy.
+
+Rollback means restoring both `WEB_IMAGE_TAG` and `SCRAPER_IMAGE_TAG` to the
+previous known-good fixed version and reapplying Compose. Image rollback does
+not automatically roll back database migrations. Review migration
+compatibility before reverting the web or scraper across a schema change.
+
+## Staging State After Production Launch
+
+The Debian staging stack at `100.100.20.3:/docker/recon` was manually stopped
+after production verification on 2026-07-16. Its containers, named volumes,
+database, logs, and scraper state were preserved. Do not interpret stopped
+containers as a staging failure, and do not delete its volumes when restarting
+or cleaning up. Start staging only for an explicit validation or burn-in task,
+then stop its web, PostgreSQL, collector, and AI manager when the check is done.
+
+## Production Operational Cautions
+
+- ubserver1 disk usage reached approximately 85% after pulling the browser-heavy
+  scraper image, with about 21 GB free at launch. Check disk space before
+  pulling several additional scraper versions; do not prune images or volumes
+  without confirming rollback and data requirements.
+- ubserver3 had a pending kernel upgrade after Docker installation and was not
+  rebooted during launch. Verify the current kernel and service state before a
+  planned reboot.
+- Cloudflare Tunnel is the intended web ingress. Do not add public `3000`,
+  `5432`, or database security-list rules as a shortcut.
+- Keep production on fixed semantic-version application tags. Do not deploy
+  `latest` or the moving `stagging` tag directly to production.
+
 ## CI/CD Image Publishing
 
 GitHub Actions publishes separate web and scraper Docker images to Docker Hub. The scraper service has its own Dockerfile and is still not included in the root web image because `scraper/` is excluded from the root Docker context.
@@ -221,14 +415,23 @@ Staging workflow:
 - File: `.github/workflows/staging.yml`
 - Trigger: push to `main` or manual workflow dispatch.
 - Checks: `npm ci`, Prisma validate, Next lint/typecheck/build, Python scraper unit tests, and Ruff.
-- Publishes the moving staging tags: `novn01/recon.id:stagging` and `novn01/recon-scraper:stagging`.
+- Publishes `novn01/recon.id:stagging` as a multi-platform manifest for
+  `linux/amd64` and `linux/arm64`.
+- Publishes `novn01/recon-scraper:stagging` for `linux/amd64`, matching the
+  ubserver1 production scraper host.
 
 Production workflow:
 
 - File: `.github/workflows/promote-production.yml`
 - Trigger: manual workflow dispatch only.
 - Input: Docker tag version, for example `1.0.0`.
-- Behavior: pulls the `stagging` web and scraper images, retags those exact images as `<version>`, and pushes them. Do not rebuild production separately from staging.
+- Behavior: uses `docker buildx imagetools create` to copy the complete
+  `stagging` manifests to `<version>`. This preserves both web platforms and
+  the scraper platform. Do not replace it with a runner-local pull/tag/push,
+  which would promote only the runner architecture, and do not rebuild
+  production separately from staging.
+
+First production application version: `1.0.0`.
 
 Production rollback is a manual Docker tag choice: redeploy the previous known-good fixed version tags.
 

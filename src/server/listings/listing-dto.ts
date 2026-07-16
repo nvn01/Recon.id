@@ -18,6 +18,7 @@ export const listingFeedSelect = {
   images: {
     select: {
       sourceUrl: true,
+      cachedUrl: true,
       position: true,
       altText: true,
     },
@@ -67,10 +68,19 @@ export function toListingDto(listing: ListingFeedRecord) {
     status: statusValues[listing.status],
     listedAt: listing.postedAt ?? listing.firstFetchedAt,
     images: [...listing.images]
-      .filter((image) => isSafeHttpsUrl(image.sourceUrl))
+      .map((image) => ({
+        ...image,
+        publicUrl:
+          listing.platform === "INSTAGRAM" &&
+          image.cachedUrl &&
+          isSafeInstagramCachedUrl(image.cachedUrl)
+            ? image.cachedUrl
+            : image.sourceUrl,
+      }))
+      .filter((image) => isSafeHttpsUrl(image.publicUrl))
       .sort((left, right) => left.position - right.position)
       .map((image) => ({
-        sourceUrl: image.sourceUrl,
+        sourceUrl: image.publicUrl,
         position: image.position,
         altText: image.altText,
       })),
@@ -84,6 +94,20 @@ export function isSafeHttpsUrl(value: string): boolean {
     const url = new URL(value);
     return (
       url.protocol === "https:" && url.username === "" && url.password === ""
+    );
+  } catch {
+    return false;
+  }
+}
+
+export function isSafeInstagramCachedUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return (
+      url.origin === "https://media.app-pixel.com" &&
+      url.pathname.startsWith("/production/instagram/") &&
+      url.username === "" &&
+      url.password === ""
     );
   } catch {
     return false;

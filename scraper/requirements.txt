@@ -1,3 +1,4 @@
 defusedxml>=0.7.1,<1
+boto3>=1.35.0,<2
 psycopg[binary]>=3.2.0,<4
 playwright>=1.45.0,<2

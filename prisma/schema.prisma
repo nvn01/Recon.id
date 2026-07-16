@@ -55,13 +55,19 @@ model Listing {
 }
 
 model ListingImage {
-  id        String   @id @default(cuid())
-  listingId String   @map("listing_id")
-  sourceUrl String   @map("source_url")
-  position  Int
-  altText   String?  @map("alt_text")
-  createdAt DateTime @default(now()) @map("created_at")
-  listing   Listing  @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  id          String    @id @default(cuid())
+  listingId   String    @map("listing_id")
+  sourceUrl   String    @map("source_url")
+  cachedUrl   String?   @map("cached_url")
+  storageKey  String?   @map("storage_key")
+  contentHash String?   @map("content_hash")
+  contentType String?   @map("content_type")
+  byteSize    Int?      @map("byte_size")
+  cachedAt    DateTime? @map("cached_at")
+  position    Int
+  altText     String?   @map("alt_text")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  listing     Listing   @relation(fields: [listingId], references: [id], onDelete: Cascade)
 
   @@unique([listingId, position])
   @@index([listingId])

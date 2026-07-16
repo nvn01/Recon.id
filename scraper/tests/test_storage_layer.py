@@ -110,6 +110,67 @@ class StorageLayerTests(unittest.TestCase):
         self.assertEqual(rows[1]["source_url"], "https://example.test/new.jpg")
         self.assertEqual(rows[1]["alt_text"], "new")
 
+    def test_image_rows_maps_complete_cached_metadata(self):
+        listing = sample_listing(
+            images=[
+                {
+                    "sourceUrl": "https://scontent.cdninstagram.com/image.jpg?token=new",
+                    "cachedUrl": "https://media.app-pixel.com/production/instagram/aa/hash.jpg",
+                    "storageKey": "production/instagram/aa/hash.jpg",
+                    "contentHash": "a" * 64,
+                    "contentType": "image/jpeg",
+                    "byteSize": 123,
+                    "cachedAt": "2026-07-16T05:00:00+00:00",
+                    "position": 0,
+                    "altText": None,
+                }
+            ]
+        )
+
+        [row] = image_rows("listing_123", listing["images"])
+
+        self.assertEqual(row["cached_url"], "https://media.app-pixel.com/production/instagram/aa/hash.jpg")
+        self.assertEqual(row["storage_key"], "production/instagram/aa/hash.jpg")
+        self.assertEqual(row["byte_size"], 123)
+        self.assertIsNone(row["cached_at"].tzinfo)
+
+    def test_image_rows_preserves_cache_on_signed_url_refresh(self):
+        existing = [
+            (
+                0,
+                "https://scontent.cdninstagram.com/image.jpg?token=old",
+                "https://media.app-pixel.com/production/instagram/aa/hash.jpg",
+                "production/instagram/aa/hash.jpg",
+                "a" * 64,
+                "image/jpeg",
+                123,
+                datetime(2026, 7, 16, 5, 0),
+            )
+        ]
+        images = [
+            {
+                "sourceUrl": "https://scontent.cdninstagram.com/image.jpg?token=new",
+                "position": 0,
+                "altText": None,
+            }
+        ]
+
+        [row] = image_rows("listing_123", images, existing)
+
+        self.assertEqual(row["cached_url"], "https://media.app-pixel.com/production/instagram/aa/hash.jpg")
+
+    def test_image_rows_rejects_partial_cached_metadata(self):
+        images = [
+            {
+                "sourceUrl": "https://scontent.cdninstagram.com/image.jpg",
+                "cachedUrl": "https://media.app-pixel.com/partial.jpg",
+                "position": 0,
+                "altText": None,
+            }
+        ]
+        with self.assertRaises(StorageError):
+            image_rows("listing_123", images)
+
     def test_write_run_log_appends_jsonl_and_redacts_sensitive_keys(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             path = Path(tmpdir) / "scraper-runs.jsonl"

@@ -110,11 +110,23 @@ RETURNING id, (xmax = 0) AS inserted
 
 DELETE_IMAGES_SQL = "DELETE FROM listing_images WHERE listing_id = %s"
 
+SELECT_IMAGES_SQL = """
+SELECT position, source_url, cached_url, storage_key, content_hash, content_type, byte_size, cached_at
+FROM listing_images
+WHERE listing_id = %s
+"""
+
 INSERT_IMAGE_SQL = """
 INSERT INTO listing_images (
     id,
     listing_id,
     source_url,
+    cached_url,
+    storage_key,
+    content_hash,
+    content_type,
+    byte_size,
+    cached_at,
     position,
     alt_text
 )
@@ -122,6 +134,12 @@ VALUES (
     %(id)s,
     %(listing_id)s,
     %(source_url)s,
+    %(cached_url)s,
+    %(storage_key)s,
+    %(content_hash)s,
+    %(content_type)s,
+    %(byte_size)s,
+    %(cached_at)s,
     %(position)s,
     %(alt_text)s
 )
@@ -207,18 +225,48 @@ def listing_to_db_row(listing: dict[str, Any], listing_id: str | None = None) ->
     }
 
 
-def image_rows(listing_id: str, images: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def image_rows(
+    listing_id: str,
+    images: list[dict[str, Any]],
+    existing_images: list[tuple[Any, ...]] | None = None,
+) -> list[dict[str, Any]]:
     by_position: dict[int, dict[str, Any]] = {}
+    existing_by_identity = {
+        (int(row[0]), canonical_media_source_url(str(row[1]))): {
+            "cached_url": row[2],
+            "storage_key": row[3],
+            "content_hash": row[4],
+            "content_type": row[5],
+            "byte_size": row[6],
+            "cached_at": row[7],
+        }
+        for row in existing_images or []
+    }
 
     for image in images:
         position = optional_int(image.get("position"), "images.position")
         if position is None:
             raise StorageError("Image position is required.")
         source_url = required_string(image.get("sourceUrl"), "images.sourceUrl")
+        cache_fields = {
+            "cached_url": optional_string(image.get("cachedUrl")),
+            "storage_key": optional_string(image.get("storageKey")),
+            "content_hash": optional_string(image.get("contentHash")),
+            "content_type": optional_string(image.get("contentType")),
+            "byte_size": optional_int(image.get("byteSize"), "images.byteSize"),
+            "cached_at": utc_naive_datetime(image.get("cachedAt"), "images.cachedAt", required=False),
+        }
+        populated_cache_fields = [value is not None for value in cache_fields.values()]
+        if any(populated_cache_fields) and not all(populated_cache_fields):
+            raise StorageError("Cached image metadata must be complete or absent.")
+        if not any(populated_cache_fields):
+            cache_fields = existing_by_identity.get((position, canonical_media_source_url(source_url)), cache_fields)
+
         by_position[position] = {
             "id": new_record_id(),
             "listing_id": listing_id,
             "source_url": source_url,
+            **cache_fields,
             "position": position,
             "alt_text": optional_string(image.get("altText")),
         }
@@ -264,10 +312,12 @@ def upsert_listings_with_connection(connection: Any, listings: list[dict[str, An
                 else:
                     summary.updated += 1
 
+                cursor.execute(SELECT_IMAGES_SQL, (listing_id,))
+                existing_images = cursor.fetchall()
                 cursor.execute(DELETE_IMAGES_SQL, (listing_id,))
                 summary.imagesDeleted += max(cursor.rowcount or 0, 0)
 
-                rows = image_rows(str(listing_id), listing.get("images") or [])
+                rows = image_rows(str(listing_id), listing.get("images") or [], existing_images)
                 if rows:
                     cursor.executemany(INSERT_IMAGE_SQL, rows)
                     summary.imagesInserted += len(rows)
@@ -342,3 +392,8 @@ def utc_naive_datetime(value: Any, field: str, *, required: bool) -> datetime | 
 
 def new_record_id() -> str:
     return uuid.uuid4().hex
+
+
+def canonical_media_source_url(value: str) -> str:
+    parts = urlsplit(value)
+    return urlunsplit((parts.scheme.lower(), parts.netloc.lower(), parts.path, "", ""))
