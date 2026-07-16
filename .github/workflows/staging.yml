@@ -67,6 +67,9 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
+      - name: Setup QEMU
+        uses: docker/setup-qemu-action@v3
+
       - name: Setup Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -76,6 +79,7 @@ jobs:
           context: .
           file: ./Dockerfile
           push: true
+          platforms: linux/amd64,linux/arm64
           tags: ${{ env.WEB_IMAGE_NAME }}:${{ env.IMAGE_TAG }}
 
       - name: Build and push stagging scraper image
@@ -84,4 +88,5 @@ jobs:
           context: ./scraper
           file: ./scraper/Dockerfile
           push: true
+          platforms: linux/amd64
           tags: ${{ env.SCRAPER_IMAGE_NAME }}:${{ env.IMAGE_TAG }}
