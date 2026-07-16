@@ -11,7 +11,6 @@ from pathlib import Path
 from typing import Any, Callable
 
 from scraper.candidate_pool import CandidatePool, DEFAULT_POOL_PATH, LeasedCandidate
-from scraper.media.instagram_r2 import MediaCacheBatch, cache_instagram_media
 from scraper.reddit.nvidia_parser import enrich_listings_with_nvidia
 from scraper.shared.config import DEFAULT_CONFIG_PATH, float_value, load_config, table
 from scraper.shared.listing_contract import validate_listings
@@ -51,7 +50,6 @@ def process_batch(
     database_url: str | None,
     write_db: bool,
     enrich_fn: Callable[[list[dict[str, Any]]], list[dict[str, Any]]] = enrich_listings_with_nvidia,
-    media_cache_fn: Callable[[list[dict[str, Any]]], MediaCacheBatch] = cache_instagram_media,
     upsert_fn: Callable[..., Any] = upsert_listings,
     retry_seconds: int = 300,
     now: datetime | None = None,
@@ -63,8 +61,6 @@ def process_batch(
         valid, invalid = validate_listings(parsed)
         if invalid:
             raise ValueError(f"AI manager produced {len(invalid)} invalid listings")
-        media_result = media_cache_fn(valid)
-        valid = media_result.listings
         storage_summary = None
         if write_db and valid:
             resolved_url = require_database_url(database_url)
@@ -76,7 +72,6 @@ def process_batch(
             "parsed": len(parsed),
             "validated": len(valid),
             "platforms": platforms,
-            "media": media_result.as_dict(),
             "storage": storage_summary,
             "error": None,
         }
@@ -89,7 +84,6 @@ def process_batch(
             "parsed": 0,
             "validated": 0,
             "platforms": platforms,
-            "media": None,
             "storage": None,
             "error": safe_error,
         }

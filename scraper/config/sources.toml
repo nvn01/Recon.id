@@ -77,6 +77,14 @@ rate_limit_seconds = 5.0
 retry_seconds = 300
 lease_seconds = 300
 
+[media_worker]
+# PostgreSQL is the durable media queue: uncached Instagram image rows are
+# processed only after the AI manager has committed their listings.
+log_file = ".logs/instagram_media_worker.jsonl"
+lock_file = ".state/instagram_media_worker.lock"
+batch_size = 25
+poll_seconds = 60.0
+
 [scheduler.operational_report]
 enabled = true
 # Persisted scheduler state keeps this report on a daily cadence even when
