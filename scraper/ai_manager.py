@@ -115,12 +115,12 @@ def run_manager(args: argparse.Namespace) -> int:
     train_capacity = max(
         1,
         min(
-            50,
+            10,
             int(
                 configured_value(
                     getattr(args, "train_capacity", None),
                     manager_config.get("train_capacity"),
-                    20,
+                    3,
                 )
             ),
         ),

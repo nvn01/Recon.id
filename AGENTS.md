@@ -243,10 +243,12 @@ R2. A separate media worker polls PostgreSQL for uncached Instagram images,
 uploads them to R2, and updates only their cache metadata. All three processes
 run the same fixed scraper image with separate commands and scoped env files.
 The supported AI-manager design is a fixed one-minute train, not an immediate
-two-item loop. Each departure leases up to 20 ready candidates across Reddit,
+two-item loop. Each departure leases up to three ready candidates across Reddit,
 Instagram, and Facebook, sends that entire train to NVIDIA in one request, and
 bulk-upserts the validated result. Candidates collected while that request is
 running wait for the next train. Fresh candidates board before delayed retries.
+Three is the largest batch live-proven against the current 4,096-token strict-
+JSON output budget; five and twenty returned truncated/non-JSON model output.
 Never restore per-platform AI workers or multiple concurrent NVIDIA parsers.
 
 Candidate fingerprints represent semantic AI work. Instagram `postedAt` and
@@ -392,7 +394,7 @@ Production verification requires all of the following:
 The retired two-item loop allowed volatile Instagram versions and retries to
 grow the queue to roughly 130-150 candidates. Do not restore that behavior.
 With the train manager, new posts should normally leave within the next
-one-minute departure and backlogs drain in trains of up to 20. Treat a steadily
+one-minute departure and backlogs drain in trains of up to three. Treat a steadily
 growing queue, repeated provider errors, or a stalled `done` count as an
 operational issue; do not assume a running container is healthy.
 
