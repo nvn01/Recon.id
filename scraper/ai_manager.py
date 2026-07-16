@@ -6,13 +6,13 @@ import argparse
 import json
 import sys
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
 from scraper.candidate_pool import CandidatePool, DEFAULT_POOL_PATH, LeasedCandidate
 from scraper.reddit.nvidia_parser import enrich_listings_with_nvidia
-from scraper.shared.config import DEFAULT_CONFIG_PATH, float_value, load_config, table
+from scraper.shared.config import DEFAULT_CONFIG_PATH, load_config, table
 from scraper.shared.listing_contract import validate_listings
 from scraper.shared.runtime import (
     AlreadyRunningError,
@@ -41,6 +41,24 @@ def configured_value(cli_value: Any, configured: Any, default: Any) -> Any:
     if cli_value is not None:
         return cli_value
     return configured if configured is not None else default
+
+
+def wait_for_departure(
+    next_departure: float,
+    *,
+    monotonic_fn: Callable[[], float] = time.monotonic,
+    sleep_fn: Callable[[float], None] = time.sleep,
+) -> None:
+    remaining = next_departure - monotonic_fn()
+    if remaining > 0:
+        sleep_fn(remaining)
+
+
+def advance_departure(previous: float, interval_seconds: float, current: float) -> float:
+    next_departure = previous + interval_seconds
+    while next_departure <= current:
+        next_departure += interval_seconds
+    return next_departure
 
 
 def process_batch(
@@ -94,19 +112,29 @@ def run_manager(args: argparse.Namespace) -> int:
     manager_config = table(config, "ai_manager")
     pool_path = resolve_scraper_path(args.pool_path or manager_config.get("pool_path"), DEFAULT_POOL_PATH)
     log_path = resolve_scraper_path(args.log_file or manager_config.get("log_file"), DEFAULT_MANAGER_LOG_FILE)
-    batch_size = max(
+    train_capacity = max(
         1,
-        min(10, int(configured_value(args.batch_size, manager_config.get("batch_size"), 2))),
+        min(
+            50,
+            int(
+                configured_value(
+                    getattr(args, "train_capacity", None),
+                    manager_config.get("train_capacity"),
+                    20,
+                )
+            ),
+        ),
     )
-    max_wait = max(
-        0.0,
-        float(configured_value(args.max_wait_seconds, manager_config.get("max_wait_seconds"), 30.0)),
+    departure_interval = max(
+        1.0,
+        float(
+            configured_value(
+                getattr(args, "departure_interval_seconds", None),
+                manager_config.get("departure_interval_seconds"),
+                60.0,
+            )
+        ),
     )
-    poll_seconds = max(
-        0.2,
-        float(configured_value(args.poll_seconds, manager_config.get("poll_seconds"), 2.0)),
-    )
-    rate_limit_seconds = max(0.0, float_value(manager_config.get("rate_limit_seconds"), 5.0))
     retry_seconds = max(
         1,
         int(configured_value(args.retry_seconds, manager_config.get("retry_seconds"), 300)),
@@ -117,12 +145,16 @@ def run_manager(args: argparse.Namespace) -> int:
     )
     pool = CandidatePool(pool_path)
     database_url = args.database_url
+    next_departure = time.monotonic() + departure_interval
 
     while True:
-        batch = pool.lease_batch(
-            batch_size=batch_size,
-            max_wait_seconds=0 if args.once else max_wait,
+        if not args.once:
+            wait_for_departure(next_departure)
+        departure_at = datetime.now(timezone.utc)
+        batch = pool.lease_train(
+            max_items=train_capacity,
             lease_seconds=lease_seconds,
+            now=departure_at,
         )
         if batch:
             result = process_batch(
@@ -132,14 +164,20 @@ def run_manager(args: argparse.Namespace) -> int:
                 write_db=args.write_db,
                 enrich_fn=lambda listings: enrich_listings_with_nvidia(
                     listings,
-                    batch_size=batch_size,
-                    rate_limit_seconds=rate_limit_seconds,
+                    batch_size=len(listings),
+                    rate_limit_seconds=0.0,
                 ),
                 retry_seconds=retry_seconds,
             )
             record = {
                 "source": "ai_manager",
                 "loggedAt": datetime.now().astimezone().isoformat(),
+                "train": {
+                    "departedAt": departure_at.isoformat(),
+                    "intervalSeconds": departure_interval,
+                    "capacity": train_capacity,
+                    "boarded": len(batch),
+                },
                 **result,
                 "queue": pool.stats(),
             }
@@ -147,11 +185,9 @@ def run_manager(args: argparse.Namespace) -> int:
             print(json.dumps(record, ensure_ascii=False, separators=(",", ":")), flush=True)
             if args.once:
                 return 0 if result["ok"] else 1
-            time.sleep(rate_limit_seconds)
-            continue
         if args.once:
             return 0
-        time.sleep(poll_seconds)
+        next_departure = advance_departure(next_departure, departure_interval, time.monotonic())
 
 
 def parse_args() -> argparse.Namespace:
@@ -160,9 +196,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--pool-path", default=None)
     parser.add_argument("--log-file", default=None)
     parser.add_argument("--lock-file", default=None)
-    parser.add_argument("--batch-size", type=int, default=None)
-    parser.add_argument("--max-wait-seconds", type=float, default=None)
-    parser.add_argument("--poll-seconds", type=float, default=None)
+    parser.add_argument("--train-capacity", type=int, default=None)
+    parser.add_argument("--departure-interval-seconds", type=float, default=None)
+    parser.add_argument("--batch-size", dest="train_capacity", type=int, help=argparse.SUPPRESS)
     parser.add_argument("--retry-seconds", type=int, default=None)
     parser.add_argument("--lease-seconds", type=int, default=None)
     parser.add_argument("--database-url", default=None)

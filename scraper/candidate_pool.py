@@ -74,31 +74,21 @@ def candidate_key(listing: dict[str, Any]) -> str:
 
 
 def evidence_fingerprint(listing: dict[str, Any]) -> str:
-    images = sorted(
-        (
-            int(image.get("position") or 0),
-            canonical_image_url(image.get("sourceUrl")),
-        )
-        for image in listing.get("images", [])
-        if isinstance(image, dict) and image.get("sourceUrl")
-    )
+    # This fingerprint is the AI-work identity, not a byte-for-byte snapshot of
+    # every source field. Instagram can expose a different CDN path and postedAt
+    # value for the same post between otherwise identical fetches. Neither is
+    # semantic input that should send an already-reviewed listing back to AI.
     evidence = {
         "platform": str(listing.get("platform") or "UNKNOWN").upper(),
         "sourceUrl": canonical_url(listing.get("sourceUrl")),
         "externalId": str(listing.get("externalId") or ""),
         "title": listing.get("title"),
         "description": listing.get("description"),
-        "price": listing.get("price"),
-        "locationTexts": listing.get("locationTexts") or [],
-        "conditionText": listing.get("conditionText"),
         "sellerName": listing.get("sellerName"),
-        "status": listing.get("status"),
-        "postedAt": listing.get("postedAt"),
-        "images": images,
         "sourceFacts": listing.get("_sourceFacts") if isinstance(listing.get("_sourceFacts"), dict) else {},
     }
     serialized = json.dumps(evidence, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-    return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+    return f"v2:{hashlib.sha256(serialized.encode('utf-8')).hexdigest()}"
 
 
 class CandidatePool:
@@ -214,6 +204,20 @@ class CandidatePool:
                         """,
                         (timestamp, source_id, key),
                     )
+                    connection.execute(
+                        """
+                        UPDATE candidates
+                        SET platform = ?, source_id = ?, payload_json = ?
+                        WHERE candidate_key = ? AND fingerprint = ? AND status = 'pending'
+                        """,
+                        (
+                            platform,
+                            source_id,
+                            json.dumps(listing, ensure_ascii=False, separators=(",", ":")),
+                            key,
+                            fingerprint,
+                        ),
+                    )
                     continue
 
                 changed += 1
@@ -226,6 +230,12 @@ class CandidatePool:
                     """,
                     (platform, source_id, fingerprint, timestamp, key),
                 )
+                self._supersede_pending_versions(
+                    connection,
+                    candidate_key=key,
+                    keep_fingerprint=fingerprint,
+                    timestamp=timestamp,
+                )
                 enqueued += self._enqueue_version(
                     connection,
                     listing=listing,
@@ -236,6 +246,24 @@ class CandidatePool:
                     timestamp=timestamp,
                 )
         return EnqueueSummary(received, new, changed, unchanged, enqueued)
+
+    def _supersede_pending_versions(
+        self,
+        connection: sqlite3.Connection,
+        *,
+        candidate_key: str,
+        keep_fingerprint: str,
+        timestamp: str,
+    ) -> None:
+        connection.execute(
+            """
+            UPDATE candidates
+            SET status = 'done', done_at = ?, leased_at = NULL,
+                error = 'superseded by newer source evidence'
+            WHERE candidate_key = ? AND fingerprint != ? AND status = 'pending'
+            """,
+            (timestamp, candidate_key, keep_fingerprint),
+        )
 
     def _enqueue_version(
         self,
@@ -270,13 +298,83 @@ class CandidatePool:
                 UPDATE candidates
                 SET platform = ?, source_id = ?, payload_json = ?, status = 'pending',
                     enqueued_at = ?, available_at = ?, leased_at = NULL,
-                    done_at = NULL, error = NULL
+                    done_at = NULL, attempts = 0, error = NULL
                 WHERE candidate_key = ? AND fingerprint = ?
                 """,
                 (platform, source_id, payload_json, timestamp, timestamp, key, fingerprint),
             )
             return 1
         return 0
+
+    def lease_train(
+        self,
+        *,
+        max_items: int,
+        lease_seconds: int = 300,
+        now: datetime | None = None,
+    ) -> list[LeasedCandidate]:
+        """Lease one mixed-platform train, preferring never-attempted work.
+
+        The manager calls this once per departure interval. Older pending
+        versions of a post are closed before boarding so one source post can
+        occupy at most one seat in a train.
+        """
+        current = (now or utc_now()).astimezone(timezone.utc)
+        current_iso = current.isoformat()
+        stale_iso = (current - timedelta(seconds=max(1, lease_seconds))).isoformat()
+        capacity = max(1, min(50, int(max_items)))
+        with self._connection() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            connection.execute(
+                """
+                UPDATE candidates
+                SET status = 'pending', available_at = ?, leased_at = NULL,
+                    error = COALESCE(error, 'stale lease recovered')
+                WHERE status = 'leased' AND leased_at <= ?
+                """,
+                (current_iso, stale_iso),
+            )
+            connection.execute(
+                """
+                UPDATE candidates AS candidate
+                SET status = 'done', done_at = ?, leased_at = NULL,
+                    error = 'superseded by newer pending version'
+                WHERE candidate.status = 'pending'
+                  AND EXISTS (
+                    SELECT 1
+                    FROM candidates AS newer
+                    WHERE newer.candidate_key = candidate.candidate_key
+                      AND newer.status = 'pending'
+                      AND (
+                        newer.enqueued_at > candidate.enqueued_at
+                        OR (newer.enqueued_at = candidate.enqueued_at AND newer.id > candidate.id)
+                      )
+                  )
+                """,
+                (current_iso,),
+            )
+            ready = connection.execute(
+                """
+                SELECT * FROM candidates
+                WHERE status = 'pending' AND available_at <= ?
+                ORDER BY CASE WHEN attempts = 0 THEN 0 ELSE 1 END,
+                         enqueued_at, id
+                LIMIT ?
+                """,
+                (current_iso, capacity),
+            ).fetchall()
+            if not ready:
+                return []
+            ids = [str(row["id"]) for row in ready]
+            connection.executemany(
+                """
+                UPDATE candidates
+                SET status = 'leased', leased_at = ?, attempts = attempts + 1, error = NULL
+                WHERE id = ? AND status = 'pending'
+                """,
+                [(current_iso, candidate_id) for candidate_id in ids],
+            )
+            return [self._leased_candidate(row) for row in ready]
 
     def lease_batch(
         self,
