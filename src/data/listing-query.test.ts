@@ -22,7 +22,7 @@ describe("listing feed query mapping", () => {
       limit: 12,
       platforms: ["facebook"],
       statuses: ["available", "unknown"],
-      categories: ["GPU"],
+      categories: ["Graphics Card"],
       locations: ["Bandung"],
       conditions: ["Bekas - baik"],
       minPrice: 1_000_000,

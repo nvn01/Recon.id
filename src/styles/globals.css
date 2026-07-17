@@ -2465,7 +2465,7 @@ img {
   }
 
   .dialog-image {
-    min-height: min(68vh, 520px);
+    height: min(68vh, 520px);
     border-radius: 18px 18px 0 0;
   }
 

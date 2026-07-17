@@ -11,7 +11,12 @@ export type FeedScope =
 export const collections = [
   { slug: "all", label: "Semua", mark: "00", categories: [] },
   { slug: "laptop", label: "Laptop", mark: "LP", categories: ["Laptop"] },
-  { slug: "gpu", label: "GPU", mark: "GX", categories: ["GPU"] },
+  {
+    slug: "gpu",
+    label: "GPU",
+    mark: "GX",
+    categories: ["Graphics Card"],
+  },
   {
     slug: "pc-build",
     label: "PC & Komponen",
