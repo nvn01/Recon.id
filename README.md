@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="./public/brand/recon-mark-forest.svg" alt="RECON" width="180" />
+  <img src="./public/brand/recon-logo-lime.svg" alt="RECON" width="96" />
 </p>
 
 <p align="center">
@@ -20,8 +20,6 @@ RECON collects public listings from multiple sources and presents them in one cl
 - Search and filter by collection, platform, price, status, condition, or location.
 - Open a listing to see its images and important details.
 - Continue to the original source when something looks interesting.
-
-![RECON listing detail on mobile](./public/readme/recon-mobile-detail.png)
 
 ## Sources
 
