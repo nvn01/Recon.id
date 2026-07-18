@@ -448,10 +448,36 @@ Staging workflow:
 - File: `.github/workflows/staging.yml`
 - Trigger: push to `main` or manual workflow dispatch.
 - Checks: `npm ci`, Prisma validate, Next lint/typecheck/build, Python scraper unit tests, and Ruff.
-- Publishes `novn01/recon.id:stagging` as a multi-platform manifest for
-  `linux/amd64` and `linux/arm64`.
+- Runs verification once, then builds the web image on native `linux/amd64`
+  and `linux/arm64` GitHub-hosted runners in parallel.
+- Publishes architecture-specific staging tags and combines them into
+  `novn01/recon.id:stagging` as a multi-platform manifest.
 - Publishes `novn01/recon-scraper:stagging` for `linux/amd64`, matching the
   ubserver1 production scraper host.
+- Uses architecture-scoped GitHub Actions build caches for both web platforms
+  and the scraper image.
+
+Multi-architecture build guardrail:
+
+- Do not restore a single `docker/build-push-action` step that asks an AMD64
+  runner to build both AMD64 and ARM64 through QEMU.
+- On 2026-07-17, the `1.1.3` staging run completed all application checks and
+  the AMD64 Docker stages, but ARM64 `npm ci` stopped producing progress under
+  QEMU for about 42 minutes. The job reached its 45-minute timeout. A fresh
+  runner succeeded, proving this was an emulated build stall rather than a
+  Next.js, test, or application failure.
+- Keep AMD64 on `ubuntu-24.04` and ARM64 on the native
+  `ubuntu-24.04-arm` GitHub-hosted runner. Build the two platform tags in
+  parallel, then join them with `docker buildx imagetools create`.
+- Keep separate cache scopes (`web-amd64`, `web-arm64`, and
+  `scraper-amd64`) so one architecture cannot poison another architecture's
+  layers.
+- The production promotion workflow must continue copying the complete
+  `stagging` manifest to the semantic version tag. It must not rebuild or
+  promote only one architecture.
+- If one native platform job fails, inspect that job directly. Retry a clearly
+  transient runner or registry failure once; do not hide a real build error by
+  increasing the timeout or falling back to QEMU.
 
 Production workflow:
 
