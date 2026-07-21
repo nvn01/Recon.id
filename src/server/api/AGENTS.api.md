@@ -19,6 +19,11 @@ Read this file with the root `AGENTS.md` when changing the Next.js/tRPC API.
 - `listings.version` returns an opaque revision plus the current listing count.
   The UI uses the count delta to label unseen inserts, polls separately, and must
   not refetch visible feed data until the user activates the new-items control.
+- Feed, facet, and version queries share the same moderation boundary: exclude
+  individually hidden listings, platforms with `public_visible = false`, and
+  Facebook listings whose effective seller name has a `blocked` flag. The
+  effective seller name is `listing_moderation.seller_name_override` first,
+  then the scraper-owned `listings.seller_name`.
 - Do not add total counts to the cursor feed. They add a second changing query
   and are not needed for infinite scrolling.
 
@@ -76,6 +81,10 @@ interpolate a raw search pattern or apply client-only filtering to one page.
   UI nonce/hash work is implemented.
 - Keep CORS same-origin. Public edge rate limiting belongs in Traefik or another
   shared gateway, not an in-memory Next.js counter.
+- Seller-name matching uses the migration-defined `normalize_seller_name`
+  function. It is intentionally exact after case and whitespace normalization;
+  do not add fuzzy public-query matching or apply Facebook seller flags to other
+  platforms.
 - Staging currently uses a shared PostgreSQL superuser. Before public launch,
   give the web container a SELECT-only `DATABASE_URL` and keep scraper/migration
   credentials separate. Do not create or rotate those remote credentials
@@ -86,9 +95,10 @@ interpolate a raw search pattern or apply client-only filtering to one page.
 
 ## Deferred Surface
 
-Do not add connector health, scrape runs, listing writes, takedown/hide,
-authentication, arbitrary sorting, or non-Instagram media caching until a
-product or UI requirement calls for it.
+Do not add connector health, scrape runs, listing writes, arbitrary sorting, or
+non-Instagram media caching to this public API until a product requirement calls
+for it. Moderation writes and authentication belong to the private, Tailscale-
+only admin service; never expose them through these public tRPC procedures.
 
 ## Verification
 

@@ -52,6 +52,22 @@ class NvidiaParserPromptTests(unittest.TestCase):
 
         self.assertIn('"platform": "instagram"', prompt)
 
+    def test_prompt_requires_the_source_seller_name_without_inference(self):
+        prompt = build_prompt(
+            [
+                {
+                    "platform": "facebook",
+                    "externalId": "fb-seller",
+                    "title": "Acer Z476",
+                    "description": "Daily listing",
+                    "sellerName": "Public Seller",
+                }
+            ]
+        )
+
+        self.assertIn("Return sourceFacts.sellerName exactly", SYSTEM_PROMPT)
+        self.assertIn('"sellerName": "Public Seller"', prompt)
+
     def test_ai_result_owns_all_semantic_fields(self):
         listings = [{"externalId": "fb-1", "platform": "FACEBOOK", "title": "raw", "price": 123_456}]
         analyses = [
@@ -65,6 +81,7 @@ class NvidiaParserPromptTests(unittest.TestCase):
                 "status": "AVAILABLE",
                 "category": "Game Console",
                 "brand": "Sony",
+                "sellerName": "Wrong AI Seller",
             }
         ]
 
@@ -74,6 +91,35 @@ class NvidiaParserPromptTests(unittest.TestCase):
         self.assertIsNone(parsed["price"])
         self.assertEqual(parsed["conditionText"], "Bekas - baik")
         self.assertEqual(parsed["category"], "Game Console")
+        self.assertIsNone(parsed["sellerName"])
+
+    def test_merge_preserves_the_scraper_seller_identity(self):
+        listings = [
+            {
+                "externalId": "fb-seller",
+                "platform": "FACEBOOK",
+                "title": "raw",
+                "sellerName": "Public Seller",
+            }
+        ]
+        analyses = [
+            {
+                "externalId": "fb-seller",
+                "isListing": True,
+                "title": "Acer Z476",
+                "price": None,
+                "locationTexts": [],
+                "conditionText": None,
+                "status": "AVAILABLE",
+                "category": "Laptop",
+                "brand": "Acer",
+                "sellerName": "Invented Seller",
+            }
+        ]
+
+        [parsed] = merge_ai_results(listings, analyses)
+
+        self.assertEqual(parsed["sellerName"], "Public Seller")
 
     def test_ai_can_reject_non_listing_content(self):
         listings = [{"externalId": "ig-1", "platform": "INSTAGRAM", "title": "raw"}]

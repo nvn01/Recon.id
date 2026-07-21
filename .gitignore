@@ -20,6 +20,7 @@ __pycache__/
 # private server compose files
 docker-compose.staging.yml
 docker-compose.production.yml
+/admin-panel/
 
 # generated/build output
 .next/

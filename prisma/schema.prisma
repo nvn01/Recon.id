@@ -24,26 +24,42 @@ enum ListingStatus {
   @@map("listing_status")
 }
 
+enum SellerModerationStatus {
+  REVIEW      @map("review")
+  BLOCKED     @map("blocked")
+  ALLOWLISTED @map("allowlisted")
+
+  @@map("seller_moderation_status")
+}
+
+enum ModerationSource {
+  AUTO   @map("auto")
+  MANUAL @map("manual")
+
+  @@map("moderation_source")
+}
+
 model Listing {
-  id             String          @id @default(cuid())
+  id             String             @id @default(cuid())
   platform       ListingPlatform
-  sourceUrl      String          @unique @map("source_url")
-  externalId     String?         @map("external_id")
+  sourceUrl      String             @unique @map("source_url")
+  externalId     String?            @map("external_id")
   title          String
   description    String
   category       String?
   brand          String?
   price          Int?
-  locationTexts  String[]        @default([]) @map("location_texts")
-  conditionText  String?         @map("condition_text")
-  sellerName     String?         @map("seller_name")
-  status         ListingStatus   @default(UNKNOWN)
-  postedAt       DateTime?       @map("posted_at")
-  firstFetchedAt DateTime        @default(now()) @map("first_fetched_at")
-  lastFetchedAt  DateTime        @default(now()) @map("last_fetched_at")
-  createdAt      DateTime        @default(now()) @map("created_at")
-  updatedAt      DateTime        @default(now()) @updatedAt @map("updated_at")
+  locationTexts  String[]           @default([]) @map("location_texts")
+  conditionText  String?            @map("condition_text")
+  sellerName     String?            @map("seller_name")
+  status         ListingStatus      @default(UNKNOWN)
+  postedAt       DateTime?          @map("posted_at")
+  firstFetchedAt DateTime           @default(now()) @map("first_fetched_at")
+  lastFetchedAt  DateTime           @default(now()) @map("last_fetched_at")
+  createdAt      DateTime           @default(now()) @map("created_at")
+  updatedAt      DateTime           @default(now()) @updatedAt @map("updated_at")
   images         ListingImage[]
+  moderation     ListingModeration?
 
   @@index([platform])
   @@index([status])
@@ -52,6 +68,72 @@ model Listing {
   @@index([lastFetchedAt])
   @@index([price])
   @@map("listings")
+}
+
+model ListingModeration {
+  listingId          String   @id @map("listing_id")
+  hidden             Boolean  @default(false)
+  sellerNameOverride String?  @map("seller_name_override")
+  reason             String?
+  updatedAt          DateTime @default(now()) @updatedAt @map("updated_at")
+  listing            Listing  @relation(fields: [listingId], references: [id], onDelete: Cascade)
+
+  @@index([hidden])
+  @@map("listing_moderation")
+}
+
+model FacebookSellerFlag {
+  id                    String                 @id @default(cuid())
+  sellerName            String                 @map("seller_name")
+  normalizedSellerName  String                 @unique @map("normalized_seller_name")
+  status                SellerModerationStatus
+  source                ModerationSource
+  reason                String?
+  recentListingCount    Int?                   @map("recent_listing_count")
+  duplicateListingCount Int?                   @map("duplicate_listing_count")
+  duplicateRatio        Float?                 @map("duplicate_ratio")
+  firstFlaggedAt        DateTime               @default(now()) @map("first_flagged_at")
+  lastEvaluatedAt       DateTime?              @map("last_evaluated_at")
+  createdAt             DateTime               @default(now()) @map("created_at")
+  updatedAt             DateTime               @default(now()) @updatedAt @map("updated_at")
+
+  @@index([status])
+  @@map("facebook_seller_flags")
+}
+
+model PlatformControl {
+  platform      ListingPlatform @id
+  publicVisible Boolean         @default(true) @map("public_visible")
+  updatedAt     DateTime        @default(now()) @updatedAt @map("updated_at")
+
+  @@map("platform_controls")
+}
+
+model FacebookSpamSettings {
+  id                   Int      @id @default(1)
+  enabled              Boolean  @default(true)
+  autoBlockEnabled     Boolean  @default(true) @map("auto_block_enabled")
+  windowDays           Int      @default(7) @map("window_days")
+  minListings          Int      @default(5) @map("min_listings")
+  minDuplicateListings Int      @default(4) @map("min_duplicate_listings")
+  minDuplicateRatio    Float    @default(0.7) @map("min_duplicate_ratio")
+  scanIntervalMinutes  Int      @default(15) @map("scan_interval_minutes")
+  updatedAt            DateTime @default(now()) @updatedAt @map("updated_at")
+
+  @@map("facebook_spam_settings")
+}
+
+model ModerationEvent {
+  id         BigInt   @id @default(autoincrement())
+  actor      String
+  action     String
+  entityType String   @map("entity_type")
+  entityId   String   @map("entity_id")
+  details    Json     @default("{}")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([createdAt])
+  @@map("moderation_events")
 }
 
 model ListingImage {

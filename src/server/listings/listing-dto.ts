@@ -12,6 +12,11 @@ export const listingFeedSelect = {
   locationTexts: true,
   conditionText: true,
   sellerName: true,
+  moderation: {
+    select: {
+      sellerNameOverride: true,
+    },
+  },
   status: true,
   postedAt: true,
   firstFetchedAt: true,
@@ -64,7 +69,7 @@ export function toListingDto(listing: ListingFeedRecord) {
       return location ? [location] : [];
     }),
     conditionText: listing.conditionText,
-    sellerName: listing.sellerName,
+    sellerName: listing.moderation?.sellerNameOverride ?? listing.sellerName,
     status: statusValues[listing.status],
     listedAt: listing.postedAt ?? listing.firstFetchedAt,
     images: [...listing.images]

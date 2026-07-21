@@ -6,6 +6,10 @@ import {
   normalizePublicPrice,
   sanitizePublicLocation,
 } from "./listing-dto";
+import {
+  publicListingModerationJoins,
+  publicListingVisibilityFilter,
+} from "./visibility";
 
 interface CategoryFacetRow {
   value: string;
@@ -83,7 +87,13 @@ function isPlausibleConditionFacet(value: string): boolean {
 }
 
 const categoryFacetQuery = Prisma.sql`
-  WITH category_stats AS (
+  WITH visible_listings AS (
+    SELECT listing.*
+    FROM listings AS listing
+    ${publicListingModerationJoins}
+    WHERE TRUE
+      ${publicListingVisibilityFilter}
+  ), category_stats AS (
     SELECT
       category AS value,
       COUNT(*)::int AS count,
@@ -92,7 +102,7 @@ const categoryFacetQuery = Prisma.sql`
           WHERE price >= 10000 AND price NOT IN (12345, 123456)
         )
       )::int AS "minPrice"
-    FROM listings
+    FROM visible_listings
     WHERE category IS NOT NULL AND BTRIM(category) <> ''
     GROUP BY category
   ), ranked_covers AS (
@@ -107,7 +117,7 @@ const categoryFacetQuery = Prisma.sql`
           COALESCE(posted_at, first_fetched_at) DESC,
           id DESC
       ) AS position
-    FROM listings
+    FROM visible_listings
     WHERE category IS NOT NULL AND BTRIM(category) <> ''
   )
   SELECT
@@ -131,8 +141,15 @@ const categoryFacetQuery = Prisma.sql`
 `;
 
 const locationFacetQuery = Prisma.sql`
+  WITH visible_listings AS (
+    SELECT listing.*
+    FROM listings AS listing
+    ${publicListingModerationJoins}
+    WHERE TRUE
+      ${publicListingVisibilityFilter}
+  )
   SELECT location AS value, COUNT(*)::int AS count
-  FROM listings
+  FROM visible_listings
   CROSS JOIN LATERAL UNNEST(location_texts) AS location
   WHERE BTRIM(location) <> ''
   GROUP BY location
@@ -141,8 +158,15 @@ const locationFacetQuery = Prisma.sql`
 `;
 
 const conditionFacetQuery = Prisma.sql`
+  WITH visible_listings AS (
+    SELECT listing.*
+    FROM listings AS listing
+    ${publicListingModerationJoins}
+    WHERE TRUE
+      ${publicListingVisibilityFilter}
+  )
   SELECT condition_text AS value, COUNT(*)::int AS count
-  FROM listings
+  FROM visible_listings
   WHERE condition_text IS NOT NULL AND BTRIM(condition_text) <> ''
   GROUP BY condition_text
   ORDER BY count DESC, condition_text ASC

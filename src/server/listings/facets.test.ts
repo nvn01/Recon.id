@@ -54,5 +54,12 @@ describe("getListingFacets", () => {
       locations: [{ value: "Bandung", count: 8 }],
       conditions: [{ value: "Bekas - baik", count: 9 }],
     });
+
+    for (const [query] of queryRaw.mock.calls) {
+      const sql = (query as { strings: string[] }).strings.join("?");
+      expect(sql).toContain("facebook_seller_flags");
+      expect(sql).toContain("platform_control.public_visible");
+      expect(sql).toContain("listing_moderation.hidden");
+    }
   });
 });

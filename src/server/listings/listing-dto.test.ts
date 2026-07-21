@@ -14,6 +14,7 @@ const listing: ListingFeedRecord = {
   locationTexts: ["Jakarta"],
   conditionText: "Used",
   sellerName: "seller",
+  moderation: null,
   status: "AVAILABLE",
   postedAt: null,
   firstFetchedAt: new Date("2026-07-12T10:00:00Z"),
@@ -87,6 +88,15 @@ describe("toListingDto", () => {
     expect(
       toListingDto({ ...listing, platform: "FACEBOOK" }).images[1]?.sourceUrl,
     ).toBe("https://scontent.example/image-2.jpg");
+  });
+
+  it("uses the manually corrected seller name when one exists", () => {
+    expect(
+      toListingDto({
+        ...listing,
+        moderation: { sellerNameOverride: "Correct Facebook Seller" },
+      }).sellerName,
+    ).toBe("Correct Facebook Seller");
   });
 
   it("falls back to the original Instagram media URL when the cached URL is unsafe", () => {

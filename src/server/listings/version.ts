@@ -1,6 +1,10 @@
 import { createHash } from "node:crypto";
 
 import { Prisma } from "../../../generated/prisma";
+import {
+  publicListingModerationJoins,
+  publicListingVisibilityFilter,
+} from "./visibility";
 
 interface ListingVersionRow {
   rowCount: string;
@@ -26,5 +30,8 @@ const listingVersionQuery = Prisma.sql`
   SELECT
     COUNT(*)::text AS "rowCount",
     MAX(first_fetched_at) AS "latestFirstFetchedAt"
-  FROM listings
+  FROM listings AS listing
+  ${publicListingModerationJoins}
+  WHERE TRUE
+    ${publicListingVisibilityFilter}
 `;

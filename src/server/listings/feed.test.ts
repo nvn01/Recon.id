@@ -15,6 +15,7 @@ const baseListing = {
   locationTexts: [],
   conditionText: null,
   sellerName: null,
+  moderation: null,
   status: "AVAILABLE",
   postedAt: new Date("2026-07-12T10:00:00Z"),
   firstFetchedAt: new Date("2026-07-12T10:01:00Z"),
@@ -36,6 +37,17 @@ describe("getListingFeed", () => {
     expect(sql).toContain("ELSE 0");
     expect(sql).not.toContain("WHEN 'available'");
     expect(sql).not.toContain("WHEN 'unknown'");
+  });
+
+  it("filters hidden listings, disabled platforms, and blocked Facebook seller names", () => {
+    const query = buildListingFeedQuery({ limit: 24 });
+    const sql = query.strings.join("?");
+
+    expect(sql).toContain("listing_moderation.hidden");
+    expect(sql).toContain("platform_control.public_visible");
+    expect(sql).toContain("facebook_seller_flags");
+    expect(sql).toContain("normalize_seller_name");
+    expect(sql).toContain("seller_name_override");
   });
 
   it("preserves ranked query order, maps DTOs, and emits the last returned row as cursor", async () => {

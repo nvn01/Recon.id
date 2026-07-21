@@ -13,6 +13,10 @@ import {
   toListingDto,
   type ListingFeedRecord,
 } from "./listing-dto";
+import {
+  publicListingModerationJoins,
+  publicListingVisibilityFilter,
+} from "./visibility";
 
 interface RankedListingKey {
   id: string;
@@ -89,37 +93,38 @@ export function buildListingFeedQuery(
 ): Prisma.Sql {
   const sort = input.sort ?? defaultListingSort;
   const platformFilter = input.platforms
-    ? Prisma.sql`AND platform::text IN (${Prisma.join(input.platforms)})`
+    ? Prisma.sql`AND listing.platform::text IN (${Prisma.join(input.platforms)})`
     : Prisma.empty;
   const statusFilter = input.statuses
-    ? Prisma.sql`AND status::text IN (${Prisma.join(input.statuses)})`
+    ? Prisma.sql`AND listing.status::text IN (${Prisma.join(input.statuses)})`
     : Prisma.empty;
   const categoryFilter = input.categories
-    ? Prisma.sql`AND category IN (${Prisma.join(input.categories)})`
+    ? Prisma.sql`AND listing.category IN (${Prisma.join(input.categories)})`
     : Prisma.empty;
   const locationFilter = input.locations
-    ? Prisma.sql`AND location_texts && ARRAY[${Prisma.join(input.locations)}]::text[]`
+    ? Prisma.sql`AND listing.location_texts && ARRAY[${Prisma.join(input.locations)}]::text[]`
     : Prisma.empty;
   const conditionFilter = input.conditions
-    ? Prisma.sql`AND condition_text IN (${Prisma.join(input.conditions)})`
+    ? Prisma.sql`AND listing.condition_text IN (${Prisma.join(input.conditions)})`
     : Prisma.empty;
   const searchPattern = input.q ? `%${escapeLikePattern(input.q)}%` : undefined;
   const searchFilter = searchPattern
     ? Prisma.sql`AND (
-        title ILIKE ${searchPattern} ESCAPE CHR(92)
-        OR description ILIKE ${searchPattern} ESCAPE CHR(92)
-        OR COALESCE(brand, '') ILIKE ${searchPattern} ESCAPE CHR(92)
-        OR COALESCE(category, '') ILIKE ${searchPattern} ESCAPE CHR(92)
-        OR COALESCE(seller_name, '') ILIKE ${searchPattern} ESCAPE CHR(92)
+        listing.title ILIKE ${searchPattern} ESCAPE CHR(92)
+        OR listing.description ILIKE ${searchPattern} ESCAPE CHR(92)
+        OR COALESCE(listing.brand, '') ILIKE ${searchPattern} ESCAPE CHR(92)
+        OR COALESCE(listing.category, '') ILIKE ${searchPattern} ESCAPE CHR(92)
+        OR COALESCE(listing_moderation.seller_name_override, listing.seller_name, '')
+          ILIKE ${searchPattern} ESCAPE CHR(92)
       )`
     : Prisma.empty;
   const minPriceFilter =
     input.minPrice !== undefined
-      ? Prisma.sql`AND price >= ${input.minPrice}`
+      ? Prisma.sql`AND listing.price >= ${input.minPrice}`
       : Prisma.empty;
   const maxPriceFilter =
     input.maxPrice !== undefined
-      ? Prisma.sql`AND price <= ${input.maxPrice}`
+      ? Prisma.sql`AND listing.price <= ${input.maxPrice}`
       : Prisma.empty;
   const rankExpression = statusRankExpression(sort);
   const sortValueExpression = listingSortValueExpression(sort);
@@ -154,12 +159,14 @@ export function buildListingFeedQuery(
   return Prisma.sql`
     WITH ranked AS (
       SELECT
-        id,
+        listing.id,
         ${rankExpression} AS "statusRank",
         ${sortValueExpression} AS "sortValue",
-        COALESCE(posted_at, first_fetched_at) AS "effectiveAt"
-      FROM listings
+        COALESCE(listing.posted_at, listing.first_fetched_at) AS "effectiveAt"
+      FROM listings AS listing
+      ${publicListingModerationJoins}
       WHERE TRUE
+        ${publicListingVisibilityFilter}
         ${platformFilter}
         ${statusFilter}
         ${categoryFilter}
@@ -183,7 +190,7 @@ export function buildListingFeedQuery(
 
 function statusRankExpression(sort: ListingSort): Prisma.Sql {
   if (sort === "available-first") {
-    return Prisma.sql`CASE status::text
+    return Prisma.sql`CASE listing.status::text
       WHEN 'available' THEN 0
       WHEN 'unknown' THEN 1
       ELSE 2
@@ -191,21 +198,21 @@ function statusRankExpression(sort: ListingSort): Prisma.Sql {
   }
 
   if (sort === "sold-first") {
-    return Prisma.sql`CASE status::text
+    return Prisma.sql`CASE listing.status::text
       WHEN 'sold' THEN 0
       ELSE 1
     END`;
   }
 
-  return Prisma.sql`CASE status::text
+  return Prisma.sql`CASE listing.status::text
     WHEN 'sold' THEN 1
     ELSE 0
   END`;
 }
 
 function listingSortValueExpression(sort: ListingSort): Prisma.Sql {
-  if (sort === "price-high") return Prisma.sql`COALESCE(price, -1)`;
-  if (sort === "price-low") return Prisma.sql`COALESCE(price, 2147483647)`;
+  if (sort === "price-high") return Prisma.sql`COALESCE(listing.price, -1)`;
+  if (sort === "price-low") return Prisma.sql`COALESCE(listing.price, 2147483647)`;
   return Prisma.sql`0`;
 }
 

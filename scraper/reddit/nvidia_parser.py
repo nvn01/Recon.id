@@ -40,6 +40,9 @@ Output discipline:
 - status must be AVAILABLE, SOLD, UNKNOWN, or null and must come from the listing evidence.
 - category is the broad type of the primary item being sold. brand is the manufacturer of that
   primary item, not the seller and not a component mentioned in its specifications.
+- sellerName is an identity source fact, not a guess. Return sourceFacts.sellerName exactly when it
+  is present; otherwise return null. Never infer a seller name from title, description, contact text,
+  location, brand, or product details.
 
 Facebook Marketplace rules:
 - Facebook card text is compact and may combine price, title, and location. Separate those concepts;
@@ -140,6 +143,7 @@ PARSE_SCHEMA: dict[str, Any] = {
                     },
                     "category": {"type": ["string", "null"]},
                     "brand": {"type": ["string", "null"]},
+                    "sellerName": {"type": ["string", "null"]},
                 },
                 "required": [
                     "externalId",
@@ -151,6 +155,7 @@ PARSE_SCHEMA: dict[str, Any] = {
                     "status",
                     "category",
                     "brand",
+                    "sellerName",
                 ],
                 "additionalProperties": False,
             },
@@ -463,6 +468,7 @@ def merge_ai_results(
             item["status"] = normalize_ai_status(analysis.get("status")) or "UNKNOWN"
             item["category"] = blank_to_none(analysis.get("category"))
             item["brand"] = blank_to_none(analysis.get("brand"))
+            item["sellerName"] = blank_to_none(item.get("sellerName"))
             item.pop("_sourceFacts", None)
         merged.append(item)
     return merged
