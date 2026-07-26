@@ -9,7 +9,12 @@ describe("public indexing metadata routes", () => {
     const urls = entries.map((entry) => entry.url);
 
     expect(urls).toContain("https://recon.app-pixel.com/collection/all");
-    expect(urls).toContain("https://recon.app-pixel.com/privacy");
+    expect(urls).toContain("https://recon.app-pixel.com/about-us");
+    expect(urls).toContain("https://recon.app-pixel.com/terms");
+    expect(urls).toContain("https://recon.app-pixel.com/cookies-policy");
+    expect(urls).toContain("https://recon.app-pixel.com/privacy-policy");
+    expect(urls).not.toContain("https://recon.app-pixel.com/privacy");
+    expect(urls).not.toContain("https://recon.app-pixel.com/cara-kerja");
     expect(urls.every((url) => url.startsWith("https://"))).toBe(true);
     expect(urls.every((url) => !url.includes("?"))).toBe(true);
     expect(new Set(urls).size).toBe(urls.length);

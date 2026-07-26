@@ -160,7 +160,6 @@ function disableAnalytics() {
 
 export function AnalyticsConsent() {
   const pathname = usePathname();
-  const isPreferencesPage = pathname === "/privacy/analytics-preferences";
   const [choice, setChoice] = useState<ConsentChoice | null>(null);
   const [isOpen, setIsOpen] = useState(false);
   const initialized = useRef(false);
@@ -173,6 +172,23 @@ export function AnalyticsConsent() {
       return;
     }
     setIsOpen(true);
+  }, []);
+
+  useEffect(() => {
+    function openPreferences() {
+      setIsOpen(true);
+    }
+
+    window.addEventListener(
+      "recon:open-analytics-preferences",
+      openPreferences,
+    );
+    return () => {
+      window.removeEventListener(
+        "recon:open-analytics-preferences",
+        openPreferences,
+      );
+    };
   }, []);
 
   useEffect(() => {
@@ -208,27 +224,18 @@ export function AnalyticsConsent() {
     });
   }
 
-  if (!isOpen || isPreferencesPage) return null;
+  if (!isOpen) return null;
 
   return (
     <section
       className="recon-privacy-choice"
       role="dialog"
       aria-modal="false"
-      aria-labelledby="analytics-consent-title"
+      aria-describedby="analytics-consent-copy"
     >
-      <div>
-        <p className="eyebrow">Pilihan privasi</p>
-        <h2 id="analytics-consent-title">
-          Bantu kami memahami penggunaan RECON?
-        </h2>
-        <p>
-          Statistik tambahan hanya aktif jika kamu setuju. Kata pencarian,
-          identitas penjual, deskripsi listing, lokasi persis, dan URL sumber
-          tidak dikirim. Statistik dasar Cloudflare tetap digunakan untuk
-          keamanan dan performa.
-        </p>
-      </div>
+      <p id="analytics-consent-copy">
+        Izinkan cookie statistik untuk membantu kami meningkatkan RECON?
+      </p>
       <div className="recon-privacy-choice-actions">
         <button type="button" onClick={() => updateChoice("denied")}>
           Hanya yang perlu
@@ -238,72 +245,7 @@ export function AnalyticsConsent() {
           className="is-primary"
           onClick={() => updateChoice("granted")}
         >
-          Izinkan statistik
-        </button>
-      </div>
-    </section>
-  );
-}
-
-export function AnalyticsPreferencesPanel() {
-  const [savedChoice, setSavedChoice] = useState<ConsentChoice | null>(null);
-
-  useEffect(() => {
-    setSavedChoice(readConsentChoice());
-  }, []);
-
-  function updateChoice(nextChoice: ConsentChoice) {
-    writeConsentChoice(nextChoice);
-    setSavedChoice(nextChoice);
-
-    if (nextChoice === "granted") {
-      void enableAnalytics();
-    } else {
-      disableAnalytics();
-    }
-
-    trackAnalyticsEvent("analytics_consent_updated", {
-      analytics: nextChoice,
-    });
-  }
-
-  return (
-    <section
-      className="recon-privacy-choice"
-      role="region"
-      aria-labelledby="analytics-preferences-title"
-    >
-      <div>
-        <p className="eyebrow">Pilihan privasi</p>
-        <h2 id="analytics-preferences-title">
-          Bantu kami memahami penggunaan RECON?
-        </h2>
-        <p>
-          Statistik tambahan hanya aktif jika kamu setuju. Kata pencarian,
-          identitas penjual, deskripsi listing, lokasi persis, dan URL sumber
-          tidak dikirim. Statistik dasar Cloudflare tetap digunakan untuk
-          keamanan dan performa.
-        </p>
-        {savedChoice ? (
-          <p role="status">
-            Pilihan tersimpan:{" "}
-            {savedChoice === "granted"
-              ? "statistik tambahan diizinkan"
-              : "hanya statistik dasar"}
-            .
-          </p>
-        ) : null}
-      </div>
-      <div className="recon-privacy-choice-actions">
-        <button type="button" onClick={() => updateChoice("denied")}>
-          Hanya yang perlu
-        </button>
-        <button
-          type="button"
-          className="is-primary"
-          onClick={() => updateChoice("granted")}
-        >
-          Izinkan statistik
+          Izinkan
         </button>
       </div>
     </section>
@@ -312,11 +254,14 @@ export function AnalyticsPreferencesPanel() {
 
 export function AnalyticsPreferencesButton() {
   return (
-    <a
-      href="/privacy/analytics-preferences"
+    <button
+      type="button"
       className="analytics-preferences-button"
+      onClick={() =>
+        window.dispatchEvent(new Event("recon:open-analytics-preferences"))
+      }
     >
-      Atur pilihan statistik
-    </a>
+      Manage cookie preferences
+    </button>
   );
 }
