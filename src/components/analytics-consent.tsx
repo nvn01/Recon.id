@@ -31,14 +31,6 @@ function writeConsentChoice(choice: ConsentChoice) {
   }
 }
 
-function clearConsentChoice() {
-  try {
-    window.localStorage?.removeItem(consentKey);
-  } catch {
-    // Reloading still reopens the panel when storage is blocked.
-  }
-}
-
 function addScript(id: string, src: string) {
   if (document.getElementById(id)) return;
   const script = document.createElement("script");
@@ -133,6 +125,14 @@ export function AnalyticsConsent() {
   const initialized = useRef(false);
 
   useEffect(() => {
+    const isPreferencesPage =
+      new URLSearchParams(window.location.search).get("analytics") ===
+      "preferences";
+    if (isPreferencesPage) {
+      setIsOpen(true);
+      return;
+    }
+
     const stored = readConsentChoice();
     if (stored) {
       setChoice(stored);
@@ -237,15 +237,11 @@ export function AnalyticsConsent() {
 
 export function AnalyticsPreferencesButton() {
   return (
-    <button
-      type="button"
+    <a
+      href="/privacy?analytics=preferences"
       className="analytics-preferences-button"
-      onClick={() => {
-        clearConsentChoice();
-        window.location.reload();
-      }}
     >
       Atur pilihan statistik
-    </button>
+    </a>
   );
 }
