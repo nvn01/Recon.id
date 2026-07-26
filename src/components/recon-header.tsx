@@ -157,7 +157,7 @@ export function ReconHeader({
               ) : null}
             </button>
           ) : (
-            <span className="header-presence" aria-label="Pemantauan aktif">
+            <span className="header-presence" aria-hidden="true">
               <span className="live-dot" />
             </span>
           )}

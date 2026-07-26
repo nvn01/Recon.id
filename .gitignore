@@ -3,6 +3,7 @@
 .codex/
 .codex-runtime/
 .plan/
+skills-lock.json
 **/AGENTS.override.md
 !AGENTS.md
 !scraper/AGENTS.override.md

@@ -1391,11 +1391,6 @@ export function ReconFeed({ scope }: ReconFeedProps) {
             ) : null}
           </div>
         </div>
-
-        <footer className="feed-footer">
-          <p>RECON</p>
-          <p>Temuan publik dari sumber aslinya.</p>
-        </footer>
       </main>
 
       <ListingDialog

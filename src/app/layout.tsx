@@ -3,6 +3,7 @@ import "~/styles/globals.css";
 import { type Metadata, type Viewport } from "next";
 import { Bricolage_Grotesque, Geist, Geist_Mono } from "next/font/google";
 
+import { SiteFooter } from "~/components/site-footer";
 import { TRPCReactProvider } from "~/trpc/react";
 
 export const metadata: Metadata = {
@@ -48,7 +49,10 @@ export default function RootLayout({
       className={`${geist.variable} ${bricolage.variable} ${geistMono.variable}`}
     >
       <body>
-        <TRPCReactProvider>{children}</TRPCReactProvider>
+        <TRPCReactProvider>
+          {children}
+          <SiteFooter />
+        </TRPCReactProvider>
       </body>
     </html>
   );
