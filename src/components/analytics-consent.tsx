@@ -129,7 +129,7 @@ async function enableAnalytics() {
 export function AnalyticsConsent() {
   const pathname = usePathname();
   const [choice, setChoice] = useState<ConsentChoice | null>(null);
-  const [isOpen, setIsOpen] = useState(false);
+  const [isOpen, setIsOpen] = useState(true);
   const initialized = useRef(false);
 
   useEffect(() => {
