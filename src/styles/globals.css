@@ -2189,7 +2189,7 @@ img {
   text-underline-offset: 0.24em;
 }
 
-.analytics-consent {
+.recon-privacy-choice {
   align-items: flex-end;
   background: #f7f8f6;
   border: 1px solid rgba(11, 47, 32, 0.2);
@@ -2208,7 +2208,7 @@ img {
   z-index: 120;
 }
 
-.analytics-consent h2 {
+.recon-privacy-choice h2 {
   font-family: var(--font-bricolage), sans-serif;
   font-size: clamp(1.25rem, 2vw, 1.65rem);
   letter-spacing: -0.03em;
@@ -2216,7 +2216,7 @@ img {
   margin: 7px 0 10px;
 }
 
-.analytics-consent > div > p:last-child {
+.recon-privacy-choice > div > p:last-child {
   color: rgba(11, 47, 32, 0.72);
   font-size: 0.88rem;
   line-height: 1.55;
@@ -2224,12 +2224,12 @@ img {
   max-width: 680px;
 }
 
-.analytics-consent-actions {
+.recon-privacy-choice-actions {
   display: flex;
   gap: 8px;
 }
 
-.analytics-consent-actions button {
+.recon-privacy-choice-actions button {
   background: transparent;
   border: 1px solid rgba(11, 47, 32, 0.3);
   color: #0b2f20;
@@ -2242,14 +2242,14 @@ img {
   white-space: nowrap;
 }
 
-.analytics-consent-actions button.is-primary {
+.recon-privacy-choice-actions button.is-primary {
   background: #0b2f20;
   border-color: #0b2f20;
   color: #f7f8f6;
 }
 
 @media (max-width: 760px) {
-  .analytics-consent {
+  .recon-privacy-choice {
     align-items: stretch;
     bottom: 10px;
     gap: 18px;
@@ -2258,12 +2258,12 @@ img {
     width: calc(100% - 20px);
   }
 
-  .analytics-consent-actions {
+  .recon-privacy-choice-actions {
     display: grid;
     grid-template-columns: 1fr 1fr;
   }
 
-  .analytics-consent-actions button {
+  .recon-privacy-choice-actions button {
     padding: 0 10px;
     white-space: normal;
   }

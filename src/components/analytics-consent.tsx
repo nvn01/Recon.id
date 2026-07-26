@@ -212,7 +212,7 @@ export function AnalyticsConsent() {
 
   return (
     <section
-      className="analytics-consent"
+      className="recon-privacy-choice"
       role="dialog"
       aria-modal="false"
       aria-labelledby="analytics-consent-title"
@@ -229,7 +229,7 @@ export function AnalyticsConsent() {
           keamanan dan performa.
         </p>
       </div>
-      <div className="analytics-consent-actions">
+      <div className="recon-privacy-choice-actions">
         <button type="button" onClick={() => updateChoice("denied")}>
           Hanya yang perlu
         </button>
@@ -269,7 +269,7 @@ export function AnalyticsPreferencesPanel() {
 
   return (
     <section
-      className="analytics-consent"
+      className="recon-privacy-choice"
       role="region"
       aria-labelledby="analytics-preferences-title"
     >
@@ -294,7 +294,7 @@ export function AnalyticsPreferencesPanel() {
           </p>
         ) : null}
       </div>
-      <div className="analytics-consent-actions">
+      <div className="recon-privacy-choice-actions">
         <button type="button" onClick={() => updateChoice("denied")}>
           Hanya yang perlu
         </button>
