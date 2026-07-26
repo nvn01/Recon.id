@@ -6,6 +6,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { type ReactNode } from "react";
 
 import { RefreshArrowIcon } from "~/components/refresh-arrow-icon";
+import { queryLengthBucket, trackAnalyticsEvent } from "~/lib/analytics";
 
 function SearchIcon() {
   return (
@@ -74,6 +75,10 @@ export function ReconHeader({
 
     const suffix = next.toString();
     const targetPath = searchPath();
+    trackAnalyticsEvent("search_submitted", {
+      query_length_bucket: queryLengthBucket(value.length),
+      page_path: targetPath,
+    });
     router.push(`${targetPath}${suffix ? `?${suffix}` : ""}`);
   }
 
@@ -87,7 +92,11 @@ export function ReconHeader({
   return (
     <header className="site-header">
       <div className="header-inner">
-        <Link className="wordmark" href="/collection/all" aria-label="RECON home">
+        <Link
+          className="wordmark"
+          href="/collection/all"
+          aria-label="RECON home"
+        >
           <ReconMark />
           <span>RECON</span>
         </Link>
@@ -117,7 +126,11 @@ export function ReconHeader({
               <span className="sr-only">Hapus pencarian</span>
             </button>
           ) : null}
-          <button type="submit" className="search-hint" aria-label="Cari listing">
+          <button
+            type="submit"
+            className="search-hint"
+            aria-label="Cari listing"
+          >
             Cari
           </button>
         </form>
@@ -149,8 +162,7 @@ export function ReconHeader({
               ) : (
                 <span className="live-dot" />
               )}
-              {refreshControl.hasNewListings &&
-              !refreshControl.isRefreshing ? (
+              {refreshControl.hasNewListings && !refreshControl.isRefreshing ? (
                 <span className="feed-refresh-label">
                   {refreshControl.unseenCount} Item baru
                 </span>

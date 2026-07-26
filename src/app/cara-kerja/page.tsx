@@ -8,6 +8,8 @@ export const metadata: Metadata = {
   title: "Cara kerja & batasan",
   description:
     "Pelajari bagaimana RECON menyusun temuan listing dan apa yang tetap perlu kamu periksa sendiri.",
+  alternates: { canonical: "/cara-kerja" },
+  openGraph: { url: "/cara-kerja" },
 };
 
 const steps = [

@@ -1,6 +1,8 @@
 import Image from "next/image";
 import Link from "next/link";
 
+import { AnalyticsPreferencesButton } from "~/components/analytics-consent";
+
 function XIcon() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -41,6 +43,7 @@ export function SiteFooter() {
           <p>Kenali RECON</p>
           <Link href="/cara-kerja">Cara kerja &amp; batasan</Link>
           <Link href="/privacy">Privasi</Link>
+          <AnalyticsPreferencesButton />
         </nav>
 
         <div className="footer-contact">

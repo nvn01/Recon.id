@@ -48,6 +48,11 @@ import {
   distributeAcrossColumns,
   getMasonryColumnCount,
 } from "~/data/masonry-layout";
+import {
+  priceBucket,
+  resultCountBucket,
+  trackAnalyticsEvent,
+} from "~/lib/analytics";
 import { api } from "~/trpc/react";
 
 type ReconFeedProps = {
@@ -1054,6 +1059,12 @@ function ListingDialog({
                       href={listing.sourceUrl}
                       target="_blank"
                       rel="noreferrer"
+                      onClick={() =>
+                        trackAnalyticsEvent("original_source_clicked", {
+                          platform: listing.platform,
+                          category: listing.category,
+                        })
+                      }
                     >
                       Lihat selengkapnya
                     </a>
@@ -1097,6 +1108,12 @@ function ListingDialog({
                 href={listing.sourceUrl}
                 target="_blank"
                 rel="noreferrer"
+                onClick={() =>
+                  trackAnalyticsEvent("original_source_clicked", {
+                    platform: listing.platform,
+                    category: listing.category,
+                  })
+                }
               >
                 Buka postingan di {platformMeta[listing.platform].label}
                 <ArrowIcon />
@@ -1211,6 +1228,15 @@ export function ReconFeed({ scope }: ReconFeedProps) {
 
   const baseParams = new URLSearchParams(searchParams.toString());
 
+  useEffect(() => {
+    trackAnalyticsEvent(
+      scope.type === "platform" ? "platform_viewed" : "collection_viewed",
+      scope.type === "platform"
+        ? { platform: scope.slug }
+        : { collection: scope.slug },
+    );
+  }, [scope]);
+
   function collectionHref(slug: string) {
     const next = new URLSearchParams(baseParams.toString());
     if (scope.type === "platform") {
@@ -1228,7 +1254,22 @@ export function ReconFeed({ scope }: ReconFeedProps) {
     );
     const targetPath = scope.type === "platform" ? "/collection/all" : pathname;
 
+    trackAnalyticsEvent("filter_applied", {
+      active_filter_groups: countActiveFilterGroups(nextFilters),
+      scope_type: scope.type,
+      scope_slug: scope.slug,
+    });
     router.push(withQuery(targetPath, next), { scroll: false });
+  }
+
+  function openListing(listing: Listing) {
+    trackAnalyticsEvent("listing_opened", {
+      platform: listing.platform,
+      category: listing.category,
+      status: listing.status,
+      price_bucket: priceBucket(listing.price),
+    });
+    setSelectedListing(listing);
   }
 
   function changeSort(nextSort: ListingSort) {
@@ -1315,7 +1356,7 @@ export function ReconFeed({ scope }: ReconFeedProps) {
         </div>
       </ReconHeader>
 
-      <main className="feed-main">
+      <main className="feed-main" data-clarity-mask="true">
         <h1 className="sr-only">{titleForScope(scope)}</h1>
         <p className="sr-only" aria-live="polite">
           {listings.length} listing sudah dimuat
@@ -1364,7 +1405,7 @@ export function ReconFeed({ scope }: ReconFeedProps) {
                 </button>
               </section>
             ) : listings.length > 0 ? (
-              <MasonryFeed listings={listings} onOpen={setSelectedListing} />
+              <MasonryFeed listings={listings} onOpen={openListing} />
             ) : (
               <section className="empty-state">
                 <h2>Belum ada listing yang cocok.</h2>
@@ -1378,7 +1419,14 @@ export function ReconFeed({ scope }: ReconFeedProps) {
                 <button
                   type="button"
                   disabled={feedQuery.isFetchingNextPage}
-                  onClick={() => void feedQuery.fetchNextPage()}
+                  onClick={() => {
+                    trackAnalyticsEvent("load_more_clicked", {
+                      loaded_count_bucket: resultCountBucket(listings.length),
+                      scope_type: scope.type,
+                      scope_slug: scope.slug,
+                    });
+                    void feedQuery.fetchNextPage();
+                  }}
                 >
                   {feedQuery.isFetchingNextPage
                     ? "Memuat temuan…"

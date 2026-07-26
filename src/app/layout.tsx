@@ -2,18 +2,71 @@ import "~/styles/globals.css";
 
 import { type Metadata, type Viewport } from "next";
 import { Bricolage_Grotesque, Geist, Geist_Mono } from "next/font/google";
+import Script from "next/script";
 
+import { AnalyticsConsent } from "~/components/analytics-consent";
 import { SiteFooter } from "~/components/site-footer";
+import { siteConfig } from "~/lib/site";
 import { TRPCReactProvider } from "~/trpc/react";
 
 export const metadata: Metadata = {
+  metadataBase: new URL(siteConfig.url),
   applicationName: "RECON",
   title: {
-    default: "RECON - Temukan gear incaranmu",
+    default: siteConfig.title,
     template: "%s - RECON",
   },
-  description:
-    "Temukan listing komputer, komponen, dan gaming gear preloved dari berbagai platform dalam satu feed.",
+  description: siteConfig.description,
+  category: "technology",
+  keywords: [
+    "barang bekas",
+    "komputer bekas",
+    "laptop bekas",
+    "GPU bekas",
+    "gaming gear",
+    "Indonesia",
+  ],
+  authors: [{ name: "RECON", url: siteConfig.url }],
+  creator: "RECON",
+  publisher: "RECON",
+  formatDetection: {
+    email: false,
+    address: false,
+    telephone: false,
+  },
+  openGraph: {
+    type: "website",
+    locale: "id_ID",
+    siteName: "RECON",
+    title: siteConfig.title,
+    description: siteConfig.description,
+    url: "/collection/all",
+    images: [
+      {
+        url: "/opengraph-image",
+        width: 1200,
+        height: 630,
+        alt: "RECON - Temukan gear incaranmu",
+      },
+    ],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: siteConfig.title,
+    description: siteConfig.description,
+    images: ["/opengraph-image"],
+  },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      "max-image-preview": "large",
+      "max-snippet": -1,
+      "max-video-preview": -1,
+    },
+  },
   appleWebApp: {
     capable: true,
     title: "RECON",
@@ -43,15 +96,53 @@ const geistMono = Geist_Mono({
 export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
+  const structuredData = {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "Organization",
+        "@id": `${siteConfig.url}/#organization`,
+        name: siteConfig.name,
+        url: siteConfig.url,
+        email: siteConfig.email,
+        sameAs: [siteConfig.github],
+      },
+      {
+        "@type": "WebSite",
+        "@id": `${siteConfig.url}/#website`,
+        url: siteConfig.url,
+        name: siteConfig.name,
+        description: siteConfig.description,
+        inLanguage: "id-ID",
+        publisher: { "@id": `${siteConfig.url}/#organization` },
+      },
+    ],
+  };
+
   return (
     <html
       lang="id"
       className={`${geist.variable} ${bricolage.variable} ${geistMono.variable}`}
     >
       <body>
+        <Script
+          defer
+          src="https://static.cloudflareinsights.com/beacon.min.js"
+          data-cf-beacon={JSON.stringify({
+            token: siteConfig.cloudflareAnalyticsToken,
+          })}
+          strategy="afterInteractive"
+        />
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{
+            __html: JSON.stringify(structuredData).replace(/</g, "\\u003c"),
+          }}
+        />
         <TRPCReactProvider>
           {children}
           <SiteFooter />
+          <AnalyticsConsent />
         </TRPCReactProvider>
       </body>
     </html>

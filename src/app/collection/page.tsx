@@ -10,6 +10,8 @@ import { api } from "~/trpc/server";
 export const metadata: Metadata = {
   title: "Koleksi",
   description: "Jelajahi listing RECON berdasarkan kategori barang.",
+  alternates: { canonical: "/collection" },
+  openGraph: { url: "/collection" },
 };
 
 type CategorySlug = Exclude<(typeof collections)[number]["slug"], "all">;

@@ -7,6 +7,8 @@ export const metadata: Metadata = {
   title: "Privasi",
   description:
     "Penjelasan mengenai data yang diproses RECON, tujuannya, serta cara mengajukan permintaan privasi.",
+  alternates: { canonical: "/privacy" },
+  openGraph: { url: "/privacy" },
 };
 
 export default function PrivacyPage() {
@@ -37,8 +39,9 @@ export default function PrivacyPage() {
             <p className="eyebrow">Ringkasnya</p>
             <p>
               RECON memproses informasi listing untuk membuat feed pencarian.
-              Kami belum menggunakan Google Analytics dan tidak menjual data
-              pribadi.
+              Kami menggunakan statistik dasar Cloudflare dan hanya memuat
+              layanan analitik tambahan setelah kamu menyetujuinya. Kami tidak
+              menjual data pribadi.
             </p>
             <a href="mailto:recon@app-pixel.com">recon@app-pixel.com</a>
           </aside>
@@ -106,9 +109,19 @@ export default function PrivacyPage() {
                   pesan untuk merespons.
                 </p>
                 <p>
-                  Saat kebijakan ini berlaku, RECON belum memasang Google
-                  Analytics, akun pengguna, atau pelacak iklan. Jika praktik ini
-                  berubah, kebijakan akan diperbarui terlebih dahulu.
+                  Cloudflare menyediakan statistik dasar lalu lintas dan
+                  performa tanpa cookie analitik. Jika kamu memilih “Izinkan
+                  statistik”, RECON juga dapat memuat Google Analytics,
+                  Microsoft Clarity, dan PostHog untuk memahami halaman serta
+                  fitur yang digunakan. Kami tidak mengaktifkan pelacakan iklan
+                  atau personalisasi iklan.
+                </p>
+                <p>
+                  Event tambahan dibatasi pada tindakan dan kategori umum. RECON
+                  tidak sengaja mengirim kata pencarian, nama penjual, deskripsi
+                  listing, lokasi persis, tautan sumber, atau URL gambar sebagai
+                  properti analitik. Konten listing ditandai untuk disamarkan
+                  dalam rekaman Clarity.
                 </p>
               </div>
             </section>
@@ -137,6 +150,14 @@ export default function PrivacyPage() {
                   layanan AI NVIDIA, serta infrastruktur Cloudflare termasuk R2
                   ketika penyimpanan gambar digunakan. Penyedia dapat beroperasi
                   di luar Indonesia.
+                </p>
+                <p>
+                  Jika statistik tambahan diizinkan, data penggunaan juga dapat
+                  diproses oleh Google, Microsoft, dan PostHog. Layanan ini
+                  dapat menggunakan pengenal pseudonim atau cookie untuk
+                  menghubungkan kunjungan. Kamu dapat menolak atau mengubah
+                  pilihan kapan saja melalui “Atur pilihan statistik” di bagian
+                  bawah situs.
                 </p>
                 <p>
                   Listing dapat tetap tersimpan setelah informasi pada sumber

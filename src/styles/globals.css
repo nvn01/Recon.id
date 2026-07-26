@@ -1964,7 +1964,11 @@ img {
   display: grid;
   place-items: center;
   background:
-    radial-gradient(circle at 72% 24%, rgba(196, 255, 85, 0.54), transparent 26%),
+    radial-gradient(
+      circle at 72% 24%,
+      rgba(196, 255, 85, 0.54),
+      transparent 26%
+    ),
     linear-gradient(135deg, #174c35, #081e15);
   color: rgba(255, 255, 255, 0.35);
   font-family: var(--font-bricolage), sans-serif;
@@ -2167,6 +2171,102 @@ img {
 .site-footer-meta {
   width: min(100% - 64px, 1760px);
   margin: 0 auto;
+}
+
+.analytics-preferences-button {
+  appearance: none;
+  background: none;
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  padding: 0;
+  text-align: left;
+}
+
+.analytics-preferences-button:hover {
+  text-decoration: underline;
+  text-underline-offset: 0.24em;
+}
+
+.analytics-consent {
+  align-items: flex-end;
+  background: #f7f8f6;
+  border: 1px solid rgba(11, 47, 32, 0.2);
+  bottom: 18px;
+  box-shadow: 0 20px 60px rgba(11, 47, 32, 0.18);
+  color: #0b2f20;
+  display: grid;
+  gap: 28px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  left: 50%;
+  max-width: 980px;
+  padding: 24px;
+  position: fixed;
+  transform: translateX(-50%);
+  width: calc(100% - 36px);
+  z-index: 120;
+}
+
+.analytics-consent h2 {
+  font-family: var(--font-bricolage), sans-serif;
+  font-size: clamp(1.25rem, 2vw, 1.65rem);
+  letter-spacing: -0.03em;
+  line-height: 1.05;
+  margin: 7px 0 10px;
+}
+
+.analytics-consent > div > p:last-child {
+  color: rgba(11, 47, 32, 0.72);
+  font-size: 0.88rem;
+  line-height: 1.55;
+  margin: 0;
+  max-width: 680px;
+}
+
+.analytics-consent-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.analytics-consent-actions button {
+  background: transparent;
+  border: 1px solid rgba(11, 47, 32, 0.3);
+  color: #0b2f20;
+  cursor: pointer;
+  font:
+    700 0.77rem/1 var(--font-geist-sans),
+    sans-serif;
+  min-height: 42px;
+  padding: 0 16px;
+  white-space: nowrap;
+}
+
+.analytics-consent-actions button.is-primary {
+  background: #0b2f20;
+  border-color: #0b2f20;
+  color: #f7f8f6;
+}
+
+@media (max-width: 760px) {
+  .analytics-consent {
+    align-items: stretch;
+    bottom: 10px;
+    gap: 18px;
+    grid-template-columns: 1fr;
+    padding: 20px;
+    width: calc(100% - 20px);
+  }
+
+  .analytics-consent-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .analytics-consent-actions button {
+    padding: 0 10px;
+    white-space: normal;
+  }
 }
 
 .site-footer-inner {

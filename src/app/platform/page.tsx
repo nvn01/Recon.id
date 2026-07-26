@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
 
@@ -7,6 +8,14 @@ import {
   platformMeta,
   type ListingPlatform,
 } from "~/data/listings";
+
+export const metadata: Metadata = {
+  title: "Platform",
+  description:
+    "Jelajahi listing RECON berdasarkan platform tempat temuan berasal.",
+  alternates: { canonical: "/platform" },
+  openGraph: { url: "/platform" },
+};
 
 export default function PlatformDirectoryPage() {
   return (
