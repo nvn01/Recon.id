@@ -147,6 +147,7 @@ function disableAnalytics() {
 
 export function AnalyticsConsent() {
   const pathname = usePathname();
+  const isPreferencesPage = pathname === "/privacy/analytics-preferences";
   const [choice, setChoice] = useState<ConsentChoice | null>(null);
   const [isOpen, setIsOpen] = useState(false);
   const initialized = useRef(false);
@@ -194,7 +195,7 @@ export function AnalyticsConsent() {
     });
   }
 
-  if (!isOpen) return null;
+  if (!isOpen || isPreferencesPage) return null;
 
   return (
     <section
