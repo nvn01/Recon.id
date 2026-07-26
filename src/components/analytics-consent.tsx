@@ -118,22 +118,40 @@ async function enableAnalytics() {
   }
 }
 
-export function AnalyticsConsent({
-  forceOpen = false,
-}: {
-  forceOpen?: boolean;
-}) {
+function disableAnalytics() {
+  window.gtag?.("consent", "update", {
+    analytics_storage: "denied",
+    ad_storage: "denied",
+    ad_user_data: "denied",
+    ad_personalization: "denied",
+  });
+  window.clarity?.("consentv2", {
+    ad_Storage: "denied",
+    analytics_Storage: "denied",
+  });
+  window.clarity?.("consent", false);
+  if (posthogKey) {
+    void import("posthog-js").then(({ default: posthog }) => {
+      posthog.opt_out_capturing();
+      posthog.reset();
+    });
+  }
+  if (googleMeasurementId) {
+    Object.defineProperty(window, `ga-disable-${googleMeasurementId}`, {
+      configurable: true,
+      value: true,
+    });
+  }
+  removeAnalyticsCookies();
+}
+
+export function AnalyticsConsent() {
   const pathname = usePathname();
   const [choice, setChoice] = useState<ConsentChoice | null>(null);
-  const [isOpen, setIsOpen] = useState(forceOpen);
+  const [isOpen, setIsOpen] = useState(false);
   const initialized = useRef(false);
 
   useEffect(() => {
-    if (forceOpen) {
-      setIsOpen(true);
-      return;
-    }
-
     const stored = readConsentChoice();
     if (stored) {
       setChoice(stored);
@@ -141,7 +159,7 @@ export function AnalyticsConsent({
       return;
     }
     setIsOpen(true);
-  }, [forceOpen]);
+  }, []);
 
   useEffect(() => {
     if (choice !== "granted" || initialized.current) return;
@@ -168,30 +186,7 @@ export function AnalyticsConsent({
     setIsOpen(false);
 
     if (nextChoice === "denied") {
-      window.gtag?.("consent", "update", {
-        analytics_storage: "denied",
-        ad_storage: "denied",
-        ad_user_data: "denied",
-        ad_personalization: "denied",
-      });
-      window.clarity?.("consentv2", {
-        ad_Storage: "denied",
-        analytics_Storage: "denied",
-      });
-      window.clarity?.("consent", false);
-      if (posthogKey) {
-        void import("posthog-js").then(({ default: posthog }) => {
-          posthog.opt_out_capturing();
-          posthog.reset();
-        });
-      }
-      if (googleMeasurementId) {
-        Object.defineProperty(window, `ga-disable-${googleMeasurementId}`, {
-          configurable: true,
-          value: true,
-        });
-      }
-      removeAnalyticsCookies();
+      disableAnalytics();
     }
 
     trackAnalyticsEvent("analytics_consent_updated", {
@@ -219,6 +214,67 @@ export function AnalyticsConsent({
           tidak dikirim. Statistik dasar Cloudflare tetap digunakan untuk
           keamanan dan performa.
         </p>
+      </div>
+      <div className="analytics-consent-actions">
+        <button type="button" onClick={() => updateChoice("denied")}>
+          Hanya yang perlu
+        </button>
+        <button
+          type="button"
+          className="is-primary"
+          onClick={() => updateChoice("granted")}
+        >
+          Izinkan statistik
+        </button>
+      </div>
+    </section>
+  );
+}
+
+export function AnalyticsPreferencesPanel() {
+  const [savedChoice, setSavedChoice] = useState<ConsentChoice | null>(null);
+
+  function updateChoice(nextChoice: ConsentChoice) {
+    writeConsentChoice(nextChoice);
+    setSavedChoice(nextChoice);
+
+    if (nextChoice === "granted") {
+      void enableAnalytics();
+    } else {
+      disableAnalytics();
+    }
+
+    trackAnalyticsEvent("analytics_consent_updated", {
+      analytics: nextChoice,
+    });
+  }
+
+  return (
+    <section
+      className="analytics-consent"
+      role="region"
+      aria-labelledby="analytics-preferences-title"
+    >
+      <div>
+        <p className="eyebrow">Pilihan privasi</p>
+        <h2 id="analytics-preferences-title">
+          Bantu kami memahami penggunaan RECON?
+        </h2>
+        <p>
+          Statistik tambahan hanya aktif jika kamu setuju. Kata pencarian,
+          identitas penjual, deskripsi listing, lokasi persis, dan URL sumber
+          tidak dikirim. Statistik dasar Cloudflare tetap digunakan untuk
+          keamanan dan performa.
+        </p>
+        {savedChoice ? (
+          <p role="status">
+            Pilihan tersimpan:{" "}
+            {savedChoice === "granted"
+              ? "statistik tambahan diizinkan"
+              : "hanya statistik dasar"}
+            .
+          </p>
+        ) : null}
       </div>
       <div className="analytics-consent-actions">
         <button type="button" onClick={() => updateChoice("denied")}>

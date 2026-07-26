@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 
-import { AnalyticsConsent } from "~/components/analytics-consent";
+import { AnalyticsPreferencesPanel } from "~/components/analytics-consent";
 
 export const metadata: Metadata = {
   title: "Pilihan statistik",
@@ -32,7 +32,7 @@ export default function AnalyticsPreferencesPage() {
           <Link href="/privacy">Kebijakan Privasi</Link>.
         </p>
       </div>
-      <AnalyticsConsent forceOpen />
+      <AnalyticsPreferencesPanel />
     </main>
   );
 }
