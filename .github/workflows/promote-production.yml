@@ -7,6 +7,11 @@ on:
         description: "Production Docker tag, for example 1.0.0"
         required: true
         type: string
+      promote_scraper:
+        description: "Also promote the scraper image"
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -41,13 +46,21 @@ jobs:
       - name: Setup Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Promote stagging image manifests
+      - name: Promote web image manifest
         env:
           VERSION: ${{ inputs.version }}
         run: |
-          for IMAGE_NAME in "$WEB_IMAGE_NAME" "$SCRAPER_IMAGE_NAME"; do
-            docker buildx imagetools create \
-              --tag "$IMAGE_NAME:$VERSION" \
-              "$IMAGE_NAME:$STAGGING_TAG"
-            docker buildx imagetools inspect "$IMAGE_NAME:$VERSION"
-          done
+          docker buildx imagetools create \
+            --tag "$WEB_IMAGE_NAME:$VERSION" \
+            "$WEB_IMAGE_NAME:$STAGGING_TAG"
+          docker buildx imagetools inspect "$WEB_IMAGE_NAME:$VERSION"
+
+      - name: Promote scraper image
+        if: inputs.promote_scraper
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          docker buildx imagetools create \
+            --tag "$SCRAPER_IMAGE_NAME:$VERSION" \
+            "$SCRAPER_IMAGE_NAME:$STAGGING_TAG"
+          docker buildx imagetools inspect "$SCRAPER_IMAGE_NAME:$VERSION"

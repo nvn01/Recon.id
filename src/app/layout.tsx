@@ -2,7 +2,6 @@ import "~/styles/globals.css";
 
 import { type Metadata, type Viewport } from "next";
 import { Bricolage_Grotesque, Geist, Geist_Mono } from "next/font/google";
-import Script from "next/script";
 
 import { AnalyticsConsent } from "~/components/analytics-consent";
 import { SiteFooter } from "~/components/site-footer";
@@ -125,14 +124,6 @@ export default function RootLayout({
       className={`${geist.variable} ${bricolage.variable} ${geistMono.variable}`}
     >
       <body>
-        <Script
-          defer
-          src="https://static.cloudflareinsights.com/beacon.min.js"
-          data-cf-beacon={JSON.stringify({
-            token: siteConfig.cloudflareAnalyticsToken,
-          })}
-          strategy="afterInteractive"
-        />
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{

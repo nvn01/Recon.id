@@ -24,6 +24,9 @@ declare global {
     clarity?: (...args: unknown[]) => void;
     posthog?: {
       capture: (name: string, properties?: AnalyticsProperties) => void;
+      opt_in_capturing: () => void;
+      opt_out_capturing: () => void;
+      reset: () => void;
     };
   }
 }

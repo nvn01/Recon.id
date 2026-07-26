@@ -61,14 +61,24 @@ function removeAnalyticsCookies() {
 
 async function enableAnalytics() {
   if (googleMeasurementId) {
+    Object.defineProperty(window, `ga-disable-${googleMeasurementId}`, {
+      configurable: true,
+      value: false,
+    });
     window.dataLayer = window.dataLayer ?? [];
     window.gtag =
       window.gtag ??
       function gtag(...args: unknown[]) {
         window.dataLayer?.push(args);
       };
-    window.gtag("js", new Date());
     window.gtag("consent", "default", {
+      analytics_storage: "denied",
+      ad_storage: "denied",
+      ad_user_data: "denied",
+      ad_personalization: "denied",
+    });
+    window.gtag("js", new Date());
+    window.gtag("consent", "update", {
       analytics_storage: "granted",
       ad_storage: "denied",
       ad_user_data: "denied",
@@ -104,17 +114,22 @@ async function enableAnalytics() {
   }
 
   if (posthogKey) {
-    const { default: posthog } = await import("posthog-js");
-    posthog.init(posthogKey, {
-      api_host: posthogHost,
-      autocapture: false,
-      capture_pageview: false,
-      capture_pageleave: false,
-      disable_session_recording: true,
-      person_profiles: "never",
-      persistence: "cookie",
-    });
-    window.posthog = posthog;
+    if (window.posthog) {
+      window.posthog.opt_in_capturing();
+    } else {
+      const { default: posthog } = await import("posthog-js");
+      posthog.init(posthogKey, {
+        api_host: posthogHost,
+        autocapture: false,
+        capture_pageview: false,
+        capture_pageleave: false,
+        disable_session_recording: true,
+        person_profiles: "never",
+        persistence: "cookie",
+      });
+      posthog.opt_in_capturing();
+      window.posthog = posthog;
+    }
   }
 }
 
@@ -130,11 +145,9 @@ function disableAnalytics() {
     analytics_Storage: "denied",
   });
   window.clarity?.("consent", false);
-  if (posthogKey) {
-    void import("posthog-js").then(({ default: posthog }) => {
-      posthog.opt_out_capturing();
-      posthog.reset();
-    });
+  if (posthogKey && window.posthog) {
+    window.posthog.opt_out_capturing();
+    window.posthog.reset();
   }
   if (googleMeasurementId) {
     Object.defineProperty(window, `ga-disable-${googleMeasurementId}`, {
@@ -234,6 +247,10 @@ export function AnalyticsConsent() {
 
 export function AnalyticsPreferencesPanel() {
   const [savedChoice, setSavedChoice] = useState<ConsentChoice | null>(null);
+
+  useEffect(() => {
+    setSavedChoice(readConsentChoice());
+  }, []);
 
   function updateChoice(nextChoice: ConsentChoice) {
     writeConsentChoice(nextChoice);

@@ -21,6 +21,32 @@ env:
   SKIP_ENV_VALIDATION: "1"
 
 jobs:
+  changes:
+    name: Detect image changes
+    runs-on: ubuntu-24.04
+    outputs:
+      scraper: ${{ steps.changes.outputs.scraper }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Detect scraper changes
+        id: changes
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+          CURRENT_SHA: ${{ github.sha }}
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "scraper=true" >> "$GITHUB_OUTPUT"
+          elif git diff --quiet "$BEFORE_SHA" "$CURRENT_SHA" -- scraper; then
+            echo "scraper=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "scraper=true" >> "$GITHUB_OUTPUT"
+          fi
+
   verify:
     name: Verify application and scraper
     runs-on: ubuntu-24.04
@@ -136,7 +162,8 @@ jobs:
 
   build-scraper:
     name: Build scraper (amd64)
-    needs: verify
+    needs: [changes, verify]
+    if: needs.changes.outputs.scraper == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
 
