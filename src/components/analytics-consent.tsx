@@ -1,6 +1,6 @@
 "use client";
 
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
 import { sanitizedPagePath, trackAnalyticsEvent } from "~/lib/analytics";
@@ -120,15 +120,14 @@ async function enableAnalytics() {
 
 export function AnalyticsConsent() {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const preferencesRequested = searchParams.get("analytics") === "preferences";
   const [choice, setChoice] = useState<ConsentChoice | null>(null);
   const [isOpen, setIsOpen] = useState(true);
   const initialized = useRef(false);
 
   useEffect(() => {
-    const isPreferencesPage =
-      new URLSearchParams(window.location.search).get("analytics") ===
-      "preferences";
-    if (isPreferencesPage) {
+    if (preferencesRequested) {
       setIsOpen(true);
       return;
     }
@@ -140,7 +139,7 @@ export function AnalyticsConsent() {
       return;
     }
     setIsOpen(true);
-  }, []);
+  }, [preferencesRequested]);
 
   useEffect(() => {
     if (choice !== "granted" || initialized.current) return;

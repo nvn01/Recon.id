@@ -3,6 +3,7 @@ import "~/styles/globals.css";
 import { type Metadata, type Viewport } from "next";
 import { Bricolage_Grotesque, Geist, Geist_Mono } from "next/font/google";
 import Script from "next/script";
+import { Suspense } from "react";
 
 import { AnalyticsConsent } from "~/components/analytics-consent";
 import { SiteFooter } from "~/components/site-footer";
@@ -142,7 +143,9 @@ export default function RootLayout({
         <TRPCReactProvider>
           {children}
           <SiteFooter />
-          <AnalyticsConsent />
+          <Suspense fallback={null}>
+            <AnalyticsConsent />
+          </Suspense>
         </TRPCReactProvider>
       </body>
     </html>
