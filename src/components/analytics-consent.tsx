@@ -118,21 +118,6 @@ export function AnalyticsConsent() {
   }, []);
 
   useEffect(() => {
-    function openPreferences() {
-      setIsOpen(true);
-    }
-    window.addEventListener(
-      "recon:open-analytics-preferences",
-      openPreferences,
-    );
-    return () =>
-      window.removeEventListener(
-        "recon:open-analytics-preferences",
-        openPreferences,
-      );
-  }, []);
-
-  useEffect(() => {
     if (choice !== "granted" || initialized.current) return;
     initialized.current = true;
     void enableAnalytics();
@@ -230,9 +215,10 @@ export function AnalyticsPreferencesButton() {
     <button
       type="button"
       className="analytics-preferences-button"
-      onClick={() =>
-        window.dispatchEvent(new Event("recon:open-analytics-preferences"))
-      }
+      onClick={() => {
+        window.localStorage.removeItem(consentKey);
+        window.location.reload();
+      }}
     >
       Atur pilihan statistik
     </button>
