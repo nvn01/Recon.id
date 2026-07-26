@@ -16,9 +16,13 @@ export function SiteFooter() {
             />
             <span>RECON</span>
           </Link>
-          <p>
+          <p className="footer-description">
             Open source secondhand discovery. Temukan barang incaranmu dalam
             satu platform.
+          </p>
+          <p className="footer-disclaimer">
+            Selalu cross-check barang dan postingan sebelum bertransaksi · Recon
+            tidak bertanggung jawab atas ketidaksesuaian barang yang dijual
           </p>
         </div>
 
@@ -64,10 +68,9 @@ export function SiteFooter() {
 
       <div className="site-footer-meta">
         <span>© {new Date().getFullYear()} RECON</span>
-        <span>
-          Selalu cross-check barang dan postingan sebelum bertransaksi · Recon
-          tidak bertanggung jawab atas ketidaksesuaian barang yang dijual
-        </span>
+        <a href="https://off-pixel.com" target="_blank" rel="noreferrer">
+          made by offpixel studio
+        </a>
       </div>
     </footer>
   );

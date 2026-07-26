@@ -6,19 +6,39 @@ old probe scripts or historical access experiments.
 
 ## Current Runtime Shape
 
-- `scraper.scheduler` is the image entrypoint. Its default one-shot command
-  queues candidates; the production-shaped Compose service runs it continuously.
+- The supported production runtime is three workers built from the exact same
+  immutable scraper image:
+  - collector: `python -m scraper.scheduler --queue-candidates`
+  - AI manager: `python -m scraper.ai_manager --write-db`
+  - Instagram media worker: `python -m scraper.media.worker`
+- The collector and AI manager must share the same persisted `.state` and
+  `.logs` volumes. The media worker uses PostgreSQL as its durable queue and
+  writes its log to the persisted scraper log volume. Never run the former
+  combined `scraper.scheduler --write-db` scheduler beside these workers.
+- `scraper.scheduler` remains the image entrypoint. Its default one-shot command
+  queues candidates for diagnostics; it is not the continuous deployment shape.
 - Scheduled collectors perform raw fetch and contract validation only. They
   never call NVIDIA or PostgreSQL.
-- `scraper.candidate_pool` keeps stable-evidence versions in ignored
-  `.state/candidate_pool.sqlite3`. Fetch timestamps and signed image query
-  parameters do not create duplicate AI work.
+- `scraper.candidate_pool` keeps stable semantic-evidence versions in ignored
+  `.state/candidate_pool.sqlite3`. Fetch timestamps, Instagram `postedAt`, and
+  signed/CDN image-path variations do not create duplicate AI work. A refresh
+  may update the payload of a candidate that is still waiting so its eventual
+  database/media write receives current source data.
+- Preserve the candidate-pool state volume across deploys and rollbacks. Do not
+  delete, replace, or initialize its SQLite file while either worker is live.
 - Queue envelopes may carry the existing bounded `_sourceFacts` dictionary for
   AI review. It must affect the evidence fingerprint, remain out of scheduler
   logs, and be stripped by contract validation before PostgreSQL writes.
-- `scraper.ai_manager` leases mixed-platform batches, runs the mandatory NVIDIA
-  semantic parser, and only then writes validated listings to PostgreSQL. Failed
-  AI or storage batches return to the pool with a bounded retry delay.
+- `scraper.ai_manager` departs on a fixed 60-second schedule, leases up to three
+  ready candidates across all platforms, sends the whole train to NVIDIA in one
+  request, validates the returned multi-item JSON, and bulk-upserts the train to
+  PostgreSQL. Failed AI or storage trains return to the pool with a bounded
+  retry delay. Candidates arriving while a request is running wait for the next
+  departure; never restore per-platform or concurrent NVIDIA parsers.
+- `scraper.media.worker` is independent of AI completion. It polls PostgreSQL
+  for uncached Instagram image rows only after listings have been committed,
+  downloads and uploads them to Cloudflare R2, then updates cache metadata. An
+  image failure must never requeue AI work or delay a listing insert.
 - `scraper.main` orchestrates individual connectors and is read-only unless
   `--write-db` is supplied. That direct flag still enables AI parsing for
   controlled one-shot diagnostics; it is not the scheduled path.
@@ -33,6 +53,37 @@ old probe scripts or historical access experiments.
   directories. Do not add scraper operations tables without an explicit schema
   decision.
 
+## Final Production Baseline (`1.1.2`)
+
+This is the final live baseline established on 2026-07-16. Future changes must
+preserve this split unless the user explicitly approves a new architecture.
+
+- Home production scraper: `ubserver1` (`100.100.20.1`), directory
+  `/docker/recon-scraper`, services `collector`, `ai-manager`, and
+  `media-worker`, image `novn01/recon-scraper:1.1.2`.
+- Oracle production web/data: `ubserver3` (`100.100.20.2`), directory
+  `/docker/recon`, services `postgres`, one-shot `migrate`, `web`, and
+  `cloudflared`, image `novn01/recon.id:1.1.2`.
+- Public app: `https://recon.app-pixel.com` through Cloudflare Tunnel. The web
+  container has no public host port.
+- Production PostgreSQL is reachable by the home scraper only through
+  Tailscale at `100.100.20.2:5432`; never publish it on `0.0.0.0` or point
+  production at staging PostgreSQL.
+- Debian staging is `100.100.20.3` under `/docker/recon`. It is intentionally
+  stopped after release validation; its volumes and NVIDIA key are preserved
+  for the next controlled staging test.
+- Production was accepted with all three scraper workers running the same image
+  ID, zero restarts, a healthy public app and R2 object, and a drained candidate
+  pool (`pending=0`, `leased=0`). A running container alone is not proof of
+  scraper health.
+
+The v1-to-v2 evidence-fingerprint rollout created a one-time queue of old
+semantic duplicates. Production cleanup marked only exact semantic duplicates
+of already-completed versions as done; leased work completed normally and one
+genuinely changed candidate boarded the next train. Do not repeat that cleanup
+blindly. Any future growing queue must be diagnosed as live work, retries, or a
+deduplication defect before records are changed.
+
 ## Supported Discovery Paths
 
 ### Reddit
@@ -40,6 +91,10 @@ old probe scripts or historical access experiments.
 - Use the public RSS feed for scheduled discovery.
 - The four configured flairs start 60 seconds apart and each repeat every 240
   seconds, producing one scheduled RSS request per minute.
+- This `60s` stagger / `240s` per-flair cadence is the approved production
+  baseline. Staging sustained approximately 98% successful real network
+  attempts at this rate; do not increase it merely because protected cooldown
+  slots produce no request.
 - Keep `image_mode = "rss"`; do not add per-post JSON or gallery requests to the
   scheduled path.
 - Preserve TLS verification. Transient certificate or transport failures get
@@ -64,6 +119,17 @@ old probe scripts or historical access experiments.
   seconds, completing the first seven-account sweep in 4m30s.
 - Any access, login-wall, 401, 403, or 429 result opens a platform-wide
   Instagram cooldown before another scheduled account is attempted.
+- Treat a final browser path under `/accounts/login/` as a login-wall signal
+  even if the page title still resembles the requested profile.
+- The `45s` stagger / `315s` repeat preserved data completeness during staging,
+  but it also produced recurring login-wall pressure and one-hour cooldowns.
+  Do not make it faster. If that pressure persists in production, the first
+  fallback is a `60s` stagger / `420s` per-account repeat, not a bypass or a
+  second browser identity.
+- Instagram `postedAt` and signed/CDN image variations are intentionally
+  excluded from the semantic evidence fingerprint. Caption or `_sourceFacts`
+  changes create a new candidate version and supersede an older pending version
+  for the same source post.
 - Scheduled Instagram jobs send raw post candidates to the durable pool.
   AI decides whether each post is a listing and owns title, category, brand,
   price, condition, location, and status. If parsing fails, do not write the
@@ -85,9 +151,11 @@ old probe scripts or historical access experiments.
   failure may set the connector-wide cooldown.
 - Scheduled discovery does not require login, persistent profile state,
   scrolling, detail-page fetches, or seller actions.
-- Scheduled Facebook jobs use batched NVIDIA semantic parsing. Collector fields
-  such as card price, location, and sold flags are source evidence only; local
-  code must not translate them into database semantic values.
+- Scheduled Facebook jobs only queue raw candidates. The centralized AI manager
+  includes them in the same mixed-platform trains as Reddit and Instagram.
+  Collector fields such as card price, location, and sold flags are source
+  evidence only; local code must not translate them into database semantic
+  values.
 - NVIDIA capacity errors immediately open a shared five-minute parser cooldown.
   NVIDIA Cloud Functions `DEGRADED function cannot be invoked` and function-ID
   `not found` invocation responses open the same cooldown because the provider
@@ -99,6 +167,52 @@ old probe scripts or historical access experiments.
   180 seconds.
 - Persistent profile and login CLI modes are diagnostics only. Never commit
   `.facebook-profile*`.
+
+## Queue And AI Manager Guardrails
+
+- A train departs every 60 seconds and carries at most three ready candidates.
+  It makes exactly one NVIDIA request for the whole mixed-platform train and one
+  bulk PostgreSQL write for the validated result. The proven production request
+  budget is 8,192 output tokens with a 90-second timeout. Do not increase train
+  capacity without controlled staging evidence; larger live batches previously
+  produced truncated or invalid JSON.
+- Fresh ready candidates board before delayed retries. A genuinely newer
+  semantic version supersedes an older pending version of the same source post.
+  Do not serialize into one AI request per listing and do not create one manager
+  per platform.
+- The durable pool, bounded retries, and platform cooldowns are the data-loss
+  boundary. A staging burn-in drained the pool to zero without observed missing
+  listings; provider or connector retries must continue to return work to the
+  pool rather than discard it.
+- NVIDIA capacity, timeout, or invalid-output failures must not permit raw
+  candidates to bypass the mandatory AI parser or reach PostgreSQL.
+- A provider-wide parser cooldown should pause new leasing globally. Repeated
+  lease/retry churn while the circuit is open is an operational defect, even if
+  the durable queue eventually recovers; fix it before increasing throughput.
+- A temporary backlog is acceptable. A continuously growing pending/leased
+  count, expired leases that never recover, or retries that exhaust without a
+  terminal record is not.
+- This queue is scraper-local operational state. It does not add a PostgreSQL
+  schema migration or make the public web application responsible for scraping.
+
+## Instagram R2 Media Path
+
+- R2 caching is Instagram-only. Facebook and Reddit keep their original image
+  URLs.
+- Bucket: `recon-media-production`; public custom domain:
+  `https://media.app-pixel.com`; object prefix: `production`.
+- AI parse and PostgreSQL upsert finish first. The independent media worker then
+  finds Instagram `listing_images` rows whose `cached_url` is null, downloads
+  the source, uploads immutable content-addressed objects, and updates only the
+  cache metadata.
+- PostgreSQL is the durable media queue. On a cache failure, keep the original
+  source URL so the UI can fall back to it; never move the listing back into the
+  AI candidate pool.
+- R2 credentials live only in
+  `ubserver1:/docker/recon-scraper/.env.media-worker`. The collector and AI
+  manager must not receive them. The NVIDIA key lives only in `.env.ai-manager`.
+- The production media worker polls every 60 seconds and processes up to 25
+  images per batch. A full batch may continue immediately to drain a backlog.
 
 ## Normalized Listing Contract
 
@@ -158,13 +272,15 @@ behavior must be verified.
 
 ## Staging Workflow
 
-Staging is the authoritative environment for browser/network behavior:
+Staging is the authoritative environment for browser/network and release-image
+behavior. It is normally stopped. Inspect the existing runtime before starting
+only the services required for a bounded validation:
 
 ```bash
 ssh root@100.100.20.3
 cd /docker/recon
-docker compose --env-file .env.staging -f compose.yml pull scraper
-docker compose --env-file .env.staging -f compose.yml --profile scraper run --rm scraper python -m scraper.main --all --write-db
+docker compose --env-file .env.staging -f compose.yml ps -a
+docker pull novn01/recon-scraper:stagging
 ```
 
 Current deployment facts:
@@ -173,24 +289,67 @@ Current deployment facts:
 - Project directory: `/docker/recon`
 - Scraper image: `novn01/recon-scraper:stagging`
 - Runtime env: `/docker/recon/.env.staging`
-- Default image command: `scraper.scheduler --once --queue-candidates`
-- A continuous deployment must run collector and AI-manager services from the
-  same scraper image with the same `.state` and `.logs` volumes. The collector
-  command is `scraper.scheduler --queue-candidates`; the manager command is
-  `scraper.ai_manager --write-db`.
+- Continuous containers: `recon-scraper-collector` and
+  `recon-scraper-ai-manager`
+- The tracked staging Compose stack does not currently define those scraper
+  workers; the live validation containers are managed separately from it. Do
+  not assume nonexistent Compose service names work. Preserve and inspect their
+  existing env, network, command, and volume configuration before recreating
+  them from the new `:stagging` image.
+- Both containers must resolve to the exact same image ID, use
+  `restart: unless-stopped`, and retain zero unexpected restarts.
 - Chrome/Xvfb startup must remain behind `tini`; do not duplicate Compose `init`
   or browser flags in the service command.
 
-After one controlled run, inspect only a bounded snapshot:
+After deployment, inspect only a bounded snapshot:
 
 ```bash
-docker compose --env-file .env.staging -f compose.yml logs --tail=100 scraper
+docker inspect recon-scraper-collector recon-scraper-ai-manager --format '{{.Name}} image={{.Image}} restarts={{.RestartCount}} status={{.State.Status}}'
+docker logs --tail=100 recon-scraper-collector
+docker logs --tail=100 recon-scraper-ai-manager
 docker compose --env-file .env.staging -f compose.yml exec -T postgres psql -U recon -d recon_staging -c "select platform, status, count(*) from listings group by platform, status order by platform, status;"
 ```
 
-Do not attach an open-ended log monitor. The latest verified direct-egress run
-successfully collected all three platforms; diagnose future failures from the
-new run's evidence rather than restoring superseded experiments.
+For an AI-manager change, observe at least two departures from the promoted
+image: the first must wait a full minute, subsequent departures must remain
+60 seconds apart, each train must board at most three candidates, and each train
+must produce one NVIDIA request and one bulk database write. Stop the staging
+containers and PostgreSQL after validation, leaving volumes intact.
+
+The verified two-worker staging burn-in ran for more than ten hours with zero
+container restarts, drained the candidate pool, and showed no missing data.
+Reddit remained healthy. Instagram remained complete because login walls opened
+cooldowns, but those cooldowns are access pressure and must not be described as
+clean fetch success. Do not attach an open-ended log monitor or restore
+superseded access experiments.
+
+## Production Promotion Gate
+
+- Production must pin a fixed `SCRAPER_IMAGE_TAG`; never promote `stagging` or
+  `latest` as the only production identity. Promote the exact image digest that
+  passed staging instead of rebuilding it.
+- Production on ubserver1 must define all three long-running services from the
+  same fixed scraper image: collector, AI manager, and media worker. Use the
+  documented commands, scoped env files, persisted state/log volumes,
+  `restart: unless-stopped`, and the production `DATABASE_URL` where required.
+- The tracked root `docker-compose.production.yml` is not the live split-host
+  production scraper definition. The authoritative runtime Compose file is
+  `ubserver1:/docker/recon-scraper/compose.yml`; do not deploy the tracked
+  one-shot `scraper` profile and call the continuous runtime live.
+- Stop and remove any old direct-write scheduler before starting the three
+  workers. Never allow the old and new runtimes to scrape the same sources
+  concurrently.
+- Preserve the candidate pool during normal promotion and rollback. Start all
+  three workers together; the manager may safely drain a legitimate backlog
+  after restart and the media worker drains independently from PostgreSQL.
+- Before accepting production, verify all three worker image IDs and commands,
+  zero unexpected restarts, 60-second train departures, one NVIDIA request per
+  train, bounded logs without a persistent `401`/`403`/`429` or login-wall
+  flood, a pool that drains rather than grows indefinitely, fresh PostgreSQL
+  rows from every enabled platform, and successful Instagram R2 URLs.
+- If any gate fails, restore the previous fixed image tag and keep the queue
+  volume intact. Production promotion remains a manual, explicitly approved
+  action.
 
 ## Change Checklist
 
@@ -203,5 +362,9 @@ Before committing scraper changes:
 4. Run the full scraper unit suite and Ruff.
 5. For browser/network changes, build through GitHub Actions and validate the
    resulting image once on Debian staging.
-6. Update this file when the supported runtime workflow changes; do not append a
+6. For scheduler or manager changes, verify lease recovery, bounded retries,
+   queue drain, and that the old combined runtime is not running.
+7. Validate the environment-specific Compose file, not only the local
+   development Compose file.
+8. Update this file when the supported runtime workflow changes; do not append a
    historical diary.

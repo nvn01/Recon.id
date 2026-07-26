@@ -2280,7 +2280,7 @@ img {
   display: inline-flex;
   align-items: center;
   gap: 10px;
-  color: var(--forest-deep);
+  color: #111111;
   font-family: var(--font-bricolage), sans-serif;
   font-size: 25px;
   font-weight: 800;
@@ -2290,17 +2290,23 @@ img {
 .footer-wordmark img {
   width: 30px;
   height: 30px;
-  padding: 4px;
-  border-radius: 9px;
-  background: var(--lime-soft);
+  filter: brightness(0);
 }
 
-.footer-brand > p {
+.footer-description {
   max-width: 46ch;
   margin: 18px 0 0;
   color: var(--muted);
   font-size: 13px;
   line-height: 1.65;
+}
+
+.footer-disclaimer {
+  max-width: 66ch;
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.6;
 }
 
 .footer-links,
@@ -2366,9 +2372,20 @@ img {
   letter-spacing: 0.03em;
 }
 
-.site-footer-meta span:last-child {
-  max-width: 92ch;
+.site-footer-meta a {
+  color: inherit;
   text-align: right;
+  text-decoration: underline;
+  text-decoration-color: transparent;
+  text-underline-offset: 4px;
+  transition:
+    color 150ms ease,
+    text-decoration-color 150ms ease;
+}
+
+.site-footer-meta a:hover {
+  color: var(--forest);
+  text-decoration-color: currentColor;
 }
 
 .editorial-page {
@@ -2928,7 +2945,7 @@ img {
     gap: 8px;
   }
 
-  .site-footer-meta span:last-child {
+  .site-footer-meta a {
     text-align: left;
   }
 
