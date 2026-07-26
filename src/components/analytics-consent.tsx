@@ -14,6 +14,31 @@ const posthogKey = process.env.NEXT_PUBLIC_POSTHOG_KEY;
 const posthogHost =
   process.env.NEXT_PUBLIC_POSTHOG_HOST ?? "https://us.i.posthog.com";
 
+function readConsentChoice(): ConsentChoice | null {
+  try {
+    const stored = window.localStorage?.getItem(consentKey);
+    return stored === "granted" || stored === "denied" ? stored : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeConsentChoice(choice: ConsentChoice) {
+  try {
+    window.localStorage?.setItem(consentKey, choice);
+  } catch {
+    // The choice still applies for the current page when storage is blocked.
+  }
+}
+
+function clearConsentChoice() {
+  try {
+    window.localStorage?.removeItem(consentKey);
+  } catch {
+    // Reloading still reopens the panel when storage is blocked.
+  }
+}
+
 function addScript(id: string, src: string) {
   if (document.getElementById(id)) return;
   const script = document.createElement("script");
@@ -95,7 +120,7 @@ async function enableAnalytics() {
       capture_pageleave: false,
       disable_session_recording: true,
       person_profiles: "never",
-      persistence: "localStorage+cookie",
+      persistence: "cookie",
     });
     window.posthog = posthog;
   }
@@ -108,8 +133,8 @@ export function AnalyticsConsent() {
   const initialized = useRef(false);
 
   useEffect(() => {
-    const stored = window.localStorage.getItem(consentKey);
-    if (stored === "granted" || stored === "denied") {
+    const stored = readConsentChoice();
+    if (stored) {
       setChoice(stored);
       setIsOpen(false);
       return;
@@ -137,7 +162,7 @@ export function AnalyticsConsent() {
   }, [choice, pathname]);
 
   function updateChoice(nextChoice: ConsentChoice) {
-    window.localStorage.setItem(consentKey, nextChoice);
+    writeConsentChoice(nextChoice);
     setChoice(nextChoice);
     setIsOpen(false);
 
@@ -216,7 +241,7 @@ export function AnalyticsPreferencesButton() {
       type="button"
       className="analytics-preferences-button"
       onClick={() => {
-        window.localStorage.removeItem(consentKey);
+        clearConsentChoice();
         window.location.reload();
       }}
     >
