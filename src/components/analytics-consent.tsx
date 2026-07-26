@@ -1,6 +1,6 @@
 "use client";
 
-import { usePathname, useSearchParams } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
 import { sanitizedPagePath, trackAnalyticsEvent } from "~/lib/analytics";
@@ -118,16 +118,18 @@ async function enableAnalytics() {
   }
 }
 
-export function AnalyticsConsent() {
+export function AnalyticsConsent({
+  forceOpen = false,
+}: {
+  forceOpen?: boolean;
+}) {
   const pathname = usePathname();
-  const searchParams = useSearchParams();
-  const preferencesRequested = searchParams.get("analytics") === "preferences";
   const [choice, setChoice] = useState<ConsentChoice | null>(null);
-  const [isOpen, setIsOpen] = useState(true);
+  const [isOpen, setIsOpen] = useState(forceOpen);
   const initialized = useRef(false);
 
   useEffect(() => {
-    if (preferencesRequested) {
+    if (forceOpen) {
       setIsOpen(true);
       return;
     }
@@ -139,7 +141,7 @@ export function AnalyticsConsent() {
       return;
     }
     setIsOpen(true);
-  }, [preferencesRequested]);
+  }, [forceOpen]);
 
   useEffect(() => {
     if (choice !== "granted" || initialized.current) return;
@@ -237,7 +239,7 @@ export function AnalyticsConsent() {
 export function AnalyticsPreferencesButton() {
   return (
     <a
-      href="/privacy?analytics=preferences"
+      href="/privacy/analytics-preferences"
       className="analytics-preferences-button"
     >
       Atur pilihan statistik
