@@ -8,7 +8,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from scraper.facebook.embedded import extract_marketplace_records
+from scraper.facebook.embedded import extract_marketplace_detail, extract_marketplace_records
 from scraper.facebook.facebook_marketplace import (
     DEFAULT_TARGETS_FILE,
     ConnectorBlockedError,
@@ -21,6 +21,7 @@ from scraper.facebook.facebook_marketplace import (
     normalize_card,
     run_once,
     scrape_detail,
+    should_fetch_detail,
     source_target_from_record,
     uses_persistent_profile,
 )
@@ -63,6 +64,26 @@ def marketplace_payload(*, sold: bool = False) -> dict:
                             ],
                             "page_info": {"has_next_page": True, "end_cursor": "opaque"},
                         }
+                    }
+                }
+            }
+        ]
+    }
+
+
+def marketplace_detail_payload() -> dict:
+    return {
+        "require": [
+            {
+                "data": {
+                    "marketplace_listing_renderable_target": {
+                        "id": "1700339471266558",
+                        "marketplace_listing_title": "Dell Latitude E7270",
+                        "redacted_description": {"text": "Laptop Dell Latitude E7270\nKondisi normal"},
+                        "marketplace_listing_seller": {
+                            "id": "61577104028094",
+                            "name": "Via Anafia",
+                        },
                     }
                 }
             }
@@ -188,6 +209,7 @@ class FacebookDiscoveryTests(unittest.TestCase):
 
         with (
             patch("scraper.facebook.facebook_marketplace.open_marketplace") as open_marketplace,
+            patch("scraper.facebook.facebook_marketplace.extract_embedded_detail", return_value={}),
             patch("scraper.facebook.facebook_marketplace.extract_page_text", return_value=""),
         ):
             scrape_detail(object(), card, args)
@@ -196,6 +218,70 @@ class FacebookDiscoveryTests(unittest.TestCase):
             open_marketplace.call_args.args[1],
             "https://www.facebook.com/marketplace/item/123/",
         )
+
+    def test_item_payload_exposes_public_seller_and_full_description(self):
+        detail = extract_marketplace_detail(
+            ["not-json", json.dumps(marketplace_detail_payload())],
+            item_id="1700339471266558",
+        )
+
+        self.assertEqual(detail["sellerName"], "Via Anafia")
+        self.assertEqual(detail["description"], "Laptop Dell Latitude E7270\nKondisi normal")
+
+    def test_detail_fetch_prefers_embedded_seller_and_description(self):
+        card = MarketplaceCard(
+            item_id="1700339471266558",
+            url="https://www.facebook.com/marketplace/item/1700339471266558/",
+            price="Rp2.500.000",
+            title="Dell Latitude E7270",
+            location="Bogor",
+            is_newly_listed=False,
+            image_url="",
+            image_alt="",
+            raw_text="card text",
+        )
+        args = SimpleNamespace(wait_ms=0, timeout=1)
+
+        with (
+            patch("scraper.facebook.facebook_marketplace.open_marketplace"),
+            patch(
+                "scraper.facebook.facebook_marketplace.extract_embedded_detail",
+                return_value={"sellerName": "Via Anafia", "description": "Full description"},
+            ),
+            patch(
+                "scraper.facebook.facebook_marketplace.extract_page_text",
+                return_value="Detail\nKondisi\nBekas - Baik\nVisible fallback\nInformasi penjual\nWrong Seller",
+            ),
+        ):
+            detail = scrape_detail(object(), card, args)
+
+        self.assertEqual(detail.seller, "Via Anafia")
+        self.assertEqual(detail.description, "Full description")
+        self.assertEqual(detail.condition, "Bekas - Baik")
+
+    def test_detail_attempt_state_is_independent_from_discovery_seen_state(self):
+        card = MarketplaceCard(
+            item_id="1700339471266558",
+            url="https://www.facebook.com/marketplace/item/1700339471266558/",
+            price="",
+            title="Dell Latitude",
+            location="",
+            is_newly_listed=False,
+            image_url="",
+            image_alt="",
+            raw_text="",
+        )
+        args = SimpleNamespace(details=True, no_state=False, detail_scope="new")
+        state = {
+            "seen_external_ids": [card.item_id],
+            "seen_source_urls": [card.url],
+            "detail_attempted_external_ids": [],
+            "detail_attempted_source_urls": [],
+        }
+
+        self.assertTrue(should_fetch_detail(card, state, args))
+        state["detail_attempted_external_ids"] = [card.item_id]
+        self.assertFalse(should_fetch_detail(card, state, args))
 
     def test_logged_out_discovery_does_not_use_persistent_profile(self):
         self.assertFalse(uses_persistent_profile(SimpleNamespace(login=False, session_mode="ephemeral")))

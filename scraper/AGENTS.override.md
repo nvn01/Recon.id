@@ -150,7 +150,11 @@ deduplication defect before records are changed.
   `no_new_data`; only missing Marketplace candidates or a real access/login
   failure may set the connector-wide cooldown.
 - Scheduled discovery does not require login, persistent profile state,
-  scrolling, detail-page fetches, or seller actions.
+  scrolling, detail-page fetches, or seller actions. Explicit detail runs keep
+  one-time attempt state and can extract the full description, but logged-out
+  staging redacts seller identity even when the item page exposes it to an
+  authenticated browser. Do not enable scheduled seller detail requests until
+  an approved authenticated profile is available.
 - Scheduled Facebook jobs only queue raw candidates. The centralized AI manager
   includes them in the same mixed-platform trains as Reddit and Instagram.
   Collector fields such as card price, location, and sold flags are source
