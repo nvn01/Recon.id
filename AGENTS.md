@@ -239,7 +239,7 @@ The collector queues raw candidates in the shared persisted scraper state
 volume. The AI manager is the only production process that enriches queued
 candidates with NVIDIA and writes validated listings to PostgreSQL. That write
 is the end of the AI critical path; it must never wait for image downloads or
-R2. A separate media worker polls PostgreSQL for uncached Instagram images,
+R2. A separate media worker polls PostgreSQL for uncached Instagram and Reddit images,
 uploads them to R2, and updates only their cache metadata. All three processes
 run the same fixed scraper image with separate commands and scoped env files.
 The supported AI-manager design is a fixed one-minute train, not an immediate
@@ -259,31 +259,44 @@ eventual PostgreSQL/R2 path receives current media URLs. A genuinely changed
 caption or `_sourceFacts` value creates one new version and supersedes the older
 pending version of that source post.
 
-## Instagram Media Cache
+## Tracked Instagram And Reddit Media Cache
+
+Production remains on the Instagram-only worker until the Reddit media release
+is explicitly promoted and its dry-run repair summary is reviewed. The tracked
+next release extends the same worker and public API preference to Reddit.
 
 Instagram images are cached in Cloudflare R2 because signed Instagram CDN URLs
-can expire or fail for public users. This is intentionally Instagram-only:
-Facebook and Reddit continue to use their original image URLs.
+can expire or fail for public users. Reddit images are also cached because RSS
+previews are resized, Reddit URLs may fail in browser previews, and gallery
+markup can expose the same asset more than once. Facebook continues to use its
+original image URLs.
 
 - Bucket: `recon-media-production`
 - Public custom domain: `https://media.app-pixel.com`
-- Object layout: `production/instagram/<sha256-prefix>/<sha256>.<extension>`
+- Object layouts:
+  - `production/instagram/<sha256-prefix>/<sha256>.<extension>`
+  - `production/reddit/<sha256-prefix>/<sha256>.<extension>`
 - Upload owner: the dedicated media worker on ubserver1, after the AI manager
   has committed the listing to PostgreSQL
 - Worker command: `python -m scraper.media.worker`
 - Poll cadence: 60 seconds; a full batch continues immediately so a backlog can
   drain without waiting another minute between batches
-- Backfill command: `python -m scraper.media.backfill_instagram`
+- Instagram cache backfill: `python -m scraper.media.backfill_instagram`
+- Reddit source repair (dry run first):
+  `python -m scraper.reddit.backfill_images --fetch-missing`
+- Reddit source repair apply:
+  `python -m scraper.reddit.backfill_images --fetch-missing --apply`
 
-The media worker validates HTTPS source hosts against Instagram/Facebook CDN
-suffixes, rejects private-address resolution, limits redirects and downloads,
-checks MIME type and image signatures, then uploads immutable content-addressed
-objects. PostgreSQL is the durable media queue: an Instagram `listing_images`
-row with `cached_url IS NULL` remains pending. An individual cache failure is
+The media worker validates HTTPS source hosts against platform-specific
+Instagram CDN or Reddit media allowlists, rejects private-address resolution,
+limits redirects and downloads, checks MIME type and image signatures, then
+uploads immutable content-addressed objects. PostgreSQL is the durable media
+queue: an Instagram or Reddit `listing_images` row with `cached_url IS NULL`
+remains pending. An individual cache failure is
 non-fatal and unrelated to AI queue completion; PostgreSQL retains the original
 source URL and the UI falls back to it. The public API never fetches remote
 media and exposes the cached URL through its existing `sourceUrl` DTO field only
-when the listing platform is Instagram.
+when the cache origin and object prefix match the Instagram or Reddit platform.
 
 R2 write credentials and `R2_OBJECT_PREFIX=production` belong only in
 `ubserver1:/docker/recon-scraper/.env.media-worker`. Do not give them to the AI
@@ -365,7 +378,7 @@ cd /docker/recon
 docker compose --env-file .env.production ps -a
 docker compose --env-file .env.production logs --tail 100 migrate web cloudflared postgres
 
-# Home collector, AI manager, and Instagram media worker
+# Home collector, AI manager, and media worker
 ssh root@100.100.20.1
 cd /docker/recon-scraper
 docker compose --env-file .env.deploy ps
@@ -388,8 +401,9 @@ Production verification requires all of the following:
 - AI manager logs continue to show successful parsing and storage writes.
 - AI manager train logs show `intervalSeconds: 60`, at most one NVIDIA request
   per departure, and `boarded` matching the number processed by that request.
-- Media worker logs show bounded Instagram-only cache batches; its failures do
-  not requeue AI candidates or block listing inserts.
+- Media worker logs show bounded platform-scoped cache batches; expect Instagram
+  only before the Reddit media release and both platforms after promotion. Its
+  failures do not requeue AI candidates or block listing inserts.
 - Production listing counts continue to grow when new candidates are found.
 
 The retired two-item loop allowed volatile Instagram versions and retries to

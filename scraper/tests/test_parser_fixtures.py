@@ -31,7 +31,7 @@ class ParserFixtureRegressionTests(unittest.TestCase):
         self.assertEqual(listing["locationTexts"], [])
         self.assertIsNone(listing["conditionText"])
         self.assertEqual(listing["status"], "UNKNOWN")
-        self.assertEqual(listing["images"][0]["sourceUrl"], "https://preview.redd.it/reconfixture.jpg")
+        self.assertEqual(listing["images"][0]["sourceUrl"], "https://i.redd.it/reconfixture.jpg")
 
     def test_instagram_fixture_preserves_raw_ai_candidate(self):
         payload = (FIXTURES / "instagram_profile.json").read_text(encoding="utf-8")

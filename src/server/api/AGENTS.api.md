@@ -60,10 +60,11 @@ interpolate a raw search pattern or apply client-only filtering to one page.
   credentials. Unsafe image URLs are omitted; an unsafe primary listing URL
   fails closed.
 - The API still returns URLs only and never performs network fetches. Instagram
-  media is downloaded by the production AI manager on `ubserver1`, stored in
-  Cloudflare R2, and recorded alongside the original source URL. For Instagram
-  only, the DTO prefers a safe HTTPS `cachedUrl` and falls back to the original
-  `sourceUrl`; Facebook and Reddit always use their original image URLs.
+  and Reddit media are downloaded by the production media worker on `ubserver1`,
+  stored in Cloudflare R2, and recorded alongside the original source URL. For
+  those two platforms, the DTO prefers a safe HTTPS `cachedUrl` only when its
+  `production/<platform>/...` prefix matches the listing platform, then falls
+  back to the original `sourceUrl`. Facebook always uses its original image URL.
 - Public prices below IDR 10,000 and known dummy sequences such as `12345` and
   `123456` are returned as unknown because historical values in those groups
   include seller placeholders. Contact-like, URL-like, multiline, and
@@ -96,8 +97,8 @@ interpolate a raw search pattern or apply client-only filtering to one page.
 ## Deferred Surface
 
 Do not add connector health, scrape runs, listing writes, arbitrary sorting, or
-non-Instagram media caching to this public API until a product requirement calls
-for it. Moderation writes and authentication belong to the private, Tailscale-
+additional platform media caching to this public API until a product requirement
+calls for it. Moderation writes and authentication belong to the private, Tailscale-
 only admin service; never expose them through these public tRPC procedures.
 
 ## Verification

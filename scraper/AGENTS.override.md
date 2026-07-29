@@ -10,7 +10,10 @@ old probe scripts or historical access experiments.
   immutable scraper image:
   - collector: `python -m scraper.scheduler --queue-candidates`
   - AI manager: `python -m scraper.ai_manager --write-db`
-  - Instagram media worker: `python -m scraper.media.worker`
+  - media worker: `python -m scraper.media.worker`
+- The currently pinned production image still caches Instagram only. The tracked
+  next release adds Reddit to that worker; do not call Reddit R2 live before an
+  explicitly approved promotion and reviewed backfill.
 - The collector and AI manager must share the same persisted `.state` and
   `.logs` volumes. The media worker uses PostgreSQL as its durable queue and
   writes its log to the persisted scraper log volume. Never run the former
@@ -36,7 +39,7 @@ old probe scripts or historical access experiments.
   retry delay. Candidates arriving while a request is running wait for the next
   departure; never restore per-platform or concurrent NVIDIA parsers.
 - `scraper.media.worker` is independent of AI completion. It polls PostgreSQL
-  for uncached Instagram image rows only after listings have been committed,
+  for uncached Instagram and Reddit image rows only after listings have been committed,
   downloads and uploads them to Cloudflare R2, then updates cache metadata. An
   image failure must never requeue AI work or delay a listing insert.
 - `scraper.main` orchestrates individual connectors and is read-only unless
@@ -97,6 +100,13 @@ deduplication defect before records are changed.
   slots produce no request.
 - Keep `image_mode = "rss"`; do not add per-post JSON or gallery requests to the
   scheduled path.
+- RSS media URLs are canonicalized from resized `preview.redd.it` variants to
+  the matching full-resolution `i.redd.it` asset. Deduplicate by that canonical
+  asset identity so the feed thumbnail and first gallery frame do not become
+  two slides.
+- Preserve every distinct RSS gallery asset in source order. The optional
+  detail JSON path may enrich controlled diagnostics, but production correctness
+  cannot depend on it because the runtime currently receives `403`.
 - Preserve TLS verification. Transient certificate or transport failures get
   bounded retries/cooldowns, never `verify=false`.
 - Discovery only collects source identity, raw seller text, media, and timestamps.
@@ -195,16 +205,25 @@ deduplication defect before records are changed.
 - This queue is scraper-local operational state. It does not add a PostgreSQL
   schema migration or make the public web application responsible for scraping.
 
-## Instagram R2 Media Path
+## Instagram And Reddit R2 Media Path
 
-- R2 caching is Instagram-only. Facebook and Reddit keep their original image
-  URLs.
+- R2 caching covers Instagram and Reddit. Facebook keeps its original image
+  URLs in the tracked next release.
 - Bucket: `recon-media-production`; public custom domain:
   `https://media.app-pixel.com`; object prefix: `production`.
 - AI parse and PostgreSQL upsert finish first. The independent media worker then
-  finds Instagram `listing_images` rows whose `cached_url` is null, downloads
+  finds Instagram or Reddit `listing_images` rows whose `cached_url` is null, downloads
   the source, uploads immutable content-addressed objects, and updates only the
   cache metadata.
+- Store Instagram and Reddit objects under separate
+  `production/<platform>/...` prefixes and require the public API prefix to
+  match the listing platform.
+- Before first Reddit media-worker promotion, run
+  `python -m scraper.reddit.backfill_images --fetch-missing` without `--apply`,
+  inspect the summary, then run the same command with `--apply`. This upgrades
+  historical previews, removes duplicate frames, and uses paced per-post RSS
+  only for listings that have no image row. A final Reddit `429` stops further
+  missing-image requests for that run.
 - PostgreSQL is the durable media queue. On a cache failure, keep the original
   source URL so the UI can fall back to it; never move the listing back into the
   AI candidate pool.
@@ -346,7 +365,8 @@ superseded access experiments.
   zero unexpected restarts, 60-second train departures, one NVIDIA request per
   train, bounded logs without a persistent `401`/`403`/`429` or login-wall
   flood, a pool that drains rather than grows indefinitely, fresh PostgreSQL
-  rows from every enabled platform, and successful Instagram R2 URLs.
+  rows from every enabled platform, and successful Instagram and Reddit R2 URLs
+  after the Reddit media release is promoted.
 - If any gate fails, restore the previous fixed image tag and keep the queue
   volume intact. Production promotion remains a manual, explicitly approved
   action.
