@@ -73,6 +73,34 @@ class InstagramCarouselBackfillTests(unittest.TestCase):
             [],
         )
 
+    def test_additional_image_rows_accept_rotated_cover_path_for_exact_shortcode(self):
+        pending = PendingCarousel(
+            listing_id="listing-1",
+            external_id="EXPECTED",
+            cover_url="https://scontent.cdninstagram.com/old-path/cover.jpg?token=old",
+        )
+        detail = {
+            "shortcode": "EXPECTED",
+            "display_url": "https://scontent.cdninstagram.com/new-path/cover.jpg?token=new",
+            "edge_sidecar_to_children": {
+                "edges": [
+                    {
+                        "node": {
+                            "display_url": "https://scontent.cdninstagram.com/new-path/cover.jpg?token=new"
+                        }
+                    },
+                    {"node": {"display_url": "https://scontent.cdninstagram.com/new-path/two.jpg"}},
+                ]
+            },
+        }
+
+        rows = additional_image_rows(pending, detail)
+
+        self.assertEqual(
+            [(row["position"], row["source_url"]) for row in rows],
+            [(1, "https://scontent.cdninstagram.com/new-path/two.jpg")],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
