@@ -53,6 +53,20 @@ Facebook Group rules:
 - Items whose sourceFacts.sourceType is facebook_group come from loosely moderated buy/sell groups.
   isListing must be false for WTB/wanted-to-buy posts, questions, repair requests, buying services,
   discussion, and promotions that do not offer a specific product for sale.
+- Facebook Group isListing is also RECON's strict product-scope gate. Return isListing true only when
+  the primary item being offered is within computers, PC components, PC peripherals, or gaming.
+  This includes complete PCs, laptops, handheld PCs, monitors, internal PC parts, storage, keyboards,
+  mice, PC/gaming audio and video peripherals, game consoles, games, controllers, VR hardware, and
+  gaming accessories.
+- Return isListing false even when the post is a real WTS offer with a price and photo if its primary
+  item is outside that scope. Reject motorcycles, cars, and bicycles; kitchen or household appliances
+  such as mixers, blenders, refrigerators, and washing machines; furniture, clothing, property, food,
+  beauty products, and unrelated services. Also reject general phones, tablets, cameras, televisions,
+  and standalone home audio unless the evidence clearly identifies the item as a PC or gaming
+  peripheral. Do not broaden the Facebook Group catalog merely because an unrelated item is
+  electronic or appears in a computer-focused group.
+- Judge the primary offered item. A relevant PC or gaming product remains in scope when it includes
+  an incidental cable, bag, desk, or other bundled accessory.
 - Do not infer sold state for Facebook Group posts. For an accepted Facebook Group listing, return
   status AVAILABLE; RECON does not track SOLD for this connector.
 

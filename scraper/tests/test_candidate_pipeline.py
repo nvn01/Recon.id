@@ -9,6 +9,7 @@ from unittest.mock import Mock, patch
 
 from scraper.ai_manager import process_batch, run_manager, wait_for_departure
 from scraper.candidate_pool import CandidatePool, canonical_image_url, evidence_fingerprint
+from scraper.reddit.nvidia_parser import merge_ai_results
 from scraper.shared.config import DEFAULT_CONFIG_PATH
 
 
@@ -308,6 +309,59 @@ class AiManagerTests(unittest.TestCase):
             self.assertNotIn("media", result)
             self.assertEqual(writes[0][1]["images"][0]["sourceUrl"], "https://images.example/item.jpg")
             self.assertNotIn("cachedUrl", writes[0][1]["images"][0])
+            self.assertEqual(pool.stats()["done"], 2)
+
+    def test_manager_does_not_upsert_ai_rejected_facebook_group_products(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            pool = CandidatePool(Path(tmpdir) / "pool.sqlite3")
+            raw = [
+                {
+                    **sample_listing("FACEBOOK_GROUP", "group-mixer"),
+                    "title": "Mixer 7 liter",
+                    "description": "Dimahar aja mixer kapasitas 7 liter",
+                    "_sourceFacts": {"sourceType": "facebook_group"},
+                },
+                {
+                    **sample_listing("FACEBOOK_GROUP", "group-gpu"),
+                    "title": "WTS RTX 2060 Super",
+                    "description": "Palit RTX 2060 Super 8GB harga 2.700.000",
+                    "_sourceFacts": {"sourceType": "facebook_group"},
+                },
+            ]
+            analyses = [
+                {"externalId": "group-mixer", "isListing": False},
+                {
+                    "externalId": "group-gpu",
+                    "isListing": True,
+                    "title": "Palit RTX 2060 Super 8GB",
+                    "price": 2_700_000,
+                    "locationTexts": [],
+                    "conditionText": "Bekas - baik",
+                    "status": "AVAILABLE",
+                    "category": "Graphics Card",
+                    "brand": "Palit",
+                    "sellerName": None,
+                },
+            ]
+            pool.enqueue(raw, source_id="facebook-groups:test", now=NOW)
+            leased = pool.lease_batch(batch_size=2, max_wait_seconds=0, now=NOW)
+            writes: list[list[dict[str, object]]] = []
+
+            result = process_batch(
+                pool,
+                leased,
+                database_url="postgresql://scraper:test-placeholder@postgres:5432/recon",
+                write_db=True,
+                enrich_fn=lambda listings: merge_ai_results(listings, analyses),
+                upsert_fn=lambda _url, listings: writes.append(listings)
+                or SimpleNamespace(as_dict=lambda: {"inserted": len(listings)}),
+                now=NOW,
+            )
+
+            self.assertTrue(result["ok"])
+            self.assertEqual(result["parsed"], 1)
+            self.assertEqual(result["validated"], 1)
+            self.assertEqual([listing["externalId"] for listing in writes[0]], ["group-gpu"])
             self.assertEqual(pool.stats()["done"], 2)
 
     def test_manager_requeues_the_whole_batch_when_ai_fails(self):

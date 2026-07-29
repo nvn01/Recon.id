@@ -162,6 +162,78 @@ class NvidiaParserPromptTests(unittest.TestCase):
         self.assertIn("WTB/wanted-to-buy", SYSTEM_PROMPT)
         self.assertIn("does not track SOLD", SYSTEM_PROMPT)
 
+    def test_prompt_restricts_facebook_group_posts_to_recon_product_scope(self):
+        self.assertIn("computers, PC components, PC peripherals, or gaming", SYSTEM_PROMPT)
+        self.assertIn("motorcycles, cars, and bicycles", SYSTEM_PROMPT)
+        self.assertIn("kitchen or household appliances", SYSTEM_PROMPT)
+        self.assertIn("mixers, blenders", SYSTEM_PROMPT)
+        self.assertIn("isListing false even when the post is a real WTS offer", SYSTEM_PROMPT)
+
+    def test_facebook_group_ai_rejection_drops_irrelevant_sale_but_keeps_pc_listing(self):
+        listings = [
+            {
+                "externalId": "group-mixer",
+                "platform": "FACEBOOK_GROUP",
+                "title": "Mixer 7 liter",
+                "description": "Dimahar aja mixer kapasitas 7 liter",
+                "_sourceFacts": {"sourceType": "facebook_group"},
+            },
+            {
+                "externalId": "group-gpu",
+                "platform": "FACEBOOK_GROUP",
+                "title": "WTS RTX 2060 Super",
+                "description": "Palit RTX 2060 Super 8GB harga 2.700.000",
+                "_sourceFacts": {"sourceType": "facebook_group"},
+            },
+        ]
+        analyses = [
+            {"externalId": "group-mixer", "isListing": False},
+            {
+                "externalId": "group-gpu",
+                "isListing": True,
+                "title": "Palit RTX 2060 Super 8GB",
+                "price": 2_700_000,
+                "locationTexts": [],
+                "conditionText": "Bekas - baik",
+                "status": "AVAILABLE",
+                "category": "Graphics Card",
+                "brand": "Palit",
+                "sellerName": None,
+            },
+        ]
+
+        [accepted] = merge_ai_results(listings, analyses)
+
+        self.assertEqual(accepted["externalId"], "group-gpu")
+        self.assertNotIn("_sourceFacts", accepted)
+
+    def test_non_group_connectors_keep_their_existing_ai_listing_decision(self):
+        listings = [
+            {
+                "externalId": "instagram-phone",
+                "platform": "INSTAGRAM",
+                "title": "Xiaomi 13 Ultra",
+            }
+        ]
+        analyses = [
+            {
+                "externalId": "instagram-phone",
+                "isListing": True,
+                "title": "Xiaomi 13 Ultra",
+                "price": 9_000_000,
+                "locationTexts": [],
+                "conditionText": "Bekas - baik",
+                "status": "AVAILABLE",
+                "category": "Smartphone",
+                "brand": "Xiaomi",
+                "sellerName": None,
+            }
+        ]
+
+        [accepted] = merge_ai_results(listings, analyses)
+
+        self.assertEqual(accepted["category"], "Smartphone")
+
     def test_non_json_response_does_not_trigger_unguided_retry(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             client = NvidiaParseClient(
