@@ -389,6 +389,7 @@ def run_instagram(args: argparse.Namespace, config: dict[str, Any]) -> dict[str,
     state = default_runtime_state() if args.no_state else load_runtime_state(state_path)
     state["last_run_at"] = now_iso()
     account_state_map = instagram_account_state_map(state)
+    carousel_cache = instagram_carousel_cache(state)
     accounts_to_fetch: list[str] = []
     skipped_accounts: list[dict[str, Any]] = []
     platform_cooldown_remaining = 0 if args.ignore_cooldown else cooldown_seconds_remaining(state)
@@ -461,6 +462,10 @@ def run_instagram(args: argparse.Namespace, config: dict[str, Any]) -> dict[str,
         browser=str(getattr(args, "instagram_browser", None) or instagram_config.get("browser") or "chromium"),
         headless=resolve_instagram_headless(args, instagram_config),
         browser_wait_ms=int_value(instagram_config.get("browser_wait_ms"), 8000),
+        carousel_cache=carousel_cache,
+        carousel_detail_limit=int_value(instagram_config.get("carousel_detail_limit"), 3),
+        carousel_detail_wait_ms=int_value(instagram_config.get("carousel_detail_wait_ms"), 4000),
+        carousel_detail_delay_ms=int_value(instagram_config.get("carousel_detail_delay_ms"), 500),
     )
     raw_listings = listings
     account_results = skipped_accounts + account_results
@@ -583,6 +588,14 @@ def instagram_account_state_map(state: dict[str, Any]) -> dict[str, Any]:
         accounts = {}
         state["accounts"] = accounts
     return accounts
+
+
+def instagram_carousel_cache(state: dict[str, Any]) -> dict[str, list[str]]:
+    cache = state.get("carousel_images")
+    if not isinstance(cache, dict):
+        cache = {}
+        state["carousel_images"] = cache
+    return cache
 
 
 def instagram_account_state(accounts: dict[str, Any], account: str) -> dict[str, Any]:

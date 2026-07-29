@@ -40,6 +40,28 @@ def extract_profile_posts(script_texts: Iterable[str]) -> list[dict[str, Any]]:
     return sorted(by_shortcode.values(), key=post_sort_key, reverse=True)
 
 
+def extract_post_detail(script_texts: Iterable[str], shortcode: str) -> dict[str, Any] | None:
+    """Return the richest matching post object from an individual post page."""
+    expected_shortcode = str(shortcode or "").strip()
+    if not expected_shortcode:
+        return None
+
+    merged: dict[str, Any] | None = None
+    for text in script_texts:
+        try:
+            payload = json.loads(text)
+        except (TypeError, json.JSONDecodeError):
+            continue
+
+        for node in walk_objects(payload):
+            node_shortcode = str(node.get("code") or node.get("shortcode") or "")
+            if node_shortcode != expected_shortcode:
+                continue
+            post = canonical_post(node)
+            merged = post if merged is None else merge_posts(merged, post)
+    return merged
+
+
 def merge_posts(current: dict[str, Any], incoming: dict[str, Any]) -> dict[str, Any]:
     """Merge complementary embedded/network fields for one Instagram shortcode."""
     merged = dict(current)

@@ -162,6 +162,12 @@ browser_mode = "headed"
 headless = false
 browser = "chrome"
 browser_wait_ms = 8000
+# Profile timelines now identify carousel posts but often expose only the cover.
+# Open at most three individual post pages per account cycle and reuse successful
+# image sets from persisted connector state on later cycles.
+carousel_detail_limit = 3
+carousel_detail_wait_ms = 4000
+carousel_detail_delay_ms = 500
 
 [facebook.marketplace]
 enabled = true

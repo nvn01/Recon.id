@@ -12,14 +12,14 @@ import urllib.request
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 try:
-    from scraper.instagram.embedded import extract_profile_posts
+    from scraper.instagram.embedded import extract_post_detail, extract_profile_posts, merge_posts
     from scraper.shared.runtime import RetryPolicy, retry_after_seconds_from_headers, retry_call
 except ImportError:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-    from instagram.embedded import extract_profile_posts
+    from instagram.embedded import extract_post_detail, extract_profile_posts, merge_posts
     from shared.runtime import RetryPolicy, retry_after_seconds_from_headers, retry_call
 
 
@@ -74,6 +74,10 @@ def run_accounts(
     browser: str = "chromium",
     headless: bool = True,
     browser_wait_ms: int = 8000,
+    carousel_cache: dict[str, list[str]] | None = None,
+    carousel_detail_limit: int = 3,
+    carousel_detail_wait_ms: int = 4000,
+    carousel_detail_delay_ms: int = 500,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     listings: list[dict[str, Any]] = []
     results: list[dict[str, Any]] = []
@@ -93,6 +97,10 @@ def run_accounts(
                     browser=browser,
                     headless=headless,
                     browser_wait_ms=browser_wait_ms,
+                    carousel_cache=carousel_cache,
+                    carousel_detail_limit=carousel_detail_limit,
+                    carousel_detail_wait_ms=carousel_detail_wait_ms,
+                    carousel_detail_delay_ms=carousel_detail_delay_ms,
                 ),
                 policy=policy,
                 should_retry=is_retryable_fetch_error,
@@ -156,6 +164,10 @@ def fetch_profile_resilient(
     browser: str,
     headless: bool,
     browser_wait_ms: int,
+    carousel_cache: dict[str, list[str]] | None = None,
+    carousel_detail_limit: int = 3,
+    carousel_detail_wait_ms: int = 4000,
+    carousel_detail_delay_ms: int = 500,
 ) -> tuple[int, dict[str, Any]]:
     mode = (fetch_mode or "direct").strip().lower()
     if mode not in {"direct", "browser", "auto"}:
@@ -169,6 +181,10 @@ def fetch_profile_resilient(
             browser=browser,
             headless=headless,
             wait_ms=browser_wait_ms,
+            carousel_cache=carousel_cache,
+            carousel_detail_limit=carousel_detail_limit,
+            carousel_detail_wait_ms=carousel_detail_wait_ms,
+            carousel_detail_delay_ms=carousel_detail_delay_ms,
         )
     if mode == "direct":
         return fetch_profile(username, timeout=timeout, user_agent=user_agent)
@@ -210,6 +226,10 @@ def fetch_profile_browser(
     browser: str,
     headless: bool,
     wait_ms: int,
+    carousel_cache: dict[str, list[str]] | None = None,
+    carousel_detail_limit: int = 3,
+    carousel_detail_wait_ms: int = 4000,
+    carousel_detail_delay_ms: int = 500,
 ) -> tuple[int, dict[str, Any]]:
     try:
         from playwright.sync_api import Error as PlaywrightError
@@ -233,10 +253,16 @@ def fetch_profile_browser(
             try:
                 page = context.new_page()
                 timeline_payloads: list[dict[str, Any]] = []
+                instagram_payloads: list[Any] = []
 
                 def handle_response(candidate: Any) -> None:
                     try:
-                        capture_timeline_response(candidate, timeline_payloads)
+                        payload = instagram_json_payload(candidate)
+                        if payload is None:
+                            return
+                        instagram_payloads.append(payload)
+                        if isinstance(payload, dict) and extract_profile_posts([json.dumps(payload)]):
+                            timeline_payloads.append(payload)
                     except PlaywrightError:
                         # A response callback can finish after navigation or context
                         # teardown. That race must not fail the whole account run.
@@ -268,6 +294,42 @@ def fetch_profile_browser(
                         f"finalPath={final_path!r}, title={page_title!r})",
                         status=status,
                     )
+
+                detail_requests = 0
+
+                def fetch_detail(shortcode: str) -> dict[str, Any] | None:
+                    nonlocal detail_requests
+                    if detail_requests and carousel_detail_delay_ms > 0:
+                        page.wait_for_timeout(max(0, int(carousel_detail_delay_ms)))
+                    detail_requests += 1
+                    payload_start = len(instagram_payloads)
+                    try:
+                        detail_response = page.goto(
+                            f"https://www.instagram.com/p/{urllib.parse.quote(shortcode, safe='')}/",
+                            wait_until="domcontentloaded",
+                            timeout=timeout_ms,
+                        )
+                        detail_status = int(detail_response.status) if detail_response is not None else 200
+                        if detail_status >= 400:
+                            return None
+                        if urllib.parse.urlparse(page.url).path.startswith("/accounts/login"):
+                            return None
+                        return wait_for_post_detail(
+                            page,
+                            instagram_payloads,
+                            shortcode,
+                            payload_start=payload_start,
+                            wait_ms=max(0, int(carousel_detail_wait_ms)),
+                        )
+                    except (PlaywrightError, PlaywrightTimeoutError):
+                        return None
+
+                posts = enrich_carousel_posts(
+                    posts,
+                    cache=carousel_cache if carousel_cache is not None else {},
+                    max_detail_posts=max(0, int(carousel_detail_limit)),
+                    fetch_detail=fetch_detail,
+                )
 
                 payload = {
                     "data": {
@@ -321,25 +383,160 @@ def wait_for_profile_posts(
         remaining_wait_ms -= interval_ms
 
 
+def wait_for_post_detail(
+    page: Any,
+    response_payloads: list[Any],
+    shortcode: str,
+    *,
+    payload_start: int,
+    wait_ms: int,
+    poll_interval_ms: int = 250,
+) -> dict[str, Any] | None:
+    """Pump browser events until the individual post exposes its carousel children."""
+    remaining_wait_ms = max(0, int(wait_ms))
+    interval_limit_ms = max(1, int(poll_interval_ms))
+    while True:
+        script_texts = page.locator('script[type="application/json"]').all_text_contents()
+        network_texts = [json.dumps(payload) for payload in response_payloads[payload_start:]]
+        detail = extract_post_detail([*script_texts, *network_texts], shortcode)
+        if detail and carousel_image_count(detail) >= expected_carousel_count(detail):
+            return detail
+        if remaining_wait_ms <= 0:
+            return detail
+
+        interval_ms = min(interval_limit_ms, remaining_wait_ms)
+        page.wait_for_timeout(interval_ms)
+        remaining_wait_ms -= interval_ms
+
+
+def enrich_carousel_posts(
+    posts: list[dict[str, Any]],
+    *,
+    cache: dict[str, list[str]],
+    max_detail_posts: int,
+    fetch_detail: Callable[[str], dict[str, Any] | None],
+) -> list[dict[str, Any]]:
+    """Hydrate carousel children from cache or a bounded individual-post fetch."""
+    enriched_posts: list[dict[str, Any]] = []
+    detail_attempts = 0
+
+    for original in posts:
+        post = dict(original)
+        shortcode = str(post.get("shortcode") or "").strip()
+        expected_count = expected_carousel_count(post)
+        if not shortcode or expected_count < 2:
+            enriched_posts.append(post)
+            continue
+
+        current_urls = image_urls(post)
+        if len(current_urls) >= expected_count:
+            remember_carousel(cache, shortcode, current_urls)
+            enriched_posts.append(post)
+            continue
+
+        cached_urls = valid_cached_urls(cache.get(shortcode))
+        if len(cached_urls) >= expected_count:
+            remember_carousel(cache, shortcode, cached_urls)
+            enriched_posts.append(apply_image_urls(post, cached_urls))
+            continue
+
+        if detail_attempts >= max(0, int(max_detail_posts)):
+            enriched_posts.append(post)
+            continue
+
+        detail_attempts += 1
+        detail = fetch_detail(shortcode)
+        if detail:
+            post = merge_posts(post, detail)
+            detail_urls = image_urls(post)
+            if len(detail_urls) >= expected_count:
+                post = apply_image_urls(post, detail_urls)
+                remember_carousel(cache, shortcode, detail_urls)
+        enriched_posts.append(post)
+
+    prune_carousel_cache(cache)
+    return enriched_posts
+
+
+def expected_carousel_count(post: dict[str, Any]) -> int:
+    configured = integer_or_zero(post.get("carousel_media_count"))
+    if configured >= 2:
+        return configured
+    if integer_or_zero(post.get("media_type")) == 8:
+        return 2
+    if str(post.get("product_type") or "").strip().lower() == "carousel_container":
+        return 2
+    return 0
+
+
+def carousel_image_count(post: dict[str, Any]) -> int:
+    return len(image_urls(post))
+
+
+def image_urls(post: dict[str, Any]) -> list[str]:
+    return [str(image["sourceUrl"]) for image in extract_images(post, str(post.get("shortcode") or ""))]
+
+
+def valid_cached_urls(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    urls: list[str] = []
+    for candidate in value:
+        url = str(candidate or "").strip()
+        if url.startswith("https://") and url not in urls:
+            urls.append(url)
+    return urls
+
+
+def apply_image_urls(post: dict[str, Any], urls: list[str]) -> dict[str, Any]:
+    enriched = dict(post)
+    if urls and not enriched.get("display_url"):
+        enriched["display_url"] = urls[0]
+    enriched["edge_sidecar_to_children"] = {
+        "edges": [{"node": {"display_url": url}} for url in urls]
+    }
+    return enriched
+
+
+def remember_carousel(cache: dict[str, list[str]], shortcode: str, urls: list[str]) -> None:
+    valid_urls = valid_cached_urls(urls)
+    if len(valid_urls) < 2:
+        return
+    cache.pop(shortcode, None)
+    cache[shortcode] = valid_urls
+
+
+def prune_carousel_cache(cache: dict[str, list[str]], max_entries: int = 1000) -> None:
+    limit = max(1, int(max_entries))
+    while len(cache) > limit:
+        cache.pop(next(iter(cache)))
+
+
 def capture_timeline_response(response: Any, captured: list[dict[str, Any]]) -> None:
     """Keep supported logged-out timeline JSON without binding to a rotating doc id."""
+    payload = instagram_json_payload(response)
+    if not isinstance(payload, dict):
+        return
+    if not extract_profile_posts([json.dumps(payload)]):
+        return
+    captured.append(payload)
+
+
+def instagram_json_payload(response: Any) -> Any | None:
+    """Return supported same-origin Instagram JSON for profile or post parsing."""
     try:
         parsed_url = urllib.parse.urlparse(str(response.url or ""))
         if parsed_url.hostname not in {"instagram.com", "www.instagram.com"}:
-            return
+            return None
         if int(response.status) != 200:
-            return
+            return None
         content_type = str((response.headers or {}).get("content-type") or "").lower()
         if "json" not in content_type and "javascript" not in content_type:
-            return
+            return None
         payload = response.json()
-        if not isinstance(payload, dict):
-            return
-        if not extract_profile_posts([json.dumps(payload)]):
-            return
-        captured.append(payload)
+        return payload if isinstance(payload, (dict, list)) else None
     except (AttributeError, TypeError, ValueError, json.JSONDecodeError):
-        return
+        return None
 
 
 def is_retryable_fetch_error(exc: Exception) -> bool:
