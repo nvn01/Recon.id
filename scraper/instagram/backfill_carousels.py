@@ -15,7 +15,6 @@ from scraper.instagram.instagram import (
     wait_for_post_detail,
 )
 from scraper.storage.postgres import (
-    canonical_media_source_url,
     new_record_id,
     require_database_url,
 )
@@ -76,12 +75,6 @@ def additional_image_rows(
 
     urls = image_urls(detail)
     if len(urls) < 2:
-        return []
-
-    cover_identity = canonical_media_source_url(pending.cover_url)
-    if canonical_media_source_url(urls[0]) != cover_identity:
-        # Instagram can rotate signed query values, but the media path for the
-        # same cover must still match before child positions are trusted.
         return []
 
     return [
