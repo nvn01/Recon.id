@@ -63,10 +63,11 @@ target_groups = ["hot"]
 
 [scheduler.facebook_groups]
 enabled = true
-# Eleven groups run one at a time. A 49-second stagger completes one rotation
-# in about nine minutes; each individual group repeats after 540 seconds.
-cadence_seconds = 540
-stagger_seconds = 49
+# Eleven groups join the shared Facebook collector sequence one at a time.
+# A 32-second stagger fits every group into one six-minute rotation, and each
+# individual group becomes eligible again after 360 seconds.
+cadence_seconds = 360
+stagger_seconds = 32
 initial_delay_seconds = 30
 jitter_seconds = 5
 limit = 3

@@ -32,7 +32,7 @@ DEFAULT_SCHEDULER_LOG_FILE = SCRAPER_DIR / ".logs" / "scheduler_runs.jsonl"
 DEFAULT_SCHEDULER_LOCK_FILE = SCRAPER_DIR / ".state" / "scheduler.lock"
 DEFAULT_SCHEDULER_LOCK_STALE_SECONDS = 7200
 DEFAULT_CATCH_UP_SPACING_SECONDS = 60
-FACEBOOK_CATCH_UP_SPACING_SECONDS = 30
+FACEBOOK_CATCH_UP_SPACING_SECONDS = 25
 
 
 @dataclass(frozen=True)
@@ -398,8 +398,8 @@ def build_facebook_group_jobs(config: dict[str, Any]) -> list[ScheduleJob]:
     if not targets:
         return []
 
-    cadence = max(60, int_value(schedule_config.get("cadence_seconds"), 540))
-    stagger = max(1, int_value(schedule_config.get("stagger_seconds"), 49))
+    cadence = max(60, int_value(schedule_config.get("cadence_seconds"), 360))
+    stagger = max(1, int_value(schedule_config.get("stagger_seconds"), 32))
     initial_delay = max(0, int_value(schedule_config.get("initial_delay_seconds"), 30))
     jitter = max(0, int_value(schedule_config.get("jitter_seconds"), 5))
     limit = max(1, int_value(schedule_config.get("limit"), int_value(source_config.get("limit"), 3)))
@@ -632,8 +632,8 @@ def coalesce_due_jobs(
         for job in ordered[1:]:
             if first.connector == "facebook":
                 # Marketplace and Groups share this request family. A bounded
-                # 30-second catch-up ring avoids both a restart burst and a
-                # delay that would push Groups beyond their ten-minute sweep.
+                # 25-second catch-up ring avoids both a restart burst and a
+                # delay that would push the combined family beyond six minutes.
                 offset = previous_offset + min(spacing, FACEBOOK_CATCH_UP_SPACING_SECONDS)
             else:
                 offset = job.initial_delay_seconds - first.initial_delay_seconds

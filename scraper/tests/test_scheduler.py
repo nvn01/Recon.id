@@ -304,21 +304,32 @@ class SchedulerTests(unittest.TestCase):
             ),
         )
 
-    def test_production_facebook_group_jobs_complete_a_sub_ten_minute_ring(self):
+    def test_production_facebook_group_jobs_share_a_six_minute_facebook_ring(self):
         config = load_config(DEFAULT_CONFIG_PATH)
-        jobs = [job for job in build_jobs(config) if job.id.startswith("facebook-groups:")]
+        facebook_jobs = [job for job in build_jobs(config) if job.connector == "facebook"]
+        group_jobs = [job for job in facebook_jobs if job.id.startswith("facebook-groups:")]
 
-        self.assertEqual(len(jobs), 11)
-        self.assertTrue(all(job.connector == "facebook" for job in jobs))
-        self.assertTrue(all(job.cadence_seconds == 540 for job in jobs))
-        self.assertTrue(all("--facebook-groups" in job.args for job in jobs))
+        self.assertEqual(len(group_jobs), 11)
+        self.assertTrue(all(job.connector == "facebook" for job in group_jobs))
+        self.assertTrue(all(job.cadence_seconds == 360 for job in group_jobs))
+        self.assertTrue(all("--facebook-groups" in job.args for job in group_jobs))
         self.assertEqual(
-            [job.initial_delay_seconds for job in jobs],
-            [30, 79, 128, 177, 226, 275, 324, 373, 422, 471, 520],
+            [job.initial_delay_seconds for job in group_jobs],
+            [30, 62, 94, 126, 158, 190, 222, 254, 286, 318, 350],
         )
-        self.assertLess(jobs[-1].initial_delay_seconds, 600)
+        self.assertLess(group_jobs[-1].initial_delay_seconds, 360)
+        self.assertEqual(
+            [
+                (job.initial_delay_seconds, job.id.startswith("facebook-groups:"))
+                for job in sorted(
+                    facebook_jobs,
+                    key=lambda job: (job.initial_delay_seconds, job.id),
+                )[:6]
+            ],
+            [(0, False), (30, True), (60, False), (62, True), (94, True), (120, False)],
+        )
 
-    def test_facebook_restart_catch_up_avoids_burst_and_keeps_group_sweep_under_ten_minutes(self):
+    def test_facebook_restart_catch_up_keeps_shared_ring_under_six_minutes(self):
         config = load_config(DEFAULT_CONFIG_PATH)
         facebook_jobs = [job for job in build_jobs(config) if job.connector == "facebook"]
         state = {"startedAt": "2026-07-29T00:00:00+00:00", "jobs": {}}
@@ -333,8 +344,8 @@ class SchedulerTests(unittest.TestCase):
             if job.id != due[0].id
         ]
         offsets = sorted(int((value - now).total_seconds()) for value in deferred)
-        self.assertEqual(offsets, list(range(30, 30 * len(facebook_jobs), 30)))
-        self.assertLess(max(offsets), 600)
+        self.assertEqual(offsets, list(range(25, 25 * len(facebook_jobs), 25)))
+        self.assertLess(max(offsets), 360)
 
     def test_initial_stagger_prevents_all_instagram_accounts_from_being_due_at_start(self):
         jobs = build_jobs(sample_config())
