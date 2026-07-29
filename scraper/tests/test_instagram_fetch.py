@@ -4,11 +4,13 @@ import json
 import unittest
 from unittest.mock import patch
 
-from scraper.instagram.embedded import extract_profile_posts
+from scraper.instagram.embedded import extract_post_detail, extract_profile_posts
 from scraper.instagram.instagram import (
     InstagramFetchError,
     capture_timeline_response,
+    enrich_carousel_posts,
     ensure_profile_not_login_redirect,
+    extract_images,
     fetch_profile_resilient,
     run_accounts,
     wait_for_profile_posts,
@@ -16,6 +18,146 @@ from scraper.instagram.instagram import (
 
 
 class InstagramFetchTests(unittest.TestCase):
+    def test_post_detail_parser_extracts_complete_carousel_media(self):
+        payload = {
+            "require": [
+                {
+                    "shortcode": "CAROUSEL",
+                    "tracking_only": True,
+                },
+                {
+                    "code": "CAROUSEL",
+                    "pk": "900",
+                    "media_type": 8,
+                    "product_type": "carousel_container",
+                    "display_uri": "https://cdn.example/cover.jpg",
+                    "carousel_media": [
+                        {"display_uri": "https://cdn.example/cover.jpg"},
+                        {"display_uri": "https://cdn.example/two.jpg"},
+                        {
+                            "image_versions2": {
+                                "candidates": [{"url": "https://cdn.example/three.jpg"}]
+                            }
+                        },
+                    ],
+                },
+            ]
+        }
+
+        detail = extract_post_detail([json.dumps(payload)], "CAROUSEL")
+
+        self.assertIsNotNone(detail)
+        self.assertEqual(
+            [image["sourceUrl"] for image in extract_images(detail or {}, "CAROUSEL")],
+            [
+                "https://cdn.example/cover.jpg",
+                "https://cdn.example/two.jpg",
+                "https://cdn.example/three.jpg",
+            ],
+        )
+
+    def test_carousel_enrichment_fetches_detail_once_and_populates_cache(self):
+        posts = [
+            {
+                "shortcode": "CAROUSEL",
+                "media_type": 8,
+                "product_type": "carousel_container",
+                "carousel_media_count": 3,
+                "display_url": "https://cdn.example/cover.jpg",
+            },
+            {
+                "shortcode": "SINGLE",
+                "media_type": 1,
+                "product_type": "feed",
+                "display_url": "https://cdn.example/single.jpg",
+            },
+        ]
+        fetched: list[str] = []
+        cache: dict[str, list[str]] = {}
+
+        def fetch_detail(shortcode: str):
+            fetched.append(shortcode)
+            return {
+                "shortcode": shortcode,
+                "edge_sidecar_to_children": {
+                    "edges": [
+                        {"node": {"display_url": "https://cdn.example/cover.jpg"}},
+                        {"node": {"display_url": "https://cdn.example/two.jpg"}},
+                        {"node": {"display_url": "https://cdn.example/three.jpg"}},
+                    ]
+                },
+            }
+
+        enriched = enrich_carousel_posts(
+            posts,
+            cache=cache,
+            max_detail_posts=3,
+            fetch_detail=fetch_detail,
+        )
+
+        self.assertEqual(fetched, ["CAROUSEL"])
+        self.assertEqual(len(extract_images(enriched[0], "CAROUSEL")), 3)
+        self.assertEqual(
+            cache["CAROUSEL"],
+            [
+                "https://cdn.example/cover.jpg",
+                "https://cdn.example/two.jpg",
+                "https://cdn.example/three.jpg",
+            ],
+        )
+        self.assertEqual(len(extract_images(enriched[1], "SINGLE")), 1)
+
+    def test_carousel_enrichment_reuses_cache_without_another_detail_request(self):
+        posts = [
+            {
+                "shortcode": "CACHED",
+                "media_type": 8,
+                "carousel_media_count": 2,
+                "display_url": "https://cdn.example/cover.jpg",
+            }
+        ]
+        cache = {
+            "CACHED": [
+                "https://cdn.example/cover.jpg",
+                "https://cdn.example/two.jpg",
+            ]
+        }
+
+        enriched = enrich_carousel_posts(
+            posts,
+            cache=cache,
+            max_detail_posts=3,
+            fetch_detail=lambda _shortcode: self.fail("cached carousel must not be fetched again"),
+        )
+
+        self.assertEqual(len(extract_images(enriched[0], "CACHED")), 2)
+
+    def test_carousel_enrichment_bounds_detail_requests_and_keeps_cover_on_failure(self):
+        posts = [
+            {
+                "shortcode": shortcode,
+                "media_type": 8,
+                "carousel_media_count": 2,
+                "display_url": f"https://cdn.example/{shortcode}.jpg",
+            }
+            for shortcode in ("FIRST", "SECOND", "THIRD")
+        ]
+        fetched: list[str] = []
+
+        def fetch_detail(shortcode: str):
+            fetched.append(shortcode)
+            return None
+
+        enriched = enrich_carousel_posts(
+            posts,
+            cache={},
+            max_detail_posts=2,
+            fetch_detail=fetch_detail,
+        )
+
+        self.assertEqual(fetched, ["FIRST", "SECOND"])
+        self.assertEqual([len(extract_images(post, post["shortcode"])) for post in enriched], [1, 1, 1])
+
     def test_account_collection_obeys_requested_limit(self):
         payload = {
             "data": {
