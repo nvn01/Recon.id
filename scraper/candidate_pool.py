@@ -78,15 +78,25 @@ def evidence_fingerprint(listing: dict[str, Any]) -> str:
     # every source field. Instagram can expose a different CDN path and postedAt
     # value for the same post between otherwise identical fetches. Neither is
     # semantic input that should send an already-reviewed listing back to AI.
+    source_facts = listing.get("_sourceFacts") if isinstance(listing.get("_sourceFacts"), dict) else {}
     evidence = {
         "platform": str(listing.get("platform") or "UNKNOWN").upper(),
         "sourceUrl": canonical_url(listing.get("sourceUrl")),
         "externalId": str(listing.get("externalId") or ""),
-        "title": listing.get("title"),
-        "description": listing.get("description"),
-        "sellerName": listing.get("sellerName"),
-        "sourceFacts": listing.get("_sourceFacts") if isinstance(listing.get("_sourceFacts"), dict) else {},
     }
+    if source_facts.get("sourceType") == "facebook_group":
+        # A group post boards the train once. Edits or regenerated CDN URLs do
+        # not create more AI work because Groups have no reliable sold lifecycle.
+        evidence["sourceType"] = "facebook_group"
+    else:
+        evidence.update(
+            {
+                "title": listing.get("title"),
+                "description": listing.get("description"),
+                "sellerName": listing.get("sellerName"),
+                "sourceFacts": source_facts,
+            }
+        )
     serialized = json.dumps(evidence, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     return f"v2:{hashlib.sha256(serialized.encode('utf-8')).hexdigest()}"
 

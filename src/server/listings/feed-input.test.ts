@@ -10,7 +10,7 @@ describe("listingFeedInputSchema", () => {
   it("accepts the bounded filters required by the public UI", () => {
     expect(
       listingFeedInputSchema.parse({
-        platforms: ["instagram", "facebook"],
+        platforms: ["instagram", "facebook", "facebook_group"],
         statuses: ["available", "sold"],
         categories: ["Laptop", "GPU"],
         locations: ["Bandung", "Jakarta Selatan"],
@@ -23,7 +23,7 @@ describe("listingFeedInputSchema", () => {
         direction: "forward",
       }),
     ).toEqual({
-      platforms: ["instagram", "facebook"],
+      platforms: ["instagram", "facebook", "facebook_group"],
       statuses: ["available", "sold"],
       categories: ["Laptop", "GPU"],
       locations: ["Bandung", "Jakarta Selatan"],

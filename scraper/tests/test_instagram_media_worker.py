@@ -35,7 +35,7 @@ class FakeCursor:
     def __init__(self, connection):
         self.connection = connection
         self.rowcount = -1
-        self.rows: list[tuple[str, str]] = []
+        self.rows: list[tuple[str, ...]] = []
 
     def __enter__(self):
         return self
@@ -55,7 +55,7 @@ class FakeCursor:
 
 
 class FakeConnection:
-    def __init__(self, rows: list[tuple[str, str]]):
+    def __init__(self, rows: list[tuple[str, ...]]):
         self.rows = rows
         self.executions: list[tuple[str, object]] = []
         self.commits = 0
@@ -74,9 +74,9 @@ class FakeConnection:
 
 
 class InstagramMediaWorkerTests(unittest.TestCase):
-    def test_database_query_is_an_instagram_only_durable_media_queue(self):
+    def test_database_query_selects_instagram_and_facebook_group_media_only(self):
         connection = FakeConnection(
-            [("image-1", "https://scontent.cdninstagram.com/one.jpg")],
+            [("image-1", "https://scontent.cdninstagram.com/one.jpg", "instagram")],
         )
         cache = FakeCache([cached_image()])
 
@@ -91,11 +91,33 @@ class InstagramMediaWorkerTests(unittest.TestCase):
         select_sql, select_params = connection.executions[0]
         update_sql, update_params = connection.executions[1]
         self.assertIn("listing.platform = 'instagram'::listing_platform", select_sql)
+        self.assertIn("listing.platform = 'facebook_group'::listing_platform", select_sql)
+        self.assertNotIn("listing.source_url LIKE", select_sql)
         self.assertIn("image.cached_url IS NULL", select_sql)
         self.assertEqual(select_params, ("", 25))
         self.assertIn("WHERE id = %(id)s AND cached_url IS NULL", update_sql)
         self.assertEqual(update_params["id"], "image-1")
         self.assertEqual(connection.commits, 1)
+        self.assertEqual(result.updated, 1)
+
+    def test_facebook_group_rows_use_the_facebook_r2_cache(self):
+        connection = FakeConnection(
+            [("image-2", "https://scontent-test.fbcdn.net/group.jpg", "facebook_groups")],
+        )
+        instagram_cache = FakeCache([])
+        facebook_cache = FakeCache([cached_image()])
+
+        result = cache_pending_batch(
+            "postgresql://scraper:test-placeholder@postgres:5432/recon",
+            after_id="",
+            batch_size=25,
+            cache=instagram_cache,
+            facebook_groups_cache=facebook_cache,
+            connect_fn=lambda _url: connection,
+        )
+
+        self.assertEqual(instagram_cache.urls, [])
+        self.assertEqual(facebook_cache.urls, ["https://scontent-test.fbcdn.net/group.jpg"])
         self.assertEqual(result.updated, 1)
 
     def test_caches_pending_rows_after_database_ingestion_and_updates_only_successes(self):

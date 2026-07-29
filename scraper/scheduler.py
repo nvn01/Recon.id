@@ -32,6 +32,7 @@ DEFAULT_SCHEDULER_LOG_FILE = SCRAPER_DIR / ".logs" / "scheduler_runs.jsonl"
 DEFAULT_SCHEDULER_LOCK_FILE = SCRAPER_DIR / ".state" / "scheduler.lock"
 DEFAULT_SCHEDULER_LOCK_STALE_SECONDS = 7200
 DEFAULT_CATCH_UP_SPACING_SECONDS = 60
+FACEBOOK_CATCH_UP_SPACING_SECONDS = 30
 
 
 @dataclass(frozen=True)
@@ -65,6 +66,11 @@ class FacebookTargetPlan:
     groups: tuple[str, ...] = ()
     cadence_seconds: int | None = None
     limit: int | None = None
+
+
+@dataclass(frozen=True)
+class FacebookGroupTargetPlan:
+    id: str
 
 
 def main() -> int:
@@ -186,6 +192,7 @@ def build_jobs(config: dict[str, Any]) -> list[ScheduleJob]:
     jobs.extend(build_reddit_jobs(config))
     jobs.extend(build_instagram_jobs(config))
     jobs.extend(build_facebook_jobs(config))
+    jobs.extend(build_facebook_group_jobs(config))
     jobs.extend(build_operational_report_jobs(config))
     return jobs
 
@@ -380,6 +387,82 @@ def build_facebook_target_jobs(
     return jobs
 
 
+def build_facebook_group_jobs(config: dict[str, Any]) -> list[ScheduleJob]:
+    source_config = table(config, "facebook", "groups")
+    schedule_config = table(config, "scheduler", "facebook_groups")
+    if not source_config.get("enabled", False) or not schedule_config.get("enabled", False):
+        return []
+
+    targets_file = resolve_facebook_group_targets_path(source_config.get("targets_file"))
+    targets = load_facebook_group_targets(targets_file)
+    if not targets:
+        return []
+
+    cadence = max(60, int_value(schedule_config.get("cadence_seconds"), 540))
+    stagger = max(1, int_value(schedule_config.get("stagger_seconds"), 49))
+    initial_delay = max(0, int_value(schedule_config.get("initial_delay_seconds"), 30))
+    jitter = max(0, int_value(schedule_config.get("jitter_seconds"), 5))
+    limit = max(1, int_value(schedule_config.get("limit"), int_value(source_config.get("limit"), 3)))
+    browser = str(schedule_config.get("browser") or source_config.get("browser") or "chrome").strip()
+
+    jobs: list[ScheduleJob] = []
+    for index, target in enumerate(targets):
+        job_args = [
+            "--facebook-groups",
+            "--facebook-group-target",
+            target.id,
+            "--limit",
+            str(limit),
+            "--headless",
+        ]
+        if browser:
+            job_args.extend(["--facebook-browser", browser])
+        jobs.append(
+            ScheduleJob(
+                id=f"facebook-groups:{target.id}",
+                # Marketplace and Groups deliberately share one scheduler family
+                # so missed jobs cannot burst Facebook requests after restart.
+                connector="facebook",
+                cadence_seconds=cadence,
+                args=tuple(job_args),
+                initial_delay_seconds=initial_delay + index * stagger,
+                jitter_seconds=jitter,
+            )
+        )
+    return jobs
+
+
+def resolve_facebook_group_targets_path(value: Any) -> Path:
+    raw = Path(str(value or "../facebook_groups/source_targets.json"))
+    if raw.is_absolute():
+        return raw
+    return (SCRAPER_DIR / "config" / raw).resolve()
+
+
+def load_facebook_group_targets(path: Path) -> list[FacebookGroupTargetPlan]:
+    if not path.exists():
+        return []
+    try:
+        loaded = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return []
+    records = loaded.get("targets", []) if isinstance(loaded, dict) else []
+    if not isinstance(records, list):
+        return []
+
+    targets: list[FacebookGroupTargetPlan] = []
+    seen: set[str] = set()
+    for record in records:
+        if not isinstance(record, dict):
+            continue
+        target_id = str(record.get("id") or "").strip()
+        if not target_id or target_id in seen:
+            continue
+        seen.add(target_id)
+        targets.append(FacebookGroupTargetPlan(id=target_id))
+    return targets
+
+
 def resolve_facebook_targets_path(value: Any) -> Path:
     raw = Path(str(value or "../facebook/source_targets.json"))
     if raw.is_absolute():
@@ -547,9 +630,15 @@ def coalesce_due_jobs(
         selected_ids.add(first.id)
         previous_offset = 0
         for job in ordered[1:]:
-            offset = job.initial_delay_seconds - first.initial_delay_seconds
-            if offset <= previous_offset:
-                offset = previous_offset + spacing
+            if first.connector == "facebook":
+                # Marketplace and Groups share this request family. A bounded
+                # 30-second catch-up ring avoids both a restart burst and a
+                # delay that would push Groups beyond their ten-minute sweep.
+                offset = previous_offset + min(spacing, FACEBOOK_CATCH_UP_SPACING_SECONDS)
+            else:
+                offset = job.initial_delay_seconds - first.initial_delay_seconds
+                if offset <= previous_offset:
+                    offset = previous_offset + spacing
             previous_offset = offset
             job_state = scheduler_jobs.get(job.id)
             if not isinstance(job_state, dict):

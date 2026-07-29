@@ -26,7 +26,7 @@ LISTING_KEYS = (
 )
 
 IMAGE_KEYS = ("sourceUrl", "position", "altText")
-PLATFORMS = {"REDDIT", "INSTAGRAM", "FACEBOOK"}
+PLATFORMS = {"REDDIT", "INSTAGRAM", "FACEBOOK", "FACEBOOK_GROUP"}
 STATUSES = {"AVAILABLE", "SOLD", "UNKNOWN"}
 
 
@@ -50,7 +50,7 @@ def validate_listing(value: dict[str, Any]) -> dict[str, Any]:
     if platform:
         platform = platform.upper()
     if platform not in PLATFORMS:
-        errors.append("platform must be REDDIT, INSTAGRAM, or FACEBOOK")
+        errors.append("platform must be REDDIT, INSTAGRAM, FACEBOOK, or FACEBOOK_GROUP")
     cleaned["platform"] = platform
 
     status = string_or_none(cleaned["status"])

@@ -19,7 +19,8 @@ MAX_OUTPUT_TOKENS = 8192
 
 SYSTEM_PROMPT = """
 You are RECON's strict semantic parser for Indonesian second-hand technology listings.
-You receive batches from Reddit, Instagram, or Facebook Marketplace and must return only JSON that
+You receive batches from Reddit, Instagram, Facebook Marketplace, or Facebook buy/sell Groups and
+must return only JSON that
 matches the supplied schema. Do not use Markdown, explanations, notes, confidence, or extra keys.
 
 Output discipline:
@@ -47,6 +48,13 @@ Output discipline:
 Facebook Marketplace rules:
 - Facebook card text is compact and may combine price, title, and location. Separate those concepts;
   never treat the entire card line as one extracted field.
+
+Facebook Group rules:
+- Items whose sourceFacts.sourceType is facebook_group come from loosely moderated buy/sell groups.
+  isListing must be false for WTB/wanted-to-buy posts, questions, repair requests, buying services,
+  discussion, and promotions that do not offer a specific product for sale.
+- Do not infer sold state for Facebook Group posts. For an accepted Facebook Group listing, return
+  status AVAILABLE; RECON does not track SOLD for this connector.
 
 - conditionText:
   1. Normalize conditionText to exactly one of: "Baru / BNIB", "Like New", "Bekas - baik",
@@ -461,11 +469,17 @@ def merge_ai_results(
         if analysis:
             if analysis.get("isListing") is not True:
                 continue
+            source_facts = item.get("_sourceFacts") if isinstance(item.get("_sourceFacts"), dict) else {}
+            is_facebook_group = source_facts.get("sourceType") == "facebook_group"
             item["title"] = blank_to_none(analysis.get("title")) or item["title"]
             item["price"] = normalize_ai_price(analysis.get("price"))
             item["locationTexts"] = normalize_ai_locations(analysis.get("locationTexts"))
             item["conditionText"] = normalize_ai_condition(analysis.get("conditionText"))
-            item["status"] = normalize_ai_status(analysis.get("status")) or "UNKNOWN"
+            item["status"] = (
+                "AVAILABLE"
+                if is_facebook_group
+                else normalize_ai_status(analysis.get("status")) or "UNKNOWN"
+            )
             item["category"] = blank_to_none(analysis.get("category"))
             item["brand"] = blank_to_none(analysis.get("brand"))
             item["sellerName"] = blank_to_none(item.get("sellerName"))

@@ -205,7 +205,11 @@ class SchedulerTests(unittest.TestCase):
         self.assertEqual(config["scheduler"]["facebook"]["browser"], "chrome")
         self.assertEqual(config["facebook"]["marketplace"]["browser"], "chrome")
 
-        facebook_jobs = [job for job in build_jobs(config) if job.connector == "facebook"]
+        facebook_jobs = [
+            job
+            for job in build_jobs(config)
+            if job.connector == "facebook" and not job.id.startswith("facebook-groups:")
+        ]
         self.assertTrue(all(job.cadence_seconds == 180 for job in facebook_jobs))
         self.assertEqual([job.initial_delay_seconds for job in facebook_jobs], [0, 60, 120])
         self.assertTrue(all("--ai-parse" not in job.args for job in facebook_jobs))
@@ -299,6 +303,38 @@ class SchedulerTests(unittest.TestCase):
                 "chromium",
             ),
         )
+
+    def test_production_facebook_group_jobs_complete_a_sub_ten_minute_ring(self):
+        config = load_config(DEFAULT_CONFIG_PATH)
+        jobs = [job for job in build_jobs(config) if job.id.startswith("facebook-groups:")]
+
+        self.assertEqual(len(jobs), 11)
+        self.assertTrue(all(job.connector == "facebook" for job in jobs))
+        self.assertTrue(all(job.cadence_seconds == 540 for job in jobs))
+        self.assertTrue(all("--facebook-groups" in job.args for job in jobs))
+        self.assertEqual(
+            [job.initial_delay_seconds for job in jobs],
+            [30, 79, 128, 177, 226, 275, 324, 373, 422, 471, 520],
+        )
+        self.assertLess(jobs[-1].initial_delay_seconds, 600)
+
+    def test_facebook_restart_catch_up_avoids_burst_and_keeps_group_sweep_under_ten_minutes(self):
+        config = load_config(DEFAULT_CONFIG_PATH)
+        facebook_jobs = [job for job in build_jobs(config) if job.connector == "facebook"]
+        state = {"startedAt": "2026-07-29T00:00:00+00:00", "jobs": {}}
+        now = datetime(2026, 7, 29, 12, 0, tzinfo=timezone.utc)
+
+        due = coalesce_due_jobs(facebook_jobs, state, now, run_due_now=True)
+
+        self.assertEqual(len(due), 1)
+        deferred = [
+            datetime.fromisoformat(state["jobs"][job.id]["nextDueAt"])
+            for job in facebook_jobs
+            if job.id != due[0].id
+        ]
+        offsets = sorted(int((value - now).total_seconds()) for value in deferred)
+        self.assertEqual(offsets, list(range(30, 30 * len(facebook_jobs), 30)))
+        self.assertLess(max(offsets), 600)
 
     def test_initial_stagger_prevents_all_instagram_accounts_from_being_due_at_start(self):
         jobs = build_jobs(sample_config())

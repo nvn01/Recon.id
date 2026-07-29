@@ -1,0 +1,161 @@
+{
+  "initial": {
+    "data": {
+      "node": {
+        "group_feed": {
+          "edges": [
+            {
+              "node": {
+                "post_id": "post-101",
+                "url": "https://www.facebook.com/groups/test-group/posts/post-101/?tracking=removed",
+                "message": {
+                  "text": "WTS RTX 2060 Super 8GB\nHarga 2.700.000 nett\nLokasi Bandung"
+                },
+                "actors": [
+                  {
+                    "id": "seller-1",
+                    "name": "Public Seller"
+                  }
+                ],
+                "target_group": {
+                  "id": "group-1"
+                },
+                "creation_time": 1785283500,
+                "attachments": [
+                  {
+                    "styles": {
+                      "attachment": {
+                        "__typename": "Photo",
+                        "accessibility_caption": "Foto kartu grafis",
+                        "image": {
+                          "uri": "https://scontent-test.fbcdn.net/rtx.jpg?token=temporary"
+                        }
+                      }
+                    }
+                  }
+                ],
+                "commerce": {
+                  "__typename": "GroupCommerceProductItem",
+                  "id": "product-101",
+                  "formatted_price": {
+                    "text": "Rp2.700.000"
+                  },
+                  "location_text": {
+                    "text": "Bandung"
+                  },
+                  "marketplace_listing_seller": {
+                    "id": "seller-1",
+                    "name": "Public Seller"
+                  }
+                }
+              }
+            },
+            {
+              "node": {
+                "post_id": "post-101",
+                "permalink_url": "https://www.facebook.com/groups/test-group/posts/post-101/",
+                "target_group": {
+                  "id": "group-1"
+                },
+                "publish_time": 1785283500
+              }
+            },
+            {
+              "node": {
+                "post_id": "post-104",
+                "url": "https://www.facebook.com/groups/test-group/posts/post-104/",
+                "message": {
+                  "text": "WTS older monitor"
+                },
+                "target_group": {
+                  "id": "group-1"
+                },
+                "creation_time": 1785280000,
+                "attachments": [
+                  {
+                    "__typename": "Photo",
+                    "image": {
+                      "uri": "https://scontent-test.fbcdn.net/monitor.jpg"
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      }
+    }
+  },
+  "pagination": {
+    "data": {
+      "node": {
+        "group_feed": {
+          "edges": [
+            {
+              "node": {
+                "post_id": "post-102",
+                "url": "https://www.facebook.com/groups/test-group/posts/post-102/",
+                "message": {
+                  "text": "WTB SSD 1TB lokasi BSD"
+                },
+                "actors": [
+                  {
+                    "id": "buyer-1",
+                    "name": "Public Buyer"
+                  }
+                ],
+                "target_group": {
+                  "id": "group-1"
+                },
+                "creation_time": 1785283600,
+                "attachments": []
+              }
+            },
+            {
+              "node": {
+                "post_id": "post-103",
+                "url": "https://www.facebook.com/groups/test-group/posts/post-103/",
+                "message": {
+                  "text": ""
+                },
+                "target_group": {
+                  "id": "group-1"
+                },
+                "creation_time": 1785283400,
+                "attachments": [],
+                "attached_story": {
+                  "post_id": "inner-103",
+                  "message": {
+                    "text": "Dijual PC gaming Ryzen 5 lengkap"
+                  },
+                  "actors": [
+                    {
+                      "id": "seller-2",
+                      "name": "Shared Seller"
+                    }
+                  ],
+                  "target_group": {
+                    "id": "group-1"
+                  },
+                  "attachments": [
+                    {
+                      "__typename": "Photo",
+                      "accessibility_caption": "Foto PC gaming",
+                      "image": {
+                        "uri": "https://scontent-test.fbcdn.net/pc.jpg"
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          ],
+          "page_info": {
+            "has_next_page": true,
+            "end_cursor": "opaque"
+          }
+        }
+      }
+    }
+  }
+}

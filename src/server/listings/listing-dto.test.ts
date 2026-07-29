@@ -84,10 +84,32 @@ describe("toListingDto", () => {
     ).toThrow("listing source URL must use HTTPS");
   });
 
-  it("uses original media for non-Instagram listings even if cached metadata is present", () => {
+  it("uses original media for Marketplace listings even if cached metadata is present", () => {
     expect(
       toListingDto({ ...listing, platform: "FACEBOOK" }).images[1]?.sourceUrl,
     ).toBe("https://scontent.example/image-2.jpg");
+  });
+
+  it("uses the dedicated cached media URL for Facebook Group listings", () => {
+    const images = listing.images.map((image) =>
+      image.position === 2
+        ? {
+            ...image,
+            cachedUrl:
+              "https://media.app-pixel.com/production/facebook-groups/aa/two.jpg",
+          }
+        : image,
+    );
+
+    expect(
+      toListingDto({
+        ...listing,
+        platform: "FACEBOOK_GROUP",
+        images,
+      }).images[1]?.sourceUrl,
+    ).toBe(
+      "https://media.app-pixel.com/production/facebook-groups/aa/two.jpg",
+    );
   });
 
   it("uses the manually corrected seller name when one exists", () => {

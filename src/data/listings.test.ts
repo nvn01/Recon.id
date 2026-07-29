@@ -4,6 +4,8 @@ import {
   collectionCategories,
   formatListedAt,
   formatRupiah,
+  listingPlatforms,
+  platformMeta,
 } from "~/data/listings";
 
 describe("real listing presentation", () => {
@@ -35,5 +37,12 @@ describe("real listing presentation", () => {
     expect(formatListedAt(new Date("2026-07-14T11:52:00Z"), now)).toBe(
       "8 menit lalu",
     );
+  });
+
+  it("keeps Facebook Marketplace and Facebook Groups distinct", () => {
+    expect(listingPlatforms).toContain("facebook");
+    expect(listingPlatforms).toContain("facebook_group");
+    expect(platformMeta.facebook.label).toBe("Facebook Marketplace");
+    expect(platformMeta.facebook_group.label).toBe("Facebook Grup JB");
   });
 });

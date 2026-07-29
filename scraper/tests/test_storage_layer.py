@@ -103,6 +103,14 @@ class StorageLayerTests(unittest.TestCase):
         self.assertIsNone(row["posted_at"].tzinfo)
         self.assertEqual(row["posted_at"], datetime(2026, 7, 7, 3, 30))
 
+    def test_listing_to_db_row_keeps_facebook_group_separate(self):
+        row = listing_to_db_row(
+            sample_listing(platform="FACEBOOK_GROUP"),
+            listing_id="listing_group",
+        )
+
+        self.assertEqual(row["platform"], "facebook_group")
+
     def test_image_rows_keep_last_image_per_position(self):
         rows = image_rows("listing_123", sample_listing()["images"])
 

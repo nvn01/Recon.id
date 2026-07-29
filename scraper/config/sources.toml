@@ -61,6 +61,17 @@ browser = "chrome"
 split_targets = true
 target_groups = ["hot"]
 
+[scheduler.facebook_groups]
+enabled = true
+# Eleven groups run one at a time. A 49-second stagger completes one rotation
+# in about nine minutes; each individual group repeats after 540 seconds.
+cadence_seconds = 540
+stagger_seconds = 49
+initial_delay_seconds = 30
+jitter_seconds = 5
+limit = 3
+browser = "chrome"
+
 [candidate_pool]
 # Raw normalized candidates stay scraper-side until centralized AI parsing.
 path = ".state/candidate_pool.sqlite3"
@@ -80,10 +91,10 @@ retry_seconds = 300
 lease_seconds = 300
 
 [media_worker]
-# PostgreSQL is the durable media queue: uncached Instagram image rows are
-# processed only after the AI manager has committed their listings.
-log_file = ".logs/instagram_media_worker.jsonl"
-lock_file = ".state/instagram_media_worker.lock"
+# PostgreSQL is the durable media queue: uncached Instagram and Facebook Group
+# image rows are processed only after the AI manager commits their listings.
+log_file = ".logs/media_worker.jsonl"
+lock_file = ".state/media_worker.lock"
 batch_size = 25
 poll_seconds = 60.0
 
@@ -168,3 +179,13 @@ browser = "chrome"
 session_mode = "ephemeral"
 block_assets = true
 details = false
+
+[facebook.groups]
+enabled = true
+targets_file = "../facebook_groups/source_targets.json"
+limit = 3
+timeout_seconds = 30
+wait_ms = 6500
+cooldown_seconds = 3600
+browser = "chrome"
+block_assets = true
