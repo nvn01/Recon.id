@@ -7,8 +7,13 @@ on:
         description: "Production Docker tag, for example 1.0.0"
         required: true
         type: string
+      promote_web:
+        description: "Promote the web image"
+        required: false
+        default: true
+        type: boolean
       promote_scraper:
-        description: "Also promote the scraper image"
+        description: "Promote the scraper image"
         required: false
         default: false
         type: boolean
@@ -37,6 +42,16 @@ jobs:
             exit 1
           fi
 
+      - name: Validate image selection
+        env:
+          PROMOTE_WEB: ${{ inputs.promote_web }}
+          PROMOTE_SCRAPER: ${{ inputs.promote_scraper }}
+        run: |
+          if [[ "$PROMOTE_WEB" != "true" && "$PROMOTE_SCRAPER" != "true" ]]; then
+            echo "Select at least one image to promote."
+            exit 1
+          fi
+
       - name: Login to Docker Hub
         uses: docker/login-action@v3
         with:
@@ -47,6 +62,7 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Promote web image manifest
+        if: inputs.promote_web
         env:
           VERSION: ${{ inputs.version }}
         run: |
