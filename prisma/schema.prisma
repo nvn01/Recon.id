@@ -9,9 +9,10 @@ datasource db {
 }
 
 enum ListingPlatform {
-  REDDIT    @map("reddit")
-  INSTAGRAM @map("instagram")
-  FACEBOOK  @map("facebook")
+  REDDIT         @map("reddit")
+  INSTAGRAM      @map("instagram")
+  FACEBOOK       @map("facebook")
+  FACEBOOK_GROUP @map("facebook_group")
 
   @@map("listing_platform")
 }

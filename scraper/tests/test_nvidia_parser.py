@@ -127,6 +127,41 @@ class NvidiaParserPromptTests(unittest.TestCase):
 
         self.assertEqual(merge_ai_results(listings, analyses), [])
 
+    def test_facebook_group_listing_never_uses_ai_sold_status(self):
+        listings = [
+            {
+                "externalId": "group-post-1",
+                "platform": "FACEBOOK_GROUP",
+                "title": "raw",
+                "status": "UNKNOWN",
+                "_sourceFacts": {"sourceType": "facebook_group"},
+            }
+        ]
+        analyses = [
+            {
+                "externalId": "group-post-1",
+                "isListing": True,
+                "title": "RTX 2060 Super",
+                "price": 2_700_000,
+                "locationTexts": ["Bandung"],
+                "conditionText": "Bekas - baik",
+                "status": "SOLD",
+                "category": "Graphics Card",
+                "brand": "Palit",
+                "sellerName": None,
+            }
+        ]
+
+        [parsed] = merge_ai_results(listings, analyses)
+
+        self.assertEqual(parsed["status"], "AVAILABLE")
+        self.assertNotIn("_sourceFacts", parsed)
+
+    def test_prompt_explains_facebook_group_wtb_and_sold_rules(self):
+        self.assertIn("Facebook Group rules", SYSTEM_PROMPT)
+        self.assertIn("WTB/wanted-to-buy", SYSTEM_PROMPT)
+        self.assertIn("does not track SOLD", SYSTEM_PROMPT)
+
     def test_non_json_response_does_not_trigger_unguided_retry(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             client = NvidiaParseClient(

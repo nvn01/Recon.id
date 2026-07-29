@@ -10,7 +10,7 @@ from typing import Any
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 
-VALID_PLATFORMS = {"REDDIT", "INSTAGRAM", "FACEBOOK"}
+VALID_PLATFORMS = {"REDDIT", "INSTAGRAM", "FACEBOOK", "FACEBOOK_GROUP"}
 VALID_STATUSES = {"AVAILABLE", "SOLD", "UNKNOWN"}
 SENSITIVE_QUERY_KEYS = frozenset(
     {

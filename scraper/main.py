@@ -129,6 +129,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--instagram", action="store_true", help="Run Instagram connector.")
     parser.add_argument("--facebook", action="store_true", help="Run Facebook Marketplace connector.")
+    parser.add_argument("--facebook-groups", action="store_true", help="Run Facebook buy/sell Groups connector.")
     parser.add_argument("--all", action="store_true", help="Run every enabled connector. This is the default if no connector flag is given.")
     parser.add_argument("--limit", type=int, default=None, help="Override per-source listing limit.")
     parser.add_argument("--format", choices=("json", "jsonl"), default="json", help="Output format.")
@@ -150,6 +151,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--facebook-browser", choices=("chrome", "chromium"), default=None, help="Facebook Playwright browser channel override.")
     parser.add_argument("--facebook-target", action="append", default=None, help="Facebook target id from source_targets.json. Can be repeated.")
     parser.add_argument("--facebook-target-group", action="append", default=None, help="Facebook target group from source_targets.json. Can be repeated.")
+    parser.add_argument(
+        "--facebook-group-target",
+        action="append",
+        default=None,
+        help="Facebook Groups target id from facebook_groups/source_targets.json. Can be repeated.",
+    )
     parser.add_argument("--instagram-account", action="append", default=None, help="Instagram account username. Can be repeated.")
     parser.add_argument(
         "--instagram-fetch-mode",
@@ -173,7 +180,7 @@ def should_lock_orchestrator(args: argparse.Namespace) -> bool:
         return False
     if args.write_db or args.all:
         return True
-    return not any((args.reddit, args.instagram, args.facebook))
+    return not any((args.reddit, args.instagram, args.facebook, getattr(args, "facebook_groups", False)))
 
 
 def locked_output(
@@ -251,16 +258,19 @@ def selected_connectors(args: argparse.Namespace, config: dict[str, Any]) -> lis
         "reddit": args.reddit,
         "instagram": args.instagram,
         "facebook": args.facebook,
+        "facebook_groups": getattr(args, "facebook_groups", False),
     }
     if args.all or not any(requested.values()):
+        sections = (
+            ("reddit", table(config, "reddit", "wts_computers"), True),
+            ("instagram", table(config, "instagram", "accounts"), True),
+            ("facebook", table(config, "facebook", "marketplace"), True),
+            ("facebook_groups", table(config, "facebook", "groups"), False),
+        )
         return [
             name
-            for name, section in (
-                ("reddit", table(config, "reddit", "wts_computers")),
-                ("instagram", table(config, "instagram", "accounts")),
-                ("facebook", table(config, "facebook", "marketplace")),
-            )
-            if section.get("enabled", True)
+            for name, section, enabled_default in sections
+            if section.get("enabled", enabled_default)
         ]
     return [name for name, enabled in requested.items() if enabled]
 
@@ -274,6 +284,8 @@ def run_connector(connector: str, args: argparse.Namespace, config: dict[str, An
             result = run_instagram(args, config)
         elif connector == "facebook":
             result = run_facebook(args, config, egress)
+        elif connector == "facebook_groups":
+            result = run_facebook_groups(args, config)
         else:
             raise ValueError(f"unknown connector: {connector}")
     except Exception as exc:
@@ -695,6 +707,58 @@ def run_facebook(args: argparse.Namespace, config: dict[str, Any], egress: Egres
         "targetsFile": str(targets_file),
         "targetIds": target_ids,
         "targetGroups": target_groups,
+        "normalized": len(listings),
+        "validated": len(valid),
+        "validationErrors": invalid,
+        "listings": valid,
+        **candidate_output(args, raw_listings, valid),
+    }
+
+
+def run_facebook_groups(args: argparse.Namespace, config: dict[str, Any]) -> dict[str, Any]:
+    from scraper.facebook_groups import facebook_groups
+
+    run_config = table(config, "run")
+    groups_config = table(config, "facebook", "groups")
+    targets_file = Path(str(groups_config.get("targets_file") or facebook_groups.DEFAULT_TARGETS_FILE))
+    if not targets_file.is_absolute():
+        targets_file = (SCRAPER_DIR / "config" / targets_file).resolve()
+    target_ids = list(getattr(args, "facebook_group_target", None) or [])
+    limit = effective_limit(args, groups_config, run_config)
+    groups_args = SimpleNamespace(
+        targets_file=str(targets_file),
+        target=target_ids or None,
+        limit=limit,
+        browser=str(args.facebook_browser or groups_config.get("browser") or "chrome"),
+        timeout=int_value(groups_config.get("timeout_seconds"), int_value(run_config.get("timeout_seconds"), 30)),
+        wait_ms=int_value(groups_config.get("wait_ms"), 6500),
+        block_assets=bool_value(groups_config.get("block_assets"), default=True),
+        state_file=str(facebook_groups.DEFAULT_STATE_FILE),
+        lock_file=str(facebook_groups.DEFAULT_LOCK_FILE),
+        log_file=str(facebook_groups.DEFAULT_LOG_FILE),
+        cooldown_seconds=int_value(groups_config.get("cooldown_seconds"), 3600),
+        ignore_cooldown=args.ignore_cooldown,
+        no_state=args.no_state,
+        lock_stale_seconds=int_value(
+            groups_config.get("lock_stale_seconds"),
+            int_value(run_config.get("lock_stale_seconds"), 900),
+        ),
+        user_agent=facebook_groups.DEFAULT_USER_AGENT,
+    )
+    code, listings, source_status = facebook_groups.guarded_run_once(groups_args, include_status=True)
+    raw_listings = listings
+    valid, invalid = validate_listings(listings)
+    ok = code == 0 and not invalid
+    return {
+        "connector": "facebook_groups",
+        "ok": ok,
+        "status": source_status if source_status == "cooldown_skip" else connector_result_status(ok, len(valid)),
+        "exitCode": code,
+        "httpStatus": None,
+        "httpStatusSource": "initial logged-out Facebook Group document",
+        "transport": "playwright_embedded_group_relay",
+        "targetsFile": str(targets_file),
+        "targetIds": target_ids,
         "normalized": len(listings),
         "validated": len(valid),
         "validationErrors": invalid,

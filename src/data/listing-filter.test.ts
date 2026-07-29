@@ -9,11 +9,11 @@ import {
 describe("listing filters", () => {
   it("parses valid repeated filters and ignores unsupported values", () => {
     const params = new URLSearchParams(
-      "platform=facebook&platform=facebook&platform=tiktok&status=available&status=removed&location=Bandung&condition=Bekas+-+baik&minPrice=1000000&maxPrice=nope",
+      "platform=facebook&platform=facebook&platform=facebook_group&platform=tiktok&status=available&status=removed&location=Bandung&condition=Bekas+-+baik&minPrice=1000000&maxPrice=nope",
     );
 
     expect(parseListingFilters(params)).toEqual({
-      platforms: ["facebook"],
+      platforms: ["facebook", "facebook_group"],
       statuses: ["available"],
       locations: ["Bandung"],
       conditions: ["Bekas - baik"],

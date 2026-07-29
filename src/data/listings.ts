@@ -55,6 +55,7 @@ export const collections = [
 export const listingPlatforms = [
   "instagram",
   "facebook",
+  "facebook_group",
   "reddit",
 ] as const satisfies readonly ListingPlatform[];
 
@@ -75,10 +76,16 @@ export const platformMeta: Record<
     description: "Listing dari akun jual-beli dan toko preloved yang dipantau.",
   },
   facebook: {
-    label: "Facebook",
-    short: "FB",
+    label: "Facebook Marketplace",
+    short: "FM",
     accent: "blue",
     description: "Temuan Marketplace dari penjual publik di berbagai kota.",
+  },
+  facebook_group: {
+    label: "Facebook Grup JB",
+    short: "FG",
+    accent: "blue",
+    description: "Posting jual-beli dari grup Facebook komunitas Indonesia.",
   },
   reddit: {
     label: "Reddit",

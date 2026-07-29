@@ -19,6 +19,7 @@ export const listingPlatformInputSchema = z.enum([
   "reddit",
   "instagram",
   "facebook",
+  "facebook_group",
 ]);
 
 export const listingStatusInputSchema = z.enum([
@@ -30,7 +31,7 @@ export const listingStatusInputSchema = z.enum([
 const platformFiltersSchema = z
   .array(listingPlatformInputSchema)
   .min(1)
-  .max(3)
+  .max(4)
   .refine(uniqueValues, "platform filters must be unique");
 
 const statusFiltersSchema = z
