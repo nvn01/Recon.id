@@ -13,6 +13,7 @@ from scraper.instagram.instagram import (
     extract_images,
     fetch_profile_resilient,
     run_accounts,
+    wait_for_post_detail,
     wait_for_profile_posts,
 )
 
@@ -131,6 +132,48 @@ class InstagramFetchTests(unittest.TestCase):
         )
 
         self.assertEqual(len(extract_images(enriched[0], "CACHED")), 2)
+
+    def test_carousel_enrichment_does_not_duplicate_rotated_profile_cover(self):
+        posts = [
+            {
+                "shortcode": "ROTATED",
+                "media_type": 8,
+                "carousel_media_count": 2,
+                "display_url": "https://scontent.cdninstagram.com/old-path/cover.jpg",
+            }
+        ]
+
+        enriched = enrich_carousel_posts(
+            posts,
+            cache={},
+            max_detail_posts=1,
+            fetch_detail=lambda _shortcode: {
+                "shortcode": "ROTATED",
+                "display_url": "https://scontent.cdninstagram.com/new-path/cover.jpg",
+                "edge_sidecar_to_children": {
+                    "edges": [
+                        {
+                            "node": {
+                                "display_url": "https://scontent.cdninstagram.com/new-path/cover.jpg"
+                            }
+                        },
+                        {
+                            "node": {
+                                "display_url": "https://scontent.cdninstagram.com/new-path/two.jpg"
+                            }
+                        },
+                    ]
+                },
+            },
+        )
+
+        self.assertEqual(
+            [image["sourceUrl"] for image in extract_images(enriched[0], "ROTATED")],
+            [
+                "https://scontent.cdninstagram.com/new-path/cover.jpg",
+                "https://scontent.cdninstagram.com/new-path/two.jpg",
+            ],
+        )
 
     def test_carousel_enrichment_bounds_detail_requests_and_keeps_cover_on_failure(self):
         posts = [
@@ -260,6 +303,51 @@ class InstagramFetchTests(unittest.TestCase):
         self.assertEqual(posts, [])
         self.assertEqual(script_count, 0)
         self.assertEqual(page.waited_ms, 750)
+
+    def test_post_detail_wait_keeps_pumping_until_carousel_children_arrive(self):
+        response_payloads: list[dict] = []
+        detail_payload = {
+            "media": {
+                "code": "CAROUSEL",
+                "media_type": 8,
+                "carousel_media": [
+                    {"display_uri": "https://cdn.example/cover.jpg"},
+                    {"display_uri": "https://cdn.example/two.jpg"},
+                ],
+            }
+        }
+
+        class FakeLocator:
+            @staticmethod
+            def all_text_contents():
+                return []
+
+        class FakePage:
+            waited_ms = 0
+
+            @staticmethod
+            def locator(selector: str):
+                self.assertEqual(selector, 'script[type="application/json"]')
+                return FakeLocator()
+
+            def wait_for_timeout(self, interval_ms: int):
+                self.waited_ms += interval_ms
+                if self.waited_ms == 500:
+                    response_payloads.append(detail_payload)
+
+        page = FakePage()
+
+        detail = wait_for_post_detail(
+            page,
+            response_payloads,
+            "CAROUSEL",
+            payload_start=0,
+            wait_ms=1000,
+        )
+
+        self.assertIsNotNone(detail)
+        self.assertEqual(len(extract_images(detail or {}, "CAROUSEL")), 2)
+        self.assertEqual(page.waited_ms, 500)
 
     def test_auto_fetch_uses_embedded_browser_profile_without_direct_api_request(self):
         payload = {"data": {"user": {"edge_owner_to_timeline_media": {"edges": []}}}}
