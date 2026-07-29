@@ -104,7 +104,9 @@ def fetch_post_details_browser(
         from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
         from playwright.sync_api import sync_playwright
     except ImportError as exc:  # pragma: no cover - verified in the scraper image.
-        raise CarouselBackfillError("Install scraper dependencies before running the carousel backfill.") from exc
+        raise CarouselBackfillError(
+            "Install scraper dependencies before running the carousel backfill."
+        ) from exc
 
     details: dict[str, dict[str, Any]] = {}
     failed = 0
@@ -144,7 +146,9 @@ def fetch_post_details_browser(
                         timeout=timeout_ms,
                     )
                     status = int(response.status) if response is not None else 200
-                    if status >= 400 or page.url.startswith("https://www.instagram.com/accounts/login"):
+                    if status >= 400 or page.url.startswith(
+                        "https://www.instagram.com/accounts/login"
+                    ):
                         failed += 1
                         continue
                     detail = wait_for_post_detail(
@@ -179,12 +183,16 @@ def run_backfill(
     delay_ms: int,
     browser: str,
     headless: bool,
-    fetch_details: Callable[..., tuple[dict[str, dict[str, Any]], int]] = fetch_post_details_browser,
+    fetch_details: Callable[
+        ..., tuple[dict[str, dict[str, Any]], int]
+    ] = fetch_post_details_browser,
 ) -> dict[str, Any]:
     try:
         import psycopg
     except ImportError as exc:  # pragma: no cover - verified in the scraper image.
-        raise CarouselBackfillError("Install scraper dependencies before running the carousel backfill.") from exc
+        raise CarouselBackfillError(
+            "Install scraper dependencies before running the carousel backfill."
+        ) from exc
 
     url = require_database_url(database_url)
     with psycopg.connect(url, connect_timeout=15) as connection:
@@ -222,7 +230,9 @@ def run_backfill(
             "imagesFound": 0,
             "imagesInserted": 0,
             "writeEnabled": write_db,
-            "nextAfterId": candidates[-1].listing_id if candidates else str(after_id or ""),
+            "nextAfterId": candidates[-1].listing_id
+            if candidates
+            else str(after_id or ""),
         }
         for candidate in candidates:
             detail = details.get(candidate.external_id)

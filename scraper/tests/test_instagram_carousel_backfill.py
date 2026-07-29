@@ -66,7 +66,11 @@ class InstagramCarouselBackfillTests(unittest.TestCase):
             "display_url": "https://cdn.example/cover.jpg?token=new",
             "edge_sidecar_to_children": {
                 "edges": [
-                    {"node": {"display_url": "https://cdn.example/cover.jpg?token=new"}},
+                    {
+                        "node": {
+                            "display_url": "https://cdn.example/cover.jpg?token=new"
+                        }
+                    },
                     {"node": {"display_url": "https://cdn.example/two.jpg"}},
                     {"node": {"display_url": "https://cdn.example/three.jpg"}},
                 ]
@@ -135,7 +139,11 @@ class InstagramCarouselBackfillTests(unittest.TestCase):
                             "display_url": "https://scontent.cdninstagram.com/new-path/cover.jpg?token=new"
                         }
                     },
-                    {"node": {"display_url": "https://scontent.cdninstagram.com/new-path/two.jpg"}},
+                    {
+                        "node": {
+                            "display_url": "https://scontent.cdninstagram.com/new-path/two.jpg"
+                        }
+                    },
                 ]
             },
         }
