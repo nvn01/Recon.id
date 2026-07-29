@@ -23,7 +23,7 @@ RECON collects public listings from multiple sources and presents them in one cl
 
 ## Sources
 
-RECON currently discovers public listings from Facebook Marketplace, Instagram, and Reddit.
+RECON currently discovers public listings from Facebook Marketplace, Facebook Groups, Instagram, and Reddit.
 
 ## Stack
 
@@ -58,7 +58,7 @@ Before starting, edit `.env`:
 
 - Replace `POSTGRES_PASSWORD` and keep the same database name, user, and password in `DATABASE_URL`.
 - Set `NVIDIA_API_KEY` to enable AI normalization.
-- Set all five `R2_*` values to enable the Instagram media worker and copy images to Cloudflare R2.
+- Set all five `R2_*` values to enable the media worker and copy Instagram, Facebook Group, and Reddit images to Cloudflare R2.
 - Keep `SCRAPER_EGRESS_MODE=direct` unless you intentionally configure and allow a proxy or VPN.
 
 Open `http://localhost:3000`. To run the scheduled scraper pipeline:
@@ -69,4 +69,4 @@ docker compose ps
 docker compose logs -f scraper-scheduler scraper-ai-manager
 ```
 
-After configuring R2, also start `scraper-media-worker`. The scheduler collects listings, the AI manager normalizes and writes them to PostgreSQL, and the optional media worker caches Instagram images. Edit accounts, source enablement, limits, and schedules in `scraper/config/sources.toml`; edit Facebook searches in `scraper/facebook/source_targets.json`. Never put API keys, cookies, or passwords in those tracked files.
+After configuring R2, also start `scraper-media-worker`. The scheduler collects listings, the AI manager normalizes and writes them to PostgreSQL, and the optional media worker caches Instagram, Facebook Group, and Reddit images. Edit accounts, source enablement, limits, and schedules in `scraper/config/sources.toml`; edit Marketplace searches in `scraper/facebook/source_targets.json` and Group targets in `scraper/facebook_groups/source_targets.json`. Never put API keys, cookies, or passwords in those tracked files.

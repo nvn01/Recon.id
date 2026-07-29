@@ -59,12 +59,13 @@ interpolate a raw search pattern or apply client-only filtering to one page.
 - Listing and image URLs returned by the DTO must use HTTPS and contain no URL
   credentials. Unsafe image URLs are omitted; an unsafe primary listing URL
   fails closed.
-- The API still returns URLs only and never performs network fetches. Instagram
-  and Reddit media are downloaded by the production media worker on `ubserver1`,
-  stored in Cloudflare R2, and recorded alongside the original source URL. For
-  those two platforms, the DTO prefers a safe HTTPS `cachedUrl` only when its
-  `production/<platform>/...` prefix matches the listing platform, then falls
-  back to the original `sourceUrl`. Facebook always uses its original image URL.
+- The API still returns URLs only and never performs network fetches. Instagram,
+  Reddit, and Facebook Group media are downloaded by the production media worker
+  on `ubserver1`, stored in Cloudflare R2, and recorded alongside the original
+  source URL. For those three platforms, the DTO prefers a safe HTTPS
+  `cachedUrl` only when its platform prefix matches the listing platform, then
+  falls back to the original `sourceUrl`. Facebook Marketplace always uses its
+  original image URL.
 - Public prices below IDR 10,000 and known dummy sequences such as `12345` and
   `123456` are returned as unknown because historical values in those groups
   include seller placeholders. Contact-like, URL-like, multiline, and

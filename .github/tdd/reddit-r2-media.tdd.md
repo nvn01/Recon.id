@@ -11,14 +11,14 @@ Journeys were derived from the reported production failures and screenshots on
   RSS thumbnail so cards and detail previews stay sharp.
 - As a RECON visitor, I see each real Reddit gallery asset exactly once and in
   source order.
-- As an operator, I cache both Instagram and Reddit media in Cloudflare R2 while
-  Facebook remains origin-only.
+- As an operator, I add Reddit to the existing Instagram and Facebook Group R2
+  worker while Facebook Marketplace remains origin-only.
 - As an operator, I can inspect and repair historical Reddit image rows without
   writing until I explicitly pass `--apply`.
 
 ## RED checkpoint
 
-Commit: `504b5d7 test: reproduce Reddit media quality and cache failures`
+Original RED commit: `504b5d7`; rebased commit: `1058e1e`.
 
 Commands:
 
@@ -38,7 +38,7 @@ Observed RED evidence:
 
 ## GREEN checkpoint
 
-Commit: `704f4c9 fix: cache canonical Reddit gallery images in R2`
+Original GREEN commit: `704f4c9`; rebased commit: `6a7452d`.
 
 Focused commands:
 
@@ -53,7 +53,7 @@ Final commands and results:
 
 ```text
 python -m unittest discover -s scraper/tests -p "test_*.py"
-137 tests passed
+151 tests passed
 
 python -m compileall -q scraper
 PASS
@@ -62,8 +62,8 @@ python -m ruff check scraper
 All checks passed
 
 npm run test:coverage
-79 tests passed
-Statements 91.5%, branches 88.11%, functions 94.73%, lines 93.83%
+81 tests passed
+Statements 91.5%, branches 87.94%, functions 94.73%, lines 93.83%
 
 npx tsc --noEmit --incremental false
 PASS
@@ -90,7 +90,7 @@ current three-platform schema; no generated files were committed.
 | 2 | Gallery metadata preserves item order and emits one original per item | `test_gallery_metadata_returns_one_original_image_per_item_in_gallery_order` | Unit | PASS |
 | 3 | Reddit R2 objects use `production/reddit/...` and Reddit metadata | `test_reddit_upload_uses_a_separate_content_addressed_prefix` | Unit | PASS |
 | 4 | Reddit and Instagram have separate strict source-host allowlists | `test_source_validation_allowlists_reddit_media_without_weakening_instagram` | Security unit | PASS |
-| 5 | The durable worker selects Instagram and Reddit but not Facebook | `test_database_query_is_an_instagram_and_reddit_durable_media_queue` | Integration-style unit | PASS |
+| 5 | The durable worker selects Instagram, Reddit, and Facebook Groups but not Marketplace | `test_database_query_selects_all_r2_platforms_but_not_marketplace` | Integration-style unit | PASS |
 | 6 | Reddit DTOs prefer only a platform-matching R2 URL | `uses the dedicated Reddit R2 image when it is present and safe` | API unit | PASS |
 | 7 | A cross-platform R2 prefix is rejected and falls back to origin | `rejects a cached Reddit image stored under another platform prefix` | API security unit | PASS |
 | 8 | Historical preview rows are canonicalized without losing gallery order | `test_desired_urls_upgrade_existing_previews_and_preserve_gallery_order` | Unit | PASS |
@@ -122,5 +122,6 @@ database write, deployment, or production backfill was performed.
 - Individual post RSS recovery is intentionally limited to rows with no images,
   waits 15 seconds between requests by default, and stops further missing-image
   requests after a final `429`.
-- The current production image remains Instagram-only until an explicitly
-  approved staging/promotion and reviewed dry-run backfill.
+- The current production image already supports Instagram and Facebook Group
+  caching. Reddit remains pending an explicitly approved staging/promotion and
+  reviewed dry-run backfill.

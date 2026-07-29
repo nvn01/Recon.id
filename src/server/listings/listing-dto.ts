@@ -113,11 +113,14 @@ export function isSafeCachedMediaUrl(
   value: string,
   platform: ListingFeedRecord["platform"],
 ): boolean {
-  const platformPath = {
-    INSTAGRAM: "instagram",
-    REDDIT: "reddit",
-    FACEBOOK_GROUP: "facebook-groups",
-  }[platform];
+  const platformPath =
+    platform === "INSTAGRAM"
+      ? "instagram"
+      : platform === "REDDIT"
+        ? "reddit"
+        : platform === "FACEBOOK_GROUP"
+          ? "facebook-groups"
+          : null;
   if (!platformPath) {
     return false;
   }
