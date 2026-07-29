@@ -8,6 +8,89 @@ from scraper.reddit import reddit
 
 
 class RedditFetchTests(unittest.TestCase):
+    def test_rss_images_use_original_reddit_assets_and_remove_thumbnail_duplicates(self):
+        content = """
+        <a href="https://preview.redd.it/first.jpeg?width=140&amp;height=140&amp;auto=webp">thumb</a>
+        <img src="https://preview.redd.it/first.jpeg?width=1280&amp;format=pjpg&amp;auto=webp">
+        <img src="https://preview.redd.it/second.jpg?width=1280&amp;format=pjpg&amp;auto=webp">
+        """
+
+        self.assertEqual(
+            reddit.extract_image_urls(content),
+            [
+                "https://i.redd.it/first.jpeg",
+                "https://i.redd.it/second.jpg",
+            ],
+        )
+
+    def test_gallery_metadata_returns_one_original_image_per_item_in_gallery_order(self):
+        payload = [
+            {
+                "data": {
+                    "children": [
+                        {
+                            "data": {
+                                "id": "gallery",
+                                "gallery_data": {
+                                    "items": [
+                                        {"media_id": "second"},
+                                        {"media_id": "first"},
+                                    ]
+                                },
+                                "media_metadata": {
+                                    "first": {
+                                        "status": "valid",
+                                        "m": "image/jpeg",
+                                        "s": {
+                                            "u": "https://preview.redd.it/first.jpg?auto=webp"
+                                        },
+                                        "p": [
+                                            {
+                                                "u": "https://preview.redd.it/first.jpg?width=1080&amp;auto=webp",
+                                                "x": 1080,
+                                                "y": 1440,
+                                            }
+                                        ],
+                                    },
+                                    "second": {
+                                        "status": "valid",
+                                        "m": "image/jpeg",
+                                        "s": {
+                                            "u": "https://preview.redd.it/second.jpg?auto=webp"
+                                        },
+                                        "p": [
+                                            {
+                                                "u": "https://preview.redd.it/second.jpg?width=1080&amp;auto=webp",
+                                                "x": 1080,
+                                                "y": 1440,
+                                            }
+                                        ],
+                                    },
+                                },
+                                "preview": {
+                                    "images": [
+                                        {
+                                            "source": {
+                                                "url": "https://preview.redd.it/second.jpg?width=640&amp;auto=webp"
+                                            }
+                                        }
+                                    ]
+                                },
+                            }
+                        }
+                    ]
+                }
+            }
+        ]
+
+        self.assertEqual(
+            reddit.extract_images_from_reddit_json(payload),
+            [
+                "https://i.redd.it/second.jpg",
+                "https://i.redd.it/first.jpg",
+            ],
+        )
+
     def test_fetch_flair_feeds_keeps_all_sources_and_waits_between_them(self):
         flairs = [
             "WTS: Computers & Peripherals",

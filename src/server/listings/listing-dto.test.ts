@@ -112,6 +112,42 @@ describe("toListingDto", () => {
     );
   });
 
+  it("uses the dedicated Reddit R2 image when it is present and safe", () => {
+    const images = listing.images.map((image) =>
+      image.position === 2
+        ? {
+            ...image,
+            sourceUrl: "https://i.redd.it/image-2.jpg",
+            cachedUrl:
+              "https://media.app-pixel.com/production/reddit/aa/two.jpg",
+          }
+        : image,
+    );
+
+    expect(
+      toListingDto({ ...listing, platform: "REDDIT", images }).images[1]
+        ?.sourceUrl,
+    ).toBe("https://media.app-pixel.com/production/reddit/aa/two.jpg");
+  });
+
+  it("rejects a cached Reddit image stored under another platform prefix", () => {
+    const images = listing.images.map((image) =>
+      image.position === 2
+        ? {
+            ...image,
+            sourceUrl: "https://i.redd.it/image-2.jpg",
+            cachedUrl:
+              "https://media.app-pixel.com/production/instagram/aa/two.jpg",
+          }
+        : image,
+    );
+
+    expect(
+      toListingDto({ ...listing, platform: "REDDIT", images }).images[1]
+        ?.sourceUrl,
+    ).toBe("https://i.redd.it/image-2.jpg");
+  });
+
   it("uses the manually corrected seller name when one exists", () => {
     expect(
       toListingDto({

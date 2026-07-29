@@ -23,6 +23,19 @@ class FakeCache:
         self.outcomes = outcomes
         self.urls: list[str] = []
 
+    def cache_image(self, source_url: str, *, platform: str) -> CachedImage:
+        self.urls.append(f"{platform}:{source_url}")
+        outcome = self.outcomes.pop(0)
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
+
+
+class FakeSinglePlatformCache:
+    def __init__(self, outcomes: list[CachedImage | Exception]):
+        self.outcomes = outcomes
+        self.urls: list[str] = []
+
     def cache_image(self, source_url: str) -> CachedImage:
         self.urls.append(source_url)
         outcome = self.outcomes.pop(0)
@@ -74,9 +87,9 @@ class FakeConnection:
 
 
 class InstagramMediaWorkerTests(unittest.TestCase):
-    def test_database_query_selects_instagram_and_facebook_group_media_only(self):
+    def test_database_query_selects_all_r2_platforms_but_not_marketplace(self):
         connection = FakeConnection(
-            [("image-1", "https://scontent.cdninstagram.com/one.jpg", "instagram")],
+            [("image-1", "https://i.redd.it/one.jpg", "reddit")],
         )
         cache = FakeCache([cached_image()])
 
@@ -92,7 +105,9 @@ class InstagramMediaWorkerTests(unittest.TestCase):
         update_sql, update_params = connection.executions[1]
         self.assertIn("listing.platform = 'instagram'::listing_platform", select_sql)
         self.assertIn("listing.platform = 'facebook_group'::listing_platform", select_sql)
+        self.assertIn("listing.platform = 'reddit'::listing_platform", select_sql)
         self.assertNotIn("listing.source_url LIKE", select_sql)
+        self.assertNotIn("'facebook'::listing_platform", select_sql)
         self.assertIn("image.cached_url IS NULL", select_sql)
         self.assertEqual(select_params, ("", 25))
         self.assertIn("WHERE id = %(id)s AND cached_url IS NULL", update_sql)
@@ -105,7 +120,7 @@ class InstagramMediaWorkerTests(unittest.TestCase):
             [("image-2", "https://scontent-test.fbcdn.net/group.jpg", "facebook_groups")],
         )
         instagram_cache = FakeCache([])
-        facebook_cache = FakeCache([cached_image()])
+        facebook_cache = FakeSinglePlatformCache([cached_image()])
 
         result = cache_pending_batch(
             "postgresql://scraper:test-placeholder@postgres:5432/recon",
@@ -122,8 +137,16 @@ class InstagramMediaWorkerTests(unittest.TestCase):
 
     def test_caches_pending_rows_after_database_ingestion_and_updates_only_successes(self):
         images = [
-            PendingImage(id="image-1", source_url="https://scontent.cdninstagram.com/one.jpg"),
-            PendingImage(id="image-2", source_url="https://scontent.cdninstagram.com/two.jpg"),
+            PendingImage(
+                id="image-1",
+                source_url="https://scontent.cdninstagram.com/one.jpg",
+                platform="instagram",
+            ),
+            PendingImage(
+                id="image-2",
+                source_url="https://i.redd.it/two.jpg",
+                platform="reddit",
+            ),
         ]
         cache = FakeCache([cached_image(), MediaCacheError("expired")])
         updates: list[tuple[str, dict[str, object]]] = []
@@ -134,7 +157,10 @@ class InstagramMediaWorkerTests(unittest.TestCase):
             update_fn=lambda image_id, fields: updates.append((image_id, fields)) or True,
         )
 
-        self.assertEqual(cache.urls, [image.source_url for image in images])
+        self.assertEqual(
+            cache.urls,
+            [f"{image.platform}:{image.source_url}" for image in images],
+        )
         self.assertEqual(len(updates), 1)
         self.assertEqual(updates[0][0], "image-1")
         self.assertEqual(updates[0][1]["cachedUrl"], "https://media.app-pixel.com/production/instagram/aa/hash.jpg")
@@ -148,7 +174,13 @@ class InstagramMediaWorkerTests(unittest.TestCase):
         cache = FakeCache([cached_image(reused=True)])
 
         result = cache_pending_images(
-            [PendingImage(id="image-1", source_url="https://scontent.cdninstagram.com/one.jpg")],
+            [
+                PendingImage(
+                    id="image-1",
+                    source_url="https://scontent.cdninstagram.com/one.jpg",
+                    platform="instagram",
+                )
+            ],
             cache=cache,
             update_fn=lambda _image_id, _fields: False,
         )

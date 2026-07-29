@@ -7,6 +7,7 @@ from unittest.mock import patch
 from scraper.media.instagram_r2 import (
     DownloadedImage,
     InstagramR2Cache,
+    MediaR2Cache,
     MediaCacheError,
     R2Config,
     download_instagram_image,
@@ -80,6 +81,52 @@ def config() -> R2Config:
 
 
 class InstagramMediaCacheTests(unittest.TestCase):
+    def test_reddit_upload_uses_a_separate_content_addressed_prefix(self):
+        downloaded = DownloadedImage(
+            body=JPEG,
+            content_type="image/jpeg",
+            extension="jpg",
+            content_hash=hashlib.sha256(JPEG).hexdigest(),
+        )
+        s3 = FakeS3()
+        cache = MediaR2Cache(
+            config(),
+            s3_client=s3,
+            downloader=lambda _url, _platform: downloaded,
+        )
+
+        cached = cache.cache_image(
+            "https://i.redd.it/recon.jpg",
+            platform="reddit",
+        )
+
+        self.assertIn("/production/reddit/", cached.cachedUrl)
+        self.assertEqual(s3.put_calls[0]["Metadata"]["source"], "reddit")
+
+    def test_source_validation_allowlists_reddit_media_without_weakening_instagram(self):
+        with patch(
+            "scraper.media.instagram_r2.socket.getaddrinfo",
+            return_value=[(2, 1, 6, "", ("1.1.1.1", 443))],
+        ):
+            validate_source_url(
+                "https://i.redd.it/recon.jpg",
+                platform="reddit",
+            )
+            validate_source_url(
+                "https://preview.redd.it/recon.jpg?width=1280",
+                platform="reddit",
+            )
+            with self.assertRaises(MediaCacheError):
+                validate_source_url(
+                    "https://scontent.cdninstagram.com/image.jpg",
+                    platform="reddit",
+                )
+            with self.assertRaises(MediaCacheError):
+                validate_source_url(
+                    "https://i.redd.it/recon.jpg",
+                    platform="instagram",
+                )
+
     def test_content_addressed_upload_is_immutable_and_reused(self):
         downloaded = DownloadedImage(
             body=JPEG,

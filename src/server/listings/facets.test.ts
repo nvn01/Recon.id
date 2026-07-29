@@ -55,6 +55,13 @@ describe("getListingFacets", () => {
       conditions: [{ value: "Bekas - baik", count: 9 }],
     });
 
+    const categorySql = (
+      queryRaw.mock.calls[0]?.[0] as { strings: string[] }
+    ).strings.join("?");
+    expect(categorySql).toContain(
+      "cover.platform IN ('instagram'::listing_platform, 'reddit'::listing_platform)",
+    );
+
     for (const [query] of queryRaw.mock.calls) {
       const sql = (query as { strings: string[] }).strings.join("?");
       expect(sql).toContain("facebook_seller_flags");
