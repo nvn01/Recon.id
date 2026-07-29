@@ -44,4 +44,29 @@ npm run build
 
 Use Docker Compose for local PostgreSQL. Keep real secrets in the ignored `.env` files.
 
-The scheduled scraper runtime is split into a collector, an AI manager, and an Instagram media worker. See the project `AGENTS.md` and scraper override notes for the current operational contract.
+## Self-host with Docker Compose
+
+Requirements: Docker with Compose, a public or local port for the web app, and outbound internet access for the scrapers.
+
+```powershell
+Copy-Item .env.example .env
+docker compose up -d --build postgres web
+docker compose exec web npx prisma migrate deploy
+```
+
+Before starting, edit `.env`:
+
+- Replace `POSTGRES_PASSWORD` and keep the same database name, user, and password in `DATABASE_URL`.
+- Set `NVIDIA_API_KEY` to enable AI normalization.
+- Set all five `R2_*` values to enable the Instagram media worker and copy images to Cloudflare R2.
+- Keep `SCRAPER_EGRESS_MODE=direct` unless you intentionally configure and allow a proxy or VPN.
+
+Open `http://localhost:3000`. To run the scheduled scraper pipeline:
+
+```powershell
+docker compose up -d --build scraper-scheduler scraper-ai-manager
+docker compose ps
+docker compose logs -f scraper-scheduler scraper-ai-manager
+```
+
+After configuring R2, also start `scraper-media-worker`. The scheduler collects listings, the AI manager normalizes and writes them to PostgreSQL, and the optional media worker caches Instagram images. Edit accounts, source enablement, limits, and schedules in `scraper/config/sources.toml`; edit Facebook searches in `scraper/facebook/source_targets.json`. Never put API keys, cookies, or passwords in those tracked files.
