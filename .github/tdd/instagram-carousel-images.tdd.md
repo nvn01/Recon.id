@@ -63,6 +63,9 @@ criteria were derived from that production defect.
 - `python -m ruff check ...`: passed.
 - `python -m compileall -q scraper`: passed.
 - `docker compose config --quiet`: passed.
+- Final bounded logged-out smoke on `ggsconsign` post `DbSjKvQkacV` returned
+  exactly four normalized images and one persisted in-memory carousel cache
+  entry, matching the source post's four children without a duplicate cover.
 - Targeted coverage: embedded Instagram parser 95%; repository-selected
   Instagram/orchestrator modules 64% overall. The remaining gap is concentrated
   in external Playwright/database CLI boundaries. Those boundaries received
