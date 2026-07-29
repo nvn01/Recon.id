@@ -77,8 +77,6 @@ export function toListingDto(listing: ListingFeedRecord) {
       .map((image) => ({
         ...image,
         publicUrl:
-          (listing.platform === "INSTAGRAM" ||
-            listing.platform === "FACEBOOK_GROUP") &&
           image.cachedUrl &&
           isSafeCachedMediaUrl(image.cachedUrl, listing.platform)
             ? image.cachedUrl
@@ -113,17 +111,21 @@ export function isSafeInstagramCachedUrl(value: string): boolean {
 
 export function isSafeCachedMediaUrl(
   value: string,
-  platform: "INSTAGRAM" | "FACEBOOK_GROUP",
+  platform: ListingFeedRecord["platform"],
 ): boolean {
+  const platformPath = {
+    INSTAGRAM: "instagram",
+    REDDIT: "reddit",
+    FACEBOOK_GROUP: "facebook-groups",
+  }[platform];
+  if (!platformPath) {
+    return false;
+  }
   try {
     const url = new URL(value);
-    const expectedPrefix =
-      platform === "FACEBOOK_GROUP"
-        ? "/production/facebook-groups/"
-        : "/production/instagram/";
     return (
       url.origin === "https://media.app-pixel.com" &&
-      url.pathname.startsWith(expectedPrefix) &&
+      url.pathname.startsWith(`/production/${platformPath}/`) &&
       url.username === "" &&
       url.password === ""
     );

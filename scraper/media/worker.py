@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any, ContextManager
 
 from scraper.media.facebook_groups_r2 import FacebookGroupsR2Cache
-from scraper.media.instagram_r2 import InstagramR2Cache, MediaCacheError, R2Config
+from scraper.media.instagram_r2 import MediaR2Cache, MediaCacheError, R2Config
 from scraper.shared.config import DEFAULT_CONFIG_PATH, load_config, table
 from scraper.shared.runtime import (
     AlreadyRunningError,
@@ -27,19 +27,20 @@ from scraper.storage.run_log import write_run_log
 
 
 SCRAPER_DIR = Path(__file__).resolve().parents[1]
-DEFAULT_LOG_FILE = SCRAPER_DIR / ".logs" / "instagram_media_worker.jsonl"
-DEFAULT_LOCK_FILE = SCRAPER_DIR / ".state" / "instagram_media_worker.lock"
+DEFAULT_LOG_FILE = SCRAPER_DIR / ".logs" / "media_worker.jsonl"
+DEFAULT_LOCK_FILE = SCRAPER_DIR / ".state" / "media_worker.lock"
 
 SELECT_PENDING_SQL = """
 SELECT image.id, image.source_url,
        CASE
          WHEN listing.platform = 'facebook_group'::listing_platform THEN 'facebook_groups'
-         ELSE 'instagram'
-       END AS media_source
+         ELSE listing.platform::text
+       END AS media_platform
 FROM listing_images AS image
 JOIN listings AS listing ON listing.id = image.listing_id
 WHERE (
     listing.platform = 'instagram'::listing_platform
+    OR listing.platform = 'reddit'::listing_platform
     OR listing.platform = 'facebook_group'::listing_platform
   )
   AND image.cached_url IS NULL
@@ -64,7 +65,7 @@ WHERE id = %(id)s AND cached_url IS NULL
 class PendingImage:
     id: str
     source_url: str
-    media_source: str = "instagram"
+    platform: str
 
 
 @dataclass
@@ -101,26 +102,26 @@ def configured_value(cli_value: Any, configured: Any, default: Any) -> Any:
     return configured if configured is not None else default
 
 
-def require_r2_cache(env: Mapping[str, str] | None = None) -> InstagramR2Cache:
+def require_r2_cache(env: Mapping[str, str] | None = None) -> MediaR2Cache:
     config = R2Config.from_env(env)
     if config is None:
-        raise MediaCacheError("R2 configuration is required for the Instagram media worker.")
-    return InstagramR2Cache(config)
+        raise MediaCacheError("R2 configuration is required for the media worker.")
+    return MediaR2Cache(config)
 
 
 def require_media_caches(
     env: Mapping[str, str] | None = None,
-) -> tuple[InstagramR2Cache, FacebookGroupsR2Cache]:
+) -> tuple[MediaR2Cache, FacebookGroupsR2Cache]:
     config = R2Config.from_env(env)
     if config is None:
         raise MediaCacheError("R2 configuration is required for the media worker.")
-    return InstagramR2Cache(config), FacebookGroupsR2Cache(config)
+    return MediaR2Cache(config), FacebookGroupsR2Cache(config)
 
 
 def cache_pending_images(
     images: list[PendingImage],
     *,
-    cache: InstagramR2Cache,
+    cache: MediaR2Cache,
     facebook_groups_cache: FacebookGroupsR2Cache | None = None,
     update_fn: Callable[[str, dict[str, Any]], bool],
 ) -> MediaWorkerBatch:
@@ -129,16 +130,17 @@ def cache_pending_images(
         next_cursor=images[-1].id if images else "",
     )
     for image in images:
-        selected_cache = (
-            facebook_groups_cache
-            if image.media_source == "facebook_groups"
-            else cache
-        )
-        if selected_cache is None:
-            result.failed += 1
-            continue
         try:
-            cached = selected_cache.cache_image(image.source_url)
+            if image.platform == "facebook_groups":
+                if facebook_groups_cache is None:
+                    result.failed += 1
+                    continue
+                cached = facebook_groups_cache.cache_image(image.source_url)
+            else:
+                cached = cache.cache_image(
+                    image.source_url,
+                    platform=image.platform,
+                )
         except MediaCacheError:
             result.failed += 1
             continue
@@ -160,7 +162,7 @@ def cache_pending_batch(
     *,
     after_id: str,
     batch_size: int,
-    cache: InstagramR2Cache,
+    cache: MediaR2Cache,
     facebook_groups_cache: FacebookGroupsR2Cache | None = None,
     connect_fn: Callable[[str], ContextManager[Any]] | None = None,
 ) -> MediaWorkerBatch:
@@ -184,7 +186,7 @@ def cache_pending_batch(
                 PendingImage(
                     id=str(row[0]),
                     source_url=str(row[1]),
-                    media_source=str(row[2]) if len(row) > 2 else "instagram",
+                    platform=str(row[2]).lower() if len(row) > 2 else "instagram",
                 )
                 for row in cursor.fetchall()
             ]
@@ -218,7 +220,7 @@ def cache_pending_batch(
 def run_worker(
     args: argparse.Namespace,
     *,
-    cache: InstagramR2Cache | None = None,
+    cache: MediaR2Cache | None = None,
     facebook_groups_cache: FacebookGroupsR2Cache | None = None,
     batch_fn: Callable[..., MediaWorkerBatch] = cache_pending_batch,
     sleep_fn: Callable[[float], None] = time.sleep,
@@ -277,7 +279,9 @@ def run_worker(
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Cache accepted Instagram and Facebook Group images in Cloudflare R2.")
+    parser = argparse.ArgumentParser(
+        description="Cache accepted Instagram, Reddit, and Facebook Group images in Cloudflare R2."
+    )
     parser.add_argument("--config", default=str(DEFAULT_CONFIG_PATH))
     parser.add_argument("--database-url", default=None)
     parser.add_argument("--batch-size", type=int, default=None)

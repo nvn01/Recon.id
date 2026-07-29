@@ -59,8 +59,11 @@ describe("getListingFacets", () => {
       queryRaw.mock.calls[0]?.[0] as { strings: string[] }
     ).strings.join("?");
     expect(categorySql).toContain(
-      "cover.platform IN ('instagram'::listing_platform, 'reddit'::listing_platform)",
+      "cover.platform IN (",
     );
+    expect(categorySql).toContain("'instagram'::listing_platform");
+    expect(categorySql).toContain("'reddit'::listing_platform");
+    expect(categorySql).toContain("'facebook_group'::listing_platform");
 
     for (const [query] of queryRaw.mock.calls) {
       const sql = (query as { strings: string[] }).strings.join("?");

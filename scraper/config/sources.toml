@@ -92,8 +92,8 @@ retry_seconds = 300
 lease_seconds = 300
 
 [media_worker]
-# PostgreSQL is the durable media queue: uncached Instagram and Facebook Group
-# image rows are processed only after the AI manager commits their listings.
+# PostgreSQL is the durable media queue: uncached Instagram, Reddit, and
+# Facebook Group image rows are processed only after the AI manager commits.
 log_file = ".logs/media_worker.jsonl"
 lock_file = ".state/media_worker.lock"
 batch_size = 25

@@ -125,11 +125,22 @@ const categoryFacetQuery = Prisma.sql`
     stats.count,
     stats."minPrice",
     CASE
-      WHEN cover.platform = 'instagram'::listing_platform
+      WHEN cover.platform IN (
+        'instagram'::listing_platform,
+        'reddit'::listing_platform,
+        'facebook_group'::listing_platform
+      )
         THEN COALESCE(image.cached_url, image.source_url)
       ELSE image.source_url
     END AS "coverImageUrl",
-    (cover.platform = 'instagram'::listing_platform AND image.cached_url IS NOT NULL) AS "coverImageCached",
+    (
+      cover.platform IN (
+        'instagram'::listing_platform,
+        'reddit'::listing_platform,
+        'facebook_group'::listing_platform
+      )
+      AND image.cached_url IS NOT NULL
+    ) AS "coverImageCached",
     image.alt_text AS "coverAltText"
   FROM category_stats AS stats
   LEFT JOIN ranked_covers AS cover

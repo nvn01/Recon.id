@@ -355,17 +355,37 @@ def extract_image_urls(content_html: str) -> list[str]:
     return unique_image_urls(urls)
 
 
+def canonical_reddit_image_url(value: str) -> str:
+    clean = html.unescape(str(value)).rstrip(").,]")
+    try:
+        parsed = urllib.parse.urlsplit(clean)
+    except ValueError:
+        return ""
+
+    hostname = (parsed.hostname or "").lower().rstrip(".")
+    if parsed.scheme.lower() != "https" or not hostname or parsed.username or parsed.password:
+        return ""
+    if hostname in {"preview.redd.it", "i.redd.it"}:
+        return urllib.parse.urlunsplit(("https", "i.redd.it", parsed.path, "", ""))
+    return clean
+
+
 def unique_image_urls(urls: Iterable[str]) -> list[str]:
     images: list[str] = []
+    seen: set[str] = set()
     for url in urls:
-        clean = html.unescape(str(url)).rstrip(").,]")
+        clean = canonical_reddit_image_url(str(url))
+        if not clean:
+            continue
         lower = clean.lower()
         if (
             "i.redd.it/" in lower
             or "preview.redd.it/" in lower
             or re.search(r"\.(?:jpg|jpeg|png|webp)(?:\?|$)", lower)
         ):
-            if clean not in images:
+            identity = canonical_reddit_image_url(clean)
+            if identity not in seen:
+                seen.add(identity)
                 images.append(clean)
     return images
 
