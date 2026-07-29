@@ -448,7 +448,7 @@ def enrich_carousel_posts(
         detail = fetch_detail(shortcode)
         if detail:
             post = merge_posts(post, detail)
-            detail_urls = image_urls(post)
+            detail_urls = image_urls(detail)
             if len(detail_urls) >= expected_count:
                 post = apply_image_urls(post, detail_urls)
                 remember_carousel(cache, shortcode, detail_urls)
@@ -490,8 +490,9 @@ def valid_cached_urls(value: Any) -> list[str]:
 
 def apply_image_urls(post: dict[str, Any], urls: list[str]) -> dict[str, Any]:
     enriched = dict(post)
-    if urls and not enriched.get("display_url"):
+    if urls:
         enriched["display_url"] = urls[0]
+        enriched.pop("thumbnail_src", None)
     enriched["edge_sidecar_to_children"] = {
         "edges": [{"node": {"display_url": url}} for url in urls]
     }
