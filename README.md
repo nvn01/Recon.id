@@ -70,3 +70,7 @@ docker compose logs -f scraper-scheduler scraper-ai-manager
 ```
 
 After configuring R2, also start `scraper-media-worker`. The scheduler collects listings, the AI manager normalizes and writes them to PostgreSQL, and the optional media worker caches Instagram, Facebook Group, and Reddit images. Edit accounts, source enablement, limits, and schedules in `scraper/config/sources.toml`; edit Marketplace searches in `scraper/facebook/source_targets.json` and Group targets in `scraper/facebook_groups/source_targets.json`. Never put API keys, cookies, or passwords in those tracked files.
+
+## License
+
+RECON is available under the [MIT License](./LICENSE).
