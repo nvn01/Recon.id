@@ -22,22 +22,14 @@ const securityHeaders = [
     value: "camera=(), microphone=(), geolocation=()",
   },
   {
-    key: "Content-Security-Policy-Report-Only",
-    value:
-      "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; img-src 'self' data: https:; script-src 'self' https://www.googletagmanager.com https://www.clarity.ms https://scripts.clarity.ms https://static.cloudflareinsights.com; style-src 'self' 'unsafe-inline'; connect-src 'self' https://www.google-analytics.com https://*.google-analytics.com https://www.clarity.ms https://*.clarity.ms https://*.posthog.com https://static.cloudflareinsights.com",
+    key: "Strict-Transport-Security",
+    value: "max-age=31536000",
   },
 ];
 
 /** @type {import("next").NextConfig} */
 const config = {
-  images: {
-    remotePatterns: [
-      {
-        protocol: "https",
-        hostname: "images.unsplash.com",
-      },
-    ],
-  },
+  poweredByHeader: false,
   async headers() {
     return [
       {

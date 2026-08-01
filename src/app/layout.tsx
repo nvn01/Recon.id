@@ -2,6 +2,7 @@ import "~/styles/globals.css";
 
 import { type Metadata, type Viewport } from "next";
 import { Bricolage_Grotesque, Geist, Geist_Mono } from "next/font/google";
+import { headers } from "next/headers";
 
 import { AnalyticsConsent } from "~/components/analytics-consent";
 import { SiteFooter } from "~/components/site-footer";
@@ -92,9 +93,10 @@ const geistMono = Geist_Mono({
   variable: "--font-geist-mono",
 });
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
+  const nonce = (await headers()).get("x-nonce") ?? undefined;
   const structuredData = {
     "@context": "https://schema.org",
     "@graph": [
@@ -125,6 +127,7 @@ export default function RootLayout({
     >
       <body>
         <script
+          nonce={nonce}
           type="application/ld+json"
           dangerouslySetInnerHTML={{
             __html: JSON.stringify(structuredData).replace(/</g, "\\u003c"),
