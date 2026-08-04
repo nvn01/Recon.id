@@ -16,8 +16,9 @@ import { ReconHeader } from "~/components/recon-header";
 import { RefreshArrowIcon } from "~/components/refresh-arrow-icon";
 import { stepCarouselIndex } from "~/data/carousel-navigation";
 import {
-  countUnseenListings,
-  hasUnseenListingRevision,
+  automaticListingRefreshQueryOptions,
+  hasNewListingRevision,
+  listingVersionQueryOptions,
   manualListingRefreshQueryOptions,
 } from "~/data/listing-refresh";
 import {
@@ -1132,8 +1133,6 @@ export function ReconFeed({ scope }: ReconFeedProps) {
   const searchParams = useSearchParams();
   const utils = api.useUtils();
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [hasNewListings, setHasNewListings] = useState(false);
-  const [unseenListingCount, setUnseenListingCount] = useState(0);
   const [refreshAnnouncement, setRefreshAnnouncement] = useState("");
   const [selectedListing, setSelectedListing] = useState<Listing | null>(null);
   const query = (searchParams.get("q") ?? "").trim().slice(0, 80);
@@ -1154,7 +1153,7 @@ export function ReconFeed({ scope }: ReconFeedProps) {
     [filters, query, scope, sort],
   );
   const feedQuery = api.listings.feed.useInfiniteQuery(feedInput, {
-    ...manualListingRefreshQueryOptions,
+    ...automaticListingRefreshQueryOptions,
     initialCursor: undefined,
     getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
   });
@@ -1162,46 +1161,36 @@ export function ReconFeed({ scope }: ReconFeedProps) {
     undefined,
     manualListingRefreshQueryOptions,
   );
-  const versionQuery = api.listings.version.useQuery(undefined, {
-    refetchInterval: 30 * 1000,
-    refetchIntervalInBackground: false,
-    refetchOnReconnect: true,
-    refetchOnWindowFocus: true,
-    retry: 1,
-    staleTime: 0,
-  });
-  const seenListingRevision = useRef(versionQuery.data?.revision ?? null);
-  const seenListingCount = useRef<number | null>(
-    versionQuery.data?.totalCount ?? null,
+  const versionQuery = api.listings.version.useQuery(
+    undefined,
+    listingVersionQueryOptions,
   );
+  const seenListingRevision = useRef(versionQuery.data?.revision ?? null);
 
   useEffect(() => {
     const currentRevision = versionQuery.data?.revision ?? null;
-    const currentCount = versionQuery.data?.totalCount;
-    if (!currentRevision || currentCount === undefined) return;
+    if (!currentRevision) return;
 
     if (!seenListingRevision.current) {
       seenListingRevision.current = currentRevision;
-      seenListingCount.current = currentCount;
       return;
     }
 
-    if (
-      hasUnseenListingRevision(seenListingRevision.current, currentRevision)
-    ) {
-      const unseenCount = countUnseenListings(
-        seenListingCount.current,
-        currentCount,
-      );
-      setUnseenListingCount(unseenCount);
-      setHasNewListings(unseenCount > 0);
-      if (unseenCount > 0) {
-        setRefreshAnnouncement(
-          `${unseenCount} item baru tersedia. Gunakan tombol di bagian atas untuk memuatnya.`,
-        );
-      }
+    if (!hasNewListingRevision(seenListingRevision.current, currentRevision)) {
+      return;
     }
-  }, [versionQuery.data?.revision, versionQuery.data?.totalCount]);
+
+    // Advance the revision synchronously so repeated renders cannot launch
+    // overlapping resets. reset() cancels stale requests, clears every loaded
+    // cursor page for this exact filter/sort key, and fetches page one again.
+    seenListingRevision.current = currentRevision;
+    void utils.listings.feed.reset(feedInput).catch(() => {
+      setRefreshAnnouncement(
+        "Temuan terbaru belum berhasil dimuat otomatis. Coba tombol perbarui.",
+      );
+    });
+  }, [feedInput, utils.listings.feed, versionQuery.data?.revision]);
+
   const listings = useMemo(() => {
     const uniqueListings = new Map<string, Listing>();
     for (const page of feedQuery.data?.pages ?? []) {
@@ -1296,17 +1285,13 @@ export function ReconFeed({ scope }: ReconFeedProps) {
     });
 
     try {
-      const revisionResult = await versionQuery.refetch();
       await Promise.all([
         utils.listings.feed.reset(feedInput, { throwOnError: true }),
         utils.listings.facets.reset(undefined, { throwOnError: true }),
       ]);
-      if (revisionResult.data?.revision) {
-        seenListingRevision.current = revisionResult.data.revision;
-        seenListingCount.current = revisionResult.data.totalCount;
+      if (versionQuery.data?.revision) {
+        seenListingRevision.current = versionQuery.data.revision;
       }
-      setHasNewListings(false);
-      setUnseenListingCount(0);
       setRefreshAnnouncement("Temuan terbaru sudah dimuat.");
     } catch {
       setRefreshAnnouncement("Temuan belum berhasil diperbarui. Coba lagi.");
@@ -1319,8 +1304,8 @@ export function ReconFeed({ scope }: ReconFeedProps) {
     <div className="app-shell">
       <ReconHeader
         refreshControl={{
-          hasNewListings,
-          unseenCount: unseenListingCount,
+          hasNewListings: false,
+          unseenCount: 0,
           isRefreshing,
           onRefresh: () => void refreshFeed(),
         }}
