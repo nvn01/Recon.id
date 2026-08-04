@@ -4,13 +4,6 @@ export const manualListingRefreshQueryOptions = {
   staleTime: Infinity,
 } as const;
 
-export const automaticListingRefreshQueryOptions = {
-  refetchOnMount: "always",
-  refetchOnReconnect: true,
-  refetchOnWindowFocus: true,
-  staleTime: 0,
-} as const;
-
 export const listingVersionQueryOptions = {
   refetchInterval: 30 * 1000,
   refetchIntervalInBackground: false,
@@ -27,4 +20,11 @@ export function hasNewListingRevision(
   return Boolean(
     seenRevision && currentRevision && seenRevision !== currentRevision,
   );
+}
+
+export function countUnseenListings(
+  seenCount: number | null,
+  currentCount: number,
+): number {
+  return Math.max(0, currentCount - (seenCount ?? currentCount));
 }

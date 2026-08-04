@@ -16,7 +16,7 @@ import { ReconHeader } from "~/components/recon-header";
 import { RefreshArrowIcon } from "~/components/refresh-arrow-icon";
 import { stepCarouselIndex } from "~/data/carousel-navigation";
 import {
-  automaticListingRefreshQueryOptions,
+  countUnseenListings,
   hasNewListingRevision,
   listingVersionQueryOptions,
   manualListingRefreshQueryOptions,
@@ -1133,6 +1133,8 @@ export function ReconFeed({ scope }: ReconFeedProps) {
   const searchParams = useSearchParams();
   const utils = api.useUtils();
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [hasNewListings, setHasNewListings] = useState(false);
+  const [unseenListingCount, setUnseenListingCount] = useState(0);
   const [refreshAnnouncement, setRefreshAnnouncement] = useState("");
   const [selectedListing, setSelectedListing] = useState<Listing | null>(null);
   const query = (searchParams.get("q") ?? "").trim().slice(0, 80);
@@ -1153,7 +1155,7 @@ export function ReconFeed({ scope }: ReconFeedProps) {
     [filters, query, scope, sort],
   );
   const feedQuery = api.listings.feed.useInfiniteQuery(feedInput, {
-    ...automaticListingRefreshQueryOptions,
+    ...manualListingRefreshQueryOptions,
     initialCursor: undefined,
     getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
   });
@@ -1166,13 +1168,18 @@ export function ReconFeed({ scope }: ReconFeedProps) {
     listingVersionQueryOptions,
   );
   const seenListingRevision = useRef(versionQuery.data?.revision ?? null);
+  const seenListingCount = useRef<number | null>(
+    versionQuery.data?.totalCount ?? null,
+  );
 
   useEffect(() => {
     const currentRevision = versionQuery.data?.revision ?? null;
-    if (!currentRevision) return;
+    const currentCount = versionQuery.data?.totalCount;
+    if (!currentRevision || currentCount === undefined) return;
 
     if (!seenListingRevision.current) {
       seenListingRevision.current = currentRevision;
+      seenListingCount.current = currentCount;
       return;
     }
 
@@ -1180,16 +1187,18 @@ export function ReconFeed({ scope }: ReconFeedProps) {
       return;
     }
 
-    // Advance the revision synchronously so repeated renders cannot launch
-    // overlapping resets. reset() cancels stale requests, clears every loaded
-    // cursor page for this exact filter/sort key, and fetches page one again.
-    seenListingRevision.current = currentRevision;
-    void utils.listings.feed.reset(feedInput).catch(() => {
+    const unseenCount = countUnseenListings(
+      seenListingCount.current,
+      currentCount,
+    );
+    setUnseenListingCount(unseenCount);
+    setHasNewListings(unseenCount > 0);
+    if (unseenCount > 0) {
       setRefreshAnnouncement(
-        "Temuan terbaru belum berhasil dimuat otomatis. Coba tombol perbarui.",
+        `${unseenCount} item baru tersedia. Gunakan tombol di bagian atas untuk memuatnya.`,
       );
-    });
-  }, [feedInput, utils.listings.feed, versionQuery.data?.revision]);
+    }
+  }, [versionQuery.data?.revision, versionQuery.data?.totalCount]);
 
   const listings = useMemo(() => {
     const uniqueListings = new Map<string, Listing>();
@@ -1285,13 +1294,17 @@ export function ReconFeed({ scope }: ReconFeedProps) {
     });
 
     try {
+      const revisionResult = await versionQuery.refetch();
       await Promise.all([
         utils.listings.feed.reset(feedInput, { throwOnError: true }),
         utils.listings.facets.reset(undefined, { throwOnError: true }),
       ]);
-      if (versionQuery.data?.revision) {
-        seenListingRevision.current = versionQuery.data.revision;
+      if (revisionResult.data?.revision) {
+        seenListingRevision.current = revisionResult.data.revision;
+        seenListingCount.current = revisionResult.data.totalCount;
       }
+      setHasNewListings(false);
+      setUnseenListingCount(0);
       setRefreshAnnouncement("Temuan terbaru sudah dimuat.");
     } catch {
       setRefreshAnnouncement("Temuan belum berhasil diperbarui. Coba lagi.");
@@ -1304,8 +1317,8 @@ export function ReconFeed({ scope }: ReconFeedProps) {
     <div className="app-shell">
       <ReconHeader
         refreshControl={{
-          hasNewListings: false,
-          unseenCount: 0,
+          hasNewListings,
+          unseenCount: unseenListingCount,
           isRefreshing,
           onRefresh: () => void refreshFeed(),
         }}
