@@ -11,6 +11,7 @@ from scraper.reddit.nvidia_parser import (
     NvidiaParserError,
     build_prompt,
     merge_ai_results,
+    validate_ai_batch_result,
 )
 
 
@@ -51,6 +52,56 @@ class NvidiaParserPromptTests(unittest.TestCase):
         )
 
         self.assertIn('"platform": "instagram"', prompt)
+
+    def test_prompt_forbids_instagram_shortcode_titles(self):
+        self.assertIn("Instagram shortcode or externalId", SYSTEM_PROMPT)
+
+    def test_instagram_ai_result_rejects_shortcode_title(self):
+        listings = [
+            {
+                "platform": "INSTAGRAM",
+                "externalId": "DbnmUuQiWPT",
+                "title": "DbnmUuQiWPT",
+                "description": "keychron v1 max bnob brown sw",
+            }
+        ]
+        analyses = [
+            {
+                "externalId": "DbnmUuQiWPT",
+                "isListing": True,
+                "title": "DbnmUuQiWPT",
+            }
+        ]
+
+        with self.assertRaisesRegex(NvidiaParserError, "invalid Instagram title"):
+            validate_ai_batch_result(listings, analyses)
+
+    def test_instagram_merge_rejects_blank_title_instead_of_using_shortcode(self):
+        listings = [
+            {
+                "platform": "INSTAGRAM",
+                "externalId": "Dbnl-CSTNsp",
+                "title": "Dbnl-CSTNsp",
+                "description": "VortexSeries Mono Series V2 Wired",
+            }
+        ]
+        analyses = [
+            {
+                "externalId": "Dbnl-CSTNsp",
+                "isListing": True,
+                "title": " ",
+                "price": 215_000,
+                "locationTexts": ["Purwokerto"],
+                "conditionText": "Bekas - baik",
+                "status": "AVAILABLE",
+                "category": "Keyboard",
+                "brand": "Vortex",
+                "sellerName": None,
+            }
+        ]
+
+        with self.assertRaisesRegex(NvidiaParserError, "invalid Instagram title"):
+            merge_ai_results(listings, analyses)
 
     def test_prompt_requires_the_source_seller_name_without_inference(self):
         prompt = build_prompt(
