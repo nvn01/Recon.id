@@ -36,6 +36,8 @@ Output discipline:
   memes, announcements, reviews, promotions without a specific offered item, and wanted-to-buy posts.
 - title is a concise product title derived from the seller text. Do not use a caption paragraph,
   promotional slogan, price, location, or contact instruction as the title.
+- For Instagram, title must name the offered product from the caption. Never return the Instagram shortcode or externalId
+  as title, and never return an empty title for an accepted listing.
 - price is the seller's asking price normalized to integer rupiah. Market knowledge may choose the
   scale of a seller-written shorthand, but must not invent a different base asking price.
 - status must be AVAILABLE, SOLD, UNKNOWN, or null and must come from the listing evidence.
@@ -358,6 +360,33 @@ def validate_ai_batch_result(
     if len(returned_ids) != len(expected_ids) or set(returned_ids) != set(expected_ids):
         raise NvidiaParserError("NVIDIA parser did not return exactly one result for every listing")
 
+    listings_by_id = {
+        str(listing.get("externalId") or ""): listing for listing in listings
+    }
+    for analysis in analyses:
+        if not isinstance(analysis, dict):
+            continue
+        listing = listings_by_id.get(str(analysis.get("externalId") or ""))
+        if listing is not None:
+            validate_instagram_ai_title(listing, analysis)
+
+
+def validate_instagram_ai_title(
+    listing: dict[str, Any],
+    analysis: dict[str, Any],
+) -> None:
+    if analysis.get("isListing") is not True:
+        return
+    if str(listing.get("platform") or "").strip().upper() != "INSTAGRAM":
+        return
+
+    external_id = str(listing.get("externalId") or "").strip()
+    title = blank_to_none(analysis.get("title"))
+    if not title or title.casefold() == external_id.casefold():
+        raise NvidiaParserError(
+            f"NVIDIA parser returned invalid Instagram title for {external_id}"
+        )
+
 
 def is_guided_json_rejection(exc: NvidiaParserError) -> bool:
     message = str(exc).lower()
@@ -380,6 +409,7 @@ def classify_nvidia_error(exc: NvidiaParserError) -> str:
             "non-json",
             "invalid response json",
             "exactly one result",
+            "invalid instagram title",
             "json root was not an object",
         )
     ):
@@ -483,6 +513,7 @@ def merge_ai_results(
         if analysis:
             if analysis.get("isListing") is not True:
                 continue
+            validate_instagram_ai_title(item, analysis)
             source_facts = item.get("_sourceFacts") if isinstance(item.get("_sourceFacts"), dict) else {}
             is_facebook_group = source_facts.get("sourceType") == "facebook_group"
             item["title"] = blank_to_none(analysis.get("title")) or item["title"]
