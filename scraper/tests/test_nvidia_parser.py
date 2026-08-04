@@ -10,6 +10,7 @@ from scraper.reddit.nvidia_parser import (
     NvidiaParseClient,
     NvidiaParserError,
     build_prompt,
+    classify_nvidia_error,
     merge_ai_results,
     validate_ai_batch_result,
 )
@@ -102,6 +103,13 @@ class NvidiaParserPromptTests(unittest.TestCase):
 
         with self.assertRaisesRegex(NvidiaParserError, "invalid Instagram title"):
             merge_ai_results(listings, analyses)
+
+    def test_invalid_instagram_title_counts_as_invalid_model_output(self):
+        error = NvidiaParserError(
+            "NVIDIA parser returned invalid Instagram title for DbnmUuQiWPT"
+        )
+
+        self.assertEqual(classify_nvidia_error(error), "invalid_output")
 
     def test_prompt_requires_the_source_seller_name_without_inference(self):
         prompt = build_prompt(
