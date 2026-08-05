@@ -11,6 +11,7 @@ from scraper.candidate_pool import CandidatePool
 from scraper.scheduler import (
     build_jobs,
     coalesce_due_jobs,
+    filter_reconciliation_jobs,
     is_job_due,
     record_job_state,
     run_job,
@@ -48,6 +49,27 @@ def sample_config():
 
 
 class SchedulerTests(unittest.TestCase):
+    def test_reconciliation_modes_split_regular_collection_from_status_writes(self):
+        jobs = build_jobs(load_config(DEFAULT_CONFIG_PATH))
+
+        regular = filter_reconciliation_jobs(
+            jobs,
+            reconciliation_only=False,
+            exclude_reconciliation=True,
+        )
+        reconciliation = filter_reconciliation_jobs(
+            jobs,
+            reconciliation_only=True,
+            exclude_reconciliation=False,
+        )
+
+        self.assertTrue(regular)
+        self.assertTrue(all(job.module == "scraper.main" or job.connector == "operations" for job in regular))
+        self.assertEqual(
+            [job.id for job in reconciliation],
+            ["reddit:reconcile", "facebook-marketplace:reconcile"],
+        )
+
     def test_production_config_rolls_reddit_flairs_without_a_request_burst(self):
         config = load_config(DEFAULT_CONFIG_PATH)
         reddit_config = config["reddit"]["wts_computers"]
@@ -244,6 +266,9 @@ class SchedulerTests(unittest.TestCase):
         compose = (Path(__file__).parents[2] / "docker-compose.yml").read_text(encoding="utf-8")
         scraper_service = compose.split("  scraper:", maxsplit=1)[1].split("\n  scraper-scheduler:", maxsplit=1)[0]
         scheduler_service = compose.split("  scraper-scheduler:", maxsplit=1)[1].split(
+            "\n  scraper-reconciler:", maxsplit=1
+        )[0]
+        reconciler_service = compose.split("  scraper-reconciler:", maxsplit=1)[1].split(
             "\n  scraper-ai-manager:", maxsplit=1
         )[0]
         self.assertNotIn("    init: true", scraper_service)
@@ -253,7 +278,11 @@ class SchedulerTests(unittest.TestCase):
         self.assertIn("  scraper-media-worker:", compose)
         self.assertIn("scraper.media.worker", compose)
         self.assertIn("DATABASE_URL", scheduler_service)
+        self.assertIn("--exclude-reconciliation", scheduler_service)
         self.assertNotIn("NVIDIA_API_KEY", scheduler_service)
+        self.assertIn("--reconciliation-only", reconciler_service)
+        self.assertIn("DATABASE_URL", reconciler_service)
+        self.assertNotIn("NVIDIA_API_KEY", reconciler_service)
         ai_service = compose.split("  scraper-ai-manager:", maxsplit=1)[1].split(
             "\n  scraper-media-worker:", maxsplit=1
         )[0]

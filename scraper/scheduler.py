@@ -98,6 +98,11 @@ def main() -> int:
         candidate_pool = CandidatePool(pool_path)
 
     jobs = filter_jobs(build_jobs(config), args.connector, args.exclude_connector)
+    jobs = filter_reconciliation_jobs(
+        jobs,
+        reconciliation_only=args.reconciliation_only,
+        exclude_reconciliation=args.exclude_reconciliation,
+    )
     if not jobs:
         print("No scheduler jobs are enabled.", flush=True)
         return 0
@@ -186,6 +191,17 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--connector", action="append", choices=("reddit", "instagram", "facebook", "operations"), help="Only run this connector.")
     parser.add_argument("--exclude-connector", action="append", choices=("reddit", "instagram", "facebook", "operations"), help="Skip this connector.")
+    reconciliation_mode = parser.add_mutually_exclusive_group()
+    reconciliation_mode.add_argument(
+        "--reconciliation-only",
+        action="store_true",
+        help="Run only deterministic Facebook Marketplace and Reddit status revisits.",
+    )
+    reconciliation_mode.add_argument(
+        "--exclude-reconciliation",
+        action="store_true",
+        help="Run regular collection jobs without deterministic status revisits.",
+    )
     return parser.parse_args()
 
 
@@ -635,6 +651,20 @@ def filter_jobs(jobs: list[ScheduleJob], include: list[str] | None, exclude: lis
         for job in jobs
         if (not include_set or job.connector in include_set) and job.connector not in exclude_set
     ]
+
+
+def filter_reconciliation_jobs(
+    jobs: list[ScheduleJob],
+    *,
+    reconciliation_only: bool,
+    exclude_reconciliation: bool,
+) -> list[ScheduleJob]:
+    reconciliation_modules = {"scraper.facebook.reconcile", "scraper.reddit.reconcile"}
+    if reconciliation_only:
+        return [job for job in jobs if job.module in reconciliation_modules]
+    if exclude_reconciliation:
+        return [job for job in jobs if job.module not in reconciliation_modules]
+    return jobs
 
 
 def load_scheduler_state(path: Path) -> dict[str, Any]:
