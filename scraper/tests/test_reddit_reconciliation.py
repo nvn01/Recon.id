@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from scraper.reddit.reconcile import SELECT_RECENT_READY_SQL, classify_flair, extract_current_flair, old_reddit_url
+from scraper.reddit.reconcile import SELECT_ROTATING_CANDIDATE_SQL, classify_flair, extract_current_flair, old_reddit_url
 
 
 class RedditReconciliationTests(unittest.TestCase):
@@ -38,10 +38,11 @@ class RedditReconciliationTests(unittest.TestCase):
 
         self.assertIsNone(extract_current_flair(page, "abc123"))
 
-    def test_query_uses_three_day_window_instead_of_latest_count(self):
-        self.assertIn("COALESCE(posted_at, first_fetched_at)", SELECT_RECENT_READY_SQL)
-        self.assertIn("INTERVAL '1 day'", SELECT_RECENT_READY_SQL)
-        self.assertNotIn("LIMIT", SELECT_RECENT_READY_SQL)
+    def test_query_rotates_one_item_inside_the_latest_window(self):
+        self.assertIn("WITH latest_ready", SELECT_ROTATING_CANDIDATE_SQL)
+        self.assertIn("ORDER BY COALESCE(posted_at, first_fetched_at) DESC", SELECT_ROTATING_CANDIDATE_SQL)
+        self.assertIn("ORDER BY last_fetched_at ASC", SELECT_ROTATING_CANDIDATE_SQL)
+        self.assertTrue(SELECT_ROTATING_CANDIDATE_SQL.strip().endswith("LIMIT 1"))
 
     def test_old_reddit_fallback_preserves_only_the_canonical_post_path(self):
         self.assertEqual(

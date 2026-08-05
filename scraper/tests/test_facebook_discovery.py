@@ -228,7 +228,7 @@ class FacebookDiscoveryTests(unittest.TestCase):
         listing = normalize_card(card, None, datetime(2026, 7, 10, tzinfo=timezone.utc))
 
         self.assertIsNone(listing["price"])
-        self.assertEqual(listing["status"], "UNKNOWN")
+        self.assertEqual(listing["status"], "SOLD")
         self.assertEqual(listing["sellerName"], "Public Seller")
         self.assertEqual(listing["images"][0]["sourceUrl"], "https://cdn.example/facebook.jpg")
 

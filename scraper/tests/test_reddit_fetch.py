@@ -125,6 +125,7 @@ class RedditFetchTests(unittest.TestCase):
             posts = reddit.fetch_flair_feeds(args, flairs)
 
         self.assertEqual(len(posts), 1)
+        self.assertEqual(posts[0]["flair"], flairs[0])
         self.assertEqual(fetch_text.call_count, 4)
         self.assertEqual(parse_feed.call_count, 4)
         self.assertEqual(

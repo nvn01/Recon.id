@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import unittest
 
-from scraper.facebook.reconcile import extract_status_evidence, is_expected_detail_url
+from scraper.facebook.reconcile import SELECT_RECONCILIATION_CANDIDATES_SQL, extract_status_evidence, is_expected_detail_url
 
 
 def detail_payload(*, item_id: str = "123", sold: bool, live: bool) -> str:
@@ -30,6 +30,12 @@ def detail_payload(*, item_id: str = "123", sold: bool, live: bool) -> str:
 
 
 class FacebookReconciliationTests(unittest.TestCase):
+    def test_query_rotates_one_item_inside_the_latest_window(self):
+        self.assertIn("WITH latest_ready", SELECT_RECONCILIATION_CANDIDATES_SQL)
+        self.assertIn("ORDER BY COALESCE(posted_at, first_fetched_at) DESC", SELECT_RECONCILIATION_CANDIDATES_SQL)
+        self.assertIn("ORDER BY last_fetched_at ASC", SELECT_RECONCILIATION_CANDIDATES_SQL)
+        self.assertTrue(SELECT_RECONCILIATION_CANDIDATES_SQL.strip().endswith("LIMIT 1"))
+
     def test_matching_structured_sold_signal_wins(self):
         evidence = extract_status_evidence([detail_payload(sold=True, live=False)], "123", "")
 
@@ -49,6 +55,11 @@ class FacebookReconciliationTests(unittest.TestCase):
 
     def test_exact_visible_sold_marker_is_accepted(self):
         evidence = extract_status_evidence([], "123", "Laptop gaming\nTerjual\nJakarta")
+
+        self.assertEqual(evidence.status, "sold")
+
+    def test_exact_visible_habis_marker_is_accepted(self):
+        evidence = extract_status_evidence([], "123", "Samsung SSD 990 Pro\nRp1.500.000 · Habis\nBekasi")
 
         self.assertEqual(evidence.status, "sold")
 

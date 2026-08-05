@@ -19,7 +19,7 @@ if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from scraper.instagram.instagram import run_accounts
-from scraper.reddit.nvidia_parser import NvidiaParserError
+from scraper.ai.nvidia_parser import NvidiaParserError
 from scraper.shared.config import DEFAULT_CONFIG_PATH, float_value, int_value, load_config, string_list, table
 from scraper.shared.listing_contract import validate_listings
 from scraper.shared.runtime import (
@@ -880,7 +880,7 @@ def write_orchestrator_log(args: argparse.Namespace, output: dict[str, Any]) -> 
 
 
 def enrich_with_nvidia(listings: list[dict[str, Any]], args: argparse.Namespace, run_config: dict[str, Any]) -> list[dict[str, Any]]:
-    from scraper.reddit.nvidia_parser import enrich_listings_with_nvidia
+    from scraper.ai.nvidia_parser import enrich_listings_with_nvidia
 
     return enrich_listings_with_nvidia(
         listings,

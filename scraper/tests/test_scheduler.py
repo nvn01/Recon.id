@@ -215,16 +215,18 @@ class SchedulerTests(unittest.TestCase):
         self.assertTrue(all("--ai-parse" not in job.args for job in facebook_jobs))
 
         [reconciliation_job] = [job for job in build_jobs(config) if job.id == "facebook-marketplace:reconcile"]
-        self.assertEqual(reconciliation_job.cadence_seconds, 10_800)
+        self.assertEqual(reconciliation_job.cadence_seconds, 60)
         self.assertEqual(reconciliation_job.module, "scraper.facebook.reconcile")
-        self.assertIn("50", reconciliation_job.args)
-        self.assertEqual(reconciliation_job.run_timeout_seconds, 900)
+        self.assertIn("60", reconciliation_job.args)
+        self.assertEqual(reconciliation_job.run_timeout_seconds, 55)
+        self.assertTrue(reconciliation_job.fixed_rate)
 
         [reddit_reconciliation_job] = [job for job in build_jobs(config) if job.id == "reddit:reconcile"]
-        self.assertEqual(reddit_reconciliation_job.cadence_seconds, 10_800)
+        self.assertEqual(reddit_reconciliation_job.cadence_seconds, 60)
         self.assertEqual(reddit_reconciliation_job.module, "scraper.reddit.reconcile")
-        self.assertIn("3", reddit_reconciliation_job.args)
-        self.assertEqual(reddit_reconciliation_job.run_timeout_seconds, 600)
+        self.assertIn("60", reddit_reconciliation_job.args)
+        self.assertEqual(reddit_reconciliation_job.run_timeout_seconds, 45)
+        self.assertTrue(reddit_reconciliation_job.fixed_rate)
 
         [operations_job] = [job for job in build_jobs(config) if job.connector == "operations"]
         self.assertEqual(operations_job.cadence_seconds, 86_400)
@@ -343,7 +345,7 @@ class SchedulerTests(unittest.TestCase):
                     key=lambda job: (job.initial_delay_seconds, job.id),
                 )[:6]
             ],
-            [(0, False), (30, True), (60, False), (62, True), (94, True), (120, False)],
+            [(0, False), (30, True), (45, False), (60, False), (62, True), (94, True)],
         )
 
     def test_facebook_restart_catch_up_keeps_shared_ring_under_six_minutes(self):
@@ -404,6 +406,25 @@ class SchedulerTests(unittest.TestCase):
         record_job_state(state, job, run, datetime(2026, 7, 8, 0, 0, 2, tzinfo=timezone.utc))
 
         self.assertEqual(state["jobs"]["reddit"]["nextDueAt"], "2026-07-08T00:05:02+00:00")
+
+    def test_fixed_rate_job_sets_next_due_from_start_time(self):
+        config = load_config(DEFAULT_CONFIG_PATH)
+        [job] = [item for item in build_jobs(config) if item.id == "reddit:reconcile"]
+        state = {"startedAt": "2026-07-08T00:00:00+00:00", "jobs": {}}
+        run = type(
+            "Run",
+            (),
+            {
+                "started_at": "2026-07-08T00:00:00+00:00",
+                "finished_at": "2026-07-08T00:00:07+00:00",
+                "status": "success",
+                "exit_code": 0,
+            },
+        )()
+
+        record_job_state(state, job, run, datetime(2026, 7, 8, 0, 0, 7, tzinfo=timezone.utc))
+
+        self.assertEqual(state["jobs"]["reddit:reconcile"]["nextDueAt"], "2026-07-08T00:01:00+00:00")
 
     def test_summarize_orchestrator_output_drops_listing_payloads(self):
         output = {

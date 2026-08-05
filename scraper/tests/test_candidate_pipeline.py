@@ -9,7 +9,7 @@ from unittest.mock import Mock, patch
 
 from scraper.ai_manager import process_batch, run_manager, wait_for_departure
 from scraper.candidate_pool import CandidatePool, canonical_image_url, evidence_fingerprint
-from scraper.reddit.nvidia_parser import merge_ai_results
+from scraper.ai.nvidia_parser import merge_ai_results
 from scraper.shared.config import DEFAULT_CONFIG_PATH
 
 

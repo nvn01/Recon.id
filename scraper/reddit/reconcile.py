@@ -7,7 +7,6 @@ import html
 import json
 import re
 import sys
-import time
 import urllib.error
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
@@ -23,14 +22,21 @@ from scraper.reddit.reddit import (
 from scraper.storage.postgres import StorageError, require_database_url
 
 
-SELECT_RECENT_READY_SQL = """
+SELECT_ROTATING_CANDIDATE_SQL = """
+WITH latest_ready AS (
+    SELECT id, external_id, source_url, status, last_fetched_at,
+           COALESCE(posted_at, first_fetched_at) AS listed_at
+    FROM listings
+    WHERE platform = 'reddit'::listing_platform
+      AND status IN ('available'::listing_status, 'unknown'::listing_status)
+      AND external_id ~ '^[A-Za-z0-9]+$'
+    ORDER BY COALESCE(posted_at, first_fetched_at) DESC, id DESC
+    LIMIT %s
+)
 SELECT external_id, source_url, status::text
-FROM listings
-WHERE platform = 'reddit'::listing_platform
-  AND status IN ('available'::listing_status, 'unknown'::listing_status)
-  AND external_id ~ '^[A-Za-z0-9]+$'
-  AND COALESCE(posted_at, first_fetched_at) >= CURRENT_TIMESTAMP - (%s * INTERVAL '1 day')
-ORDER BY COALESCE(posted_at, first_fetched_at) DESC, id
+FROM latest_ready
+ORDER BY last_fetched_at ASC NULLS FIRST, listed_at DESC, id
+LIMIT 1
 """
 
 UPDATE_RECONCILIATION_RESULT_SQL = """
@@ -72,7 +78,7 @@ class ReconciliationSummary:
     failed: int = 0
 
 
-def load_candidates(database_url: str, window_days: int) -> list[ReconciliationCandidate]:
+def load_candidates(database_url: str, window_size: int) -> list[ReconciliationCandidate]:
     try:
         import psycopg
     except ImportError as exc:  # pragma: no cover - runtime dependency guard.
@@ -81,7 +87,7 @@ def load_candidates(database_url: str, window_days: int) -> list[ReconciliationC
     try:
         with psycopg.connect(database_url, connect_timeout=15) as connection:
             with connection.cursor() as cursor:
-                cursor.execute(SELECT_RECENT_READY_SQL, (window_days,))
+                cursor.execute(SELECT_ROTATING_CANDIDATE_SQL, (window_size,))
                 return [
                     ReconciliationCandidate(
                         external_id=str(row[0] or ""),
@@ -224,10 +230,10 @@ def old_reddit_url(value: str) -> str:
 
 
 def reconcile(database_url: str, args: argparse.Namespace) -> ReconciliationSummary:
-    candidates = load_candidates(database_url, args.window_days)
+    candidates = load_candidates(database_url, args.window_size)
     summary = ReconciliationSummary(selected=len(candidates))
     results: list[tuple[ReconciliationCandidate, FlairEvidence]] = []
-    for index, candidate in enumerate(candidates):
+    for candidate in candidates:
         try:
             evidence = inspect_candidate(candidate, args)
         except RateLimitedError:
@@ -246,8 +252,6 @@ def reconcile(database_url: str, args: argparse.Namespace) -> ReconciliationSumm
             summary.failed += 1
             if evidence.signal in {"http_401", "http_403"}:
                 break
-        if index + 1 < len(candidates) and args.delay_seconds > 0:
-            time.sleep(args.delay_seconds)
 
     persist_results(database_url, results)
     return summary
@@ -276,8 +280,7 @@ def output_payload(summary: ReconciliationSummary, *, ok: bool, error: str | Non
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Revisit recent ready Reddit listings for current flair.")
-    parser.add_argument("--window-days", type=int, default=3)
-    parser.add_argument("--delay-seconds", type=float, default=5.0)
+    parser.add_argument("--window-size", type=int, default=60)
     parser.add_argument("--timeout", type=int, default=30)
     parser.add_argument("--retries", type=int, default=1)
     parser.add_argument("--retry-wait", type=int, default=20)
@@ -286,10 +289,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--database-url", default=None)
     parser.add_argument("--format", choices=("json", "text"), default="text")
     args = parser.parse_args()
-    if args.window_days < 1 or args.window_days > 30:
-        parser.error("--window-days must be between 1 and 30.")
-    if args.delay_seconds < 0:
-        parser.error("--delay-seconds must be zero or greater.")
+    if args.window_size < 1 or args.window_size > 500:
+        parser.error("--window-size must be between 1 and 500.")
     if args.timeout < 5:
         parser.error("--timeout must be at least 5 seconds.")
     if args.retries < 1 or args.retries > 3:

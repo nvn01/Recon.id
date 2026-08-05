@@ -59,8 +59,24 @@ class ParserFixtureRegressionTests(unittest.TestCase):
         self.assertIsNone(listing["category"])
         self.assertIsNone(listing["brand"])
         self.assertEqual(listing["locationTexts"], [])
-        self.assertEqual(listing["status"], "UNKNOWN")
+        self.assertEqual(listing["status"], "SOLD")
         self.assertEqual(listing["sellerName"], "Fixture Seller")
+
+    def test_reddit_current_flair_sets_status_without_ai(self):
+        base_post = {
+            "title": "RTX 3070",
+            "description": "Ready",
+            "url": "https://www.reddit.com/r/jualbeliindonesia/comments/abc123/item/",
+            "atom_id": "t3_abc123",
+            "author": "seller",
+            "images": [],
+        }
+
+        available = normalize_reddit_post({**base_post, "flair": "WTS: Electronics"}, FETCHED_AT)
+        sold = normalize_reddit_post({**base_post, "flair": "SOLD OUT"}, FETCHED_AT)
+
+        self.assertEqual(available["status"], "AVAILABLE")
+        self.assertEqual(sold["status"], "SOLD")
 
 
 if __name__ == "__main__":

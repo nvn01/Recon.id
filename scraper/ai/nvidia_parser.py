@@ -516,6 +516,13 @@ def merge_ai_results(
             validate_instagram_ai_title(item, analysis)
             source_facts = item.get("_sourceFacts") if isinstance(item.get("_sourceFacts"), dict) else {}
             is_facebook_group = source_facts.get("sourceType") == "facebook_group"
+            source_status = str(item.get("status") or "UNKNOWN").upper()
+            deterministic_source_status = (
+                source_status
+                if str(item.get("platform") or "").upper() in {"FACEBOOK", "REDDIT"}
+                and source_status in {"AVAILABLE", "SOLD"}
+                else None
+            )
             item["title"] = blank_to_none(analysis.get("title")) or item["title"]
             item["price"] = normalize_ai_price(analysis.get("price"))
             item["locationTexts"] = normalize_ai_locations(analysis.get("locationTexts"))
@@ -523,7 +530,7 @@ def merge_ai_results(
             item["status"] = (
                 "AVAILABLE"
                 if is_facebook_group
-                else normalize_ai_status(analysis.get("status")) or "UNKNOWN"
+                else deterministic_source_status or normalize_ai_status(analysis.get("status")) or "UNKNOWN"
             )
             item["category"] = blank_to_none(analysis.get("category"))
             item["brand"] = blank_to_none(analysis.get("brand"))

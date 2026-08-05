@@ -899,7 +899,7 @@ def normalize_card(
         "locationTexts": [],
         "conditionText": None,
         "sellerName": detail.seller or card.seller_name or None,
-        "status": "UNKNOWN",
+        "status": marketplace_source_status(card),
         "postedAt": parse_posted_at(detail.posted, fetched_at),
         "firstFetchedAt": fetched_at.isoformat(),
         "lastFetchedAt": fetched_at.isoformat(),
@@ -916,6 +916,22 @@ def normalize_card(
             "isHidden": card.is_hidden,
         },
     }
+
+
+def marketplace_source_status(card: MarketplaceCard) -> str:
+    if card.is_sold is True:
+        return "SOLD"
+    visible_lines = {
+        normalize_spaces(line).casefold()
+        for line in card.raw_text.splitlines()
+        if normalize_spaces(line)
+    }
+    has_habis_label = any(re.search(r"(?:^|[·|])\s*habis$", line) for line in visible_lines)
+    if visible_lines.intersection({"habis", "sold", "sold out", "terjual"}) or has_habis_label:
+        return "SOLD"
+    if card.is_sold is False and card.is_live is True:
+        return "AVAILABLE"
+    return "UNKNOWN"
 
 
 def normalize_listing_title(card: MarketplaceCard) -> str:
@@ -1536,10 +1552,8 @@ def enrich_listings_with_ai(
     args: argparse.Namespace,
     log_path: Path | None,
 ) -> list[dict[str, Any]]:
-    if str(SCRAPER_DIR) not in sys.path:
-        sys.path.insert(0, str(SCRAPER_DIR))
     try:
-        from reddit.nvidia_parser import NvidiaParserError, enrich_listings_with_nvidia
+        from scraper.ai.nvidia_parser import NvidiaParserError, enrich_listings_with_nvidia
     except ImportError as exc:
         log_event(log_path, {"source": "facebook", "status": "ai_parse_unavailable", "error": str(exc)})
         print(f"NVIDIA AI parsing unavailable: {exc}", file=sys.stderr)

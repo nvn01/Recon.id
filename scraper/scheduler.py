@@ -45,6 +45,7 @@ class ScheduleJob:
     initial_delay_seconds: int = 0
     jitter_seconds: int = 0
     run_timeout_seconds: int | None = None
+    fixed_rate: bool = False
 
 
 @dataclass(frozen=True)
@@ -206,24 +207,21 @@ def build_reddit_reconciliation_jobs(config: dict[str, Any]) -> list[ScheduleJob
     if not source_config.get("enabled", True) or not schedule_config.get("enabled", False):
         return []
 
-    cadence = max(3600, int_value(schedule_config.get("cadence_seconds"), 10_800))
-    initial_delay = max(0, int_value(schedule_config.get("initial_delay_seconds"), 210))
+    cadence = max(60, int_value(schedule_config.get("cadence_seconds"), 60))
+    initial_delay = max(0, int_value(schedule_config.get("initial_delay_seconds"), 30))
     jitter = max(0, int_value(schedule_config.get("jitter_seconds"), 0))
-    window_days = max(1, int_value(schedule_config.get("window_days"), 3))
-    delay_seconds = max(0.0, float_value(schedule_config.get("delay_seconds"), 5.0))
+    window_size = max(1, min(500, int_value(schedule_config.get("window_size"), 60)))
     timeout = max(5, int_value(schedule_config.get("timeout_seconds"), 30))
     retries = max(1, int_value(schedule_config.get("retries"), 1))
-    run_timeout = max(300, int_value(schedule_config.get("job_timeout_seconds"), 600))
+    run_timeout = max(30, int_value(schedule_config.get("job_timeout_seconds"), 45))
     return [
         ScheduleJob(
             id="reddit:reconcile",
             connector="reddit",
             cadence_seconds=cadence,
             args=(
-                "--window-days",
-                str(window_days),
-                "--delay-seconds",
-                str(delay_seconds),
+                "--window-size",
+                str(window_size),
                 "--timeout",
                 str(timeout),
                 "--retries",
@@ -233,6 +231,7 @@ def build_reddit_reconciliation_jobs(config: dict[str, Any]) -> list[ScheduleJob
             initial_delay_seconds=initial_delay,
             jitter_seconds=jitter,
             run_timeout_seconds=run_timeout,
+            fixed_rate=True,
         )
     ]
 
@@ -243,21 +242,18 @@ def build_facebook_reconciliation_jobs(config: dict[str, Any]) -> list[ScheduleJ
     if not source_config.get("enabled", True) or not schedule_config.get("enabled", False):
         return []
 
-    cadence = max(3600, int_value(schedule_config.get("cadence_seconds"), 10_800))
-    limit = max(1, min(100, int_value(schedule_config.get("limit"), 50)))
+    cadence = max(60, int_value(schedule_config.get("cadence_seconds"), 60))
+    window_size = max(1, min(500, int_value(schedule_config.get("window_size"), 60)))
     jitter = max(0, int_value(schedule_config.get("jitter_seconds"), 0))
-    initial_delay = max(0, int_value(schedule_config.get("initial_delay_seconds"), 150))
-    delay_seconds = max(0.0, float_value(schedule_config.get("delay_seconds"), 2.0))
+    initial_delay = max(0, int_value(schedule_config.get("initial_delay_seconds"), 45))
     timeout = max(5, int_value(schedule_config.get("timeout_seconds"), 30))
     wait_ms = max(0, int_value(schedule_config.get("wait_ms"), 0))
-    run_timeout = max(300, int_value(schedule_config.get("job_timeout_seconds"), 900))
+    run_timeout = max(30, int_value(schedule_config.get("job_timeout_seconds"), 55))
     browser = str(schedule_config.get("browser") or source_config.get("browser") or "chrome").strip()
     headless = bool_value(schedule_config.get("headless"), default=True)
     job_args = [
-        "--limit",
-        str(limit),
-        "--delay-seconds",
-        str(delay_seconds),
+        "--window-size",
+        str(window_size),
         "--timeout",
         str(timeout),
         "--wait-ms",
@@ -277,6 +273,7 @@ def build_facebook_reconciliation_jobs(config: dict[str, Any]) -> list[ScheduleJ
             initial_delay_seconds=initial_delay,
             jitter_seconds=jitter,
             run_timeout_seconds=run_timeout,
+            fixed_rate=True,
         )
     ]
 
@@ -736,7 +733,10 @@ def coalesce_due_jobs(
 
 def record_job_state(state: dict[str, Any], job: ScheduleJob, run: JobRun, now: datetime) -> None:
     jitter = random.randint(0, job.jitter_seconds) if job.jitter_seconds > 0 else 0
-    next_due = now + timedelta(seconds=job.cadence_seconds + jitter)
+    cadence_base = parse_iso_datetime(run.started_at) if job.fixed_rate else now
+    next_due = (cadence_base or now) + timedelta(seconds=job.cadence_seconds + jitter)
+    if next_due < now:
+        next_due = now
     state.setdefault("jobs", {})[job.id] = {
         "connector": job.connector,
         "lastAttemptAt": run.started_at,

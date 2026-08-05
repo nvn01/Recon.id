@@ -6,7 +6,6 @@ import argparse
 import json
 import re
 import sys
-import time
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from typing import Any, Iterable
@@ -25,14 +24,21 @@ from scraper.storage.postgres import StorageError, require_database_url
 
 
 SELECT_RECONCILIATION_CANDIDATES_SQL = """
+WITH latest_ready AS (
+    SELECT id, external_id, source_url, status, last_fetched_at,
+           COALESCE(posted_at, first_fetched_at) AS listed_at
+    FROM listings
+    WHERE platform = 'facebook'::listing_platform
+      AND status IN ('available'::listing_status, 'unknown'::listing_status)
+      AND external_id ~ '^[0-9]+$'
+      AND source_url ~ '^https://www\\.facebook\\.com/marketplace/item/[0-9]+/?$'
+    ORDER BY COALESCE(posted_at, first_fetched_at) DESC, id DESC
+    LIMIT %s
+)
 SELECT external_id, source_url, status::text
-FROM listings
-WHERE platform = 'facebook'::listing_platform
-  AND status IN ('available'::listing_status, 'unknown'::listing_status)
-  AND external_id ~ '^[0-9]+$'
-  AND source_url ~ '^https://www\\.facebook\\.com/marketplace/item/[0-9]+/?$'
-ORDER BY last_fetched_at ASC, COALESCE(posted_at, first_fetched_at) DESC, id
-LIMIT %s
+FROM latest_ready
+ORDER BY last_fetched_at ASC NULLS FIRST, listed_at DESC, id
+LIMIT 1
 """
 
 UPDATE_RECONCILIATION_RESULT_SQL = """
@@ -48,7 +54,7 @@ WHERE source_url = %(source_url)s
   AND status IN ('available'::listing_status, 'unknown'::listing_status)
 """
 
-SOLD_LINES = frozenset({"sold", "sold out", "terjual", "sudah terjual"})
+SOLD_LINES = frozenset({"habis", "sold", "sold out", "terjual", "sudah terjual"})
 SOLD_PHRASES = (
     "this listing was sold",
     "this item was sold",
@@ -87,7 +93,7 @@ class ReconciliationSummary:
     failed: int = 0
 
 
-def load_candidates(database_url: str, limit: int) -> list[ReconciliationCandidate]:
+def load_candidates(database_url: str, window_size: int) -> list[ReconciliationCandidate]:
     try:
         import psycopg
     except ImportError as exc:  # pragma: no cover - runtime dependency guard.
@@ -96,7 +102,7 @@ def load_candidates(database_url: str, limit: int) -> list[ReconciliationCandida
     try:
         with psycopg.connect(database_url, connect_timeout=15) as connection:
             with connection.cursor() as cursor:
-                cursor.execute(SELECT_RECONCILIATION_CANDIDATES_SQL, (limit,))
+                cursor.execute(SELECT_RECONCILIATION_CANDIDATES_SQL, (window_size,))
                 return [
                     ReconciliationCandidate(
                         external_id=str(row[0] or ""),
@@ -145,7 +151,10 @@ def extract_status_evidence(script_texts: Iterable[str], external_id: str, visib
 
     primary_text = primary_listing_text(visible_text)
     lines = [normalize_text(line) for line in primary_text.splitlines() if normalize_text(line)]
-    if any(line in SOLD_LINES for line in lines) or any(phrase in normalize_text(primary_text) for phrase in SOLD_PHRASES):
+    has_visible_sold_label = any(line in SOLD_LINES for line in lines) or any(
+        re.search(r"(?:^|[·|])\s*habis$", line) for line in lines[:6]
+    )
+    if has_visible_sold_label or any(phrase in normalize_text(primary_text) for phrase in SOLD_PHRASES):
         return StatusEvidence(status="sold", signal="visible_sold_marker")
     if any(phrase in normalize_text(primary_text) for phrase in UNAVAILABLE_PHRASES):
         # Removed, hidden, and deleted listings are not automatically equivalent to sold.
@@ -215,7 +224,7 @@ def is_expected_detail_url(url: str, external_id: str) -> bool:
 
 
 def reconcile(database_url: str, args: argparse.Namespace) -> ReconciliationSummary:
-    candidates = load_candidates(database_url, args.limit)
+    candidates = load_candidates(database_url, args.window_size)
     summary = ReconciliationSummary(selected=len(candidates))
     if not candidates:
         return summary
@@ -226,7 +235,7 @@ def reconcile(database_url: str, args: argparse.Namespace) -> ReconciliationSumm
         try:
             page = context.pages[0] if context.pages else context.new_page()
             configure_discovery_page(page, args)
-            for index, candidate in enumerate(candidates):
+            for candidate in candidates:
                 evidence = inspect_candidate(page, candidate, args)
                 results.append((candidate, evidence))
                 if evidence.checked:
@@ -241,8 +250,6 @@ def reconcile(database_url: str, args: argparse.Namespace) -> ReconciliationSumm
                     summary.failed += 1
                     if evidence.signal == "login_blocked":
                         break
-                if index + 1 < len(candidates) and args.delay_seconds > 0:
-                    time.sleep(args.delay_seconds)
         finally:
             context.close()
             if browser_instance is not None:
@@ -275,8 +282,7 @@ def output_payload(summary: ReconciliationSummary, *, ok: bool, error: str | Non
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Revisit known Facebook Marketplace listings for sold status.")
-    parser.add_argument("--limit", type=int, default=50, help="Maximum listing detail URLs per run.")
-    parser.add_argument("--delay-seconds", type=float, default=2.0, help="Delay between listing detail requests.")
+    parser.add_argument("--window-size", type=int, default=60, help="Newest ready listings eligible for rotation.")
     parser.add_argument("--timeout", type=int, default=30, help="Per-page timeout in seconds.")
     parser.add_argument("--wait-ms", type=int, default=0, help="Wait after each detail page load.")
     parser.add_argument("--browser", choices=("chromium", "chrome"), default="chrome")
@@ -289,10 +295,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--load-assets", action="store_true")
     parser.add_argument("--login", action="store_true", help=argparse.SUPPRESS)
     args = parser.parse_args()
-    if args.limit < 1 or args.limit > 100:
-        parser.error("--limit must be between 1 and 100.")
-    if args.delay_seconds < 0:
-        parser.error("--delay-seconds must be zero or greater.")
+    if args.window_size < 1 or args.window_size > 500:
+        parser.error("--window-size must be between 1 and 500.")
     if args.timeout < 5:
         parser.error("--timeout must be at least 5 seconds.")
     args.block_assets = not args.load_assets

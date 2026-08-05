@@ -27,10 +27,7 @@ from typing import Any
 
 from defusedxml import ElementTree as ET
 
-try:
-    from .nvidia_parser import NvidiaParserError, enrich_listings_with_nvidia
-except ImportError:
-    from nvidia_parser import NvidiaParserError, enrich_listings_with_nvidia
+from scraper.ai.nvidia_parser import NvidiaParserError, enrich_listings_with_nvidia
 
 
 SUBREDDIT = "jualbeliindonesia"
@@ -299,7 +296,10 @@ def fetch_flair_feeds(args: argparse.Namespace, flairs: Iterable[str]) -> list[d
             getattr(args, "retry_jitter_seconds", 0.0),
             args.timeout,
         )
-        posts.extend(parse_feed(xml_text, args.limit))
+        feed_posts = parse_feed(xml_text, args.limit)
+        for post in feed_posts:
+            post["flair"] = flair
+        posts.extend(feed_posts)
 
     return dedupe_posts(posts)
 
@@ -692,6 +692,10 @@ def normalize_post(post: dict[str, Any], fetched_at: datetime | None = None) -> 
         for index, image_url in enumerate(post.get("images", []))
     ]
 
+    flair = str(post.get("flair", "")).strip()
+    normalized_flair = flair.casefold()
+    status = "SOLD" if normalized_flair == "sold out" else "AVAILABLE" if normalized_flair.startswith("wts:") else "UNKNOWN"
+
     return {
         "platform": PLATFORM,
         "sourceUrl": canonical_url(str(post.get("url", ""))),
@@ -704,11 +708,12 @@ def normalize_post(post: dict[str, Any], fetched_at: datetime | None = None) -> 
         "locationTexts": [],
         "conditionText": None,
         "sellerName": str(post.get("author", "")).strip() or None,
-        "status": "UNKNOWN",
+        "status": status,
         "postedAt": normalize_datetime_string(str(post.get("updated", ""))),
         "firstFetchedAt": fetched_at_text,
         "lastFetchedAt": fetched_at_text,
         "images": images,
+        "_sourceFacts": {"currentFlair": flair or None},
     }
 
 

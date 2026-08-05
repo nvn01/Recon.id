@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from scraper.reddit.nvidia_parser import (
+from scraper.ai.nvidia_parser import (
     SYSTEM_PROMPT,
     NvidiaParseClient,
     NvidiaParserError,
@@ -185,6 +185,20 @@ class NvidiaParserPromptTests(unittest.TestCase):
         analyses = [{"externalId": "ig-1", "isListing": False}]
 
         self.assertEqual(merge_ai_results(listings, analyses), [])
+
+    def test_source_sold_status_wins_over_ai_for_marketplace_and_reddit(self):
+        listings = [
+            {"externalId": "fb-sold", "platform": "FACEBOOK", "title": "SSD", "status": "SOLD"},
+            {"externalId": "rd-sold", "platform": "REDDIT", "title": "GPU", "status": "SOLD"},
+        ]
+        analyses = [
+            {"externalId": "fb-sold", "isListing": True, "title": "SSD", "status": "AVAILABLE"},
+            {"externalId": "rd-sold", "isListing": True, "title": "GPU", "status": "AVAILABLE"},
+        ]
+
+        parsed = merge_ai_results(listings, analyses)
+
+        self.assertEqual([item["status"] for item in parsed], ["SOLD", "SOLD"])
 
     def test_facebook_group_listing_never_uses_ai_sold_status(self):
         listings = [

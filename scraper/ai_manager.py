@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from scraper.candidate_pool import CandidatePool, DEFAULT_POOL_PATH, LeasedCandidate
-from scraper.reddit.nvidia_parser import enrich_listings_with_nvidia
+from scraper.ai.nvidia_parser import enrich_listings_with_nvidia
 from scraper.shared.config import DEFAULT_CONFIG_PATH, load_config, table
 from scraper.shared.listing_contract import validate_listings
 from scraper.shared.runtime import (
