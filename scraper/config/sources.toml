@@ -34,6 +34,20 @@ stagger_seconds = 60
 jitter_seconds = 10
 limit = 15
 
+[scheduler.reddit_reconciliation]
+enabled = true
+# Revisit every still-ready Reddit listing posted in the last three days. The
+# subreddit now replaces the original WTS flair with SOLD OUT instead of
+# keeping both, so the current flair must be read from the individual post.
+cadence_seconds = 10800
+initial_delay_seconds = 210
+jitter_seconds = 300
+window_days = 3
+delay_seconds = 5.0
+timeout_seconds = 30
+retries = 1
+job_timeout_seconds = 600
+
 [scheduler.instagram]
 enabled = true
 # Seven public profiles start 45 seconds apart. The first sweep completes in
@@ -60,6 +74,22 @@ headless = true
 browser = "chrome"
 split_targets = true
 target_groups = ["hot"]
+
+[scheduler.facebook_reconciliation]
+enabled = true
+# Sold Marketplace items disappear from newest-first category feeds. Revisit a
+# bounded, rotating batch of known available/unknown detail URLs every 3 hours.
+# Oldest last_fetched_at is checked first, so old inventory is not starved.
+cadence_seconds = 10800
+initial_delay_seconds = 150
+jitter_seconds = 300
+limit = 50
+delay_seconds = 2.0
+timeout_seconds = 30
+wait_ms = 0
+headless = true
+browser = "chrome"
+job_timeout_seconds = 900
 
 [scheduler.facebook_groups]
 enabled = true

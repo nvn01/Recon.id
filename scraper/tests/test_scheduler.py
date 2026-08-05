@@ -51,7 +51,7 @@ class SchedulerTests(unittest.TestCase):
     def test_production_config_rolls_reddit_flairs_without_a_request_burst(self):
         config = load_config(DEFAULT_CONFIG_PATH)
         reddit_config = config["reddit"]["wts_computers"]
-        reddit_jobs = [job for job in build_jobs(config) if job.connector == "reddit"]
+        reddit_jobs = [job for job in build_jobs(config) if job.id != "reddit:reconcile" and job.connector == "reddit"]
 
         self.assertEqual(
             reddit_config["flairs"],
@@ -208,11 +208,23 @@ class SchedulerTests(unittest.TestCase):
         facebook_jobs = [
             job
             for job in build_jobs(config)
-            if job.connector == "facebook" and not job.id.startswith("facebook-groups:")
+            if job.id.startswith("facebook:category-")
         ]
         self.assertTrue(all(job.cadence_seconds == 180 for job in facebook_jobs))
         self.assertEqual([job.initial_delay_seconds for job in facebook_jobs], [0, 60, 120])
         self.assertTrue(all("--ai-parse" not in job.args for job in facebook_jobs))
+
+        [reconciliation_job] = [job for job in build_jobs(config) if job.id == "facebook-marketplace:reconcile"]
+        self.assertEqual(reconciliation_job.cadence_seconds, 10_800)
+        self.assertEqual(reconciliation_job.module, "scraper.facebook.reconcile")
+        self.assertIn("50", reconciliation_job.args)
+        self.assertEqual(reconciliation_job.run_timeout_seconds, 900)
+
+        [reddit_reconciliation_job] = [job for job in build_jobs(config) if job.id == "reddit:reconcile"]
+        self.assertEqual(reddit_reconciliation_job.cadence_seconds, 10_800)
+        self.assertEqual(reddit_reconciliation_job.module, "scraper.reddit.reconcile")
+        self.assertIn("3", reddit_reconciliation_job.args)
+        self.assertEqual(reddit_reconciliation_job.run_timeout_seconds, 600)
 
         [operations_job] = [job for job in build_jobs(config) if job.connector == "operations"]
         self.assertEqual(operations_job.cadence_seconds, 86_400)
@@ -229,12 +241,17 @@ class SchedulerTests(unittest.TestCase):
 
         compose = (Path(__file__).parents[2] / "docker-compose.yml").read_text(encoding="utf-8")
         scraper_service = compose.split("  scraper:", maxsplit=1)[1].split("\n  scraper-scheduler:", maxsplit=1)[0]
+        scheduler_service = compose.split("  scraper-scheduler:", maxsplit=1)[1].split(
+            "\n  scraper-ai-manager:", maxsplit=1
+        )[0]
         self.assertNotIn("    init: true", scraper_service)
         self.assertNotIn("    command:", scraper_service)
         self.assertIn("  scraper-ai-manager:", compose)
         self.assertIn("scraper.ai_manager", compose)
         self.assertIn("  scraper-media-worker:", compose)
         self.assertIn("scraper.media.worker", compose)
+        self.assertIn("DATABASE_URL", scheduler_service)
+        self.assertNotIn("NVIDIA_API_KEY", scheduler_service)
         ai_service = compose.split("  scraper-ai-manager:", maxsplit=1)[1].split(
             "\n  scraper-media-worker:", maxsplit=1
         )[0]

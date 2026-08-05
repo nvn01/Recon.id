@@ -154,10 +154,11 @@ def fetch_text(
     retry_wait: int,
     retry_jitter: float = 0.0,
     timeout: int = 30,
+    accept: str = "application/atom+xml,application/xml;q=0.9,*/*;q=0.8",
 ) -> str:
     headers = {
         "User-Agent": user_agent,
-        "Accept": "application/atom+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept": accept,
     }
 
     max_attempts = retries

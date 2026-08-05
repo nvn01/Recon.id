@@ -72,6 +72,7 @@ services:
       - scraper.scheduler
       - --queue-candidates
     environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-recon}:${POSTGRES_PASSWORD:-recon_dev_password}@postgres:5432/${POSTGRES_DB:-recon_dev}
       SCRAPER_EGRESS_MODE: ${SCRAPER_EGRESS_MODE:-direct}
       SCRAPER_ALLOW_PROXY: ${SCRAPER_ALLOW_PROXY:-false}
       SCRAPER_PROXY_URL: ${SCRAPER_PROXY_URL:-}
@@ -81,6 +82,9 @@ services:
       - scraper-logs:/app/scraper/.logs
       - scraper-state:/app/scraper/.state
       - scraper-facebook-profile:/app/scraper/facebook/.facebook-profile
+    depends_on:
+      postgres:
+        condition: service_healthy
 
   scraper-ai-manager:
     profiles:

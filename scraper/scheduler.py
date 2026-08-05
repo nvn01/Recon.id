@@ -44,6 +44,7 @@ class ScheduleJob:
     module: str = "scraper.main"
     initial_delay_seconds: int = 0
     jitter_seconds: int = 0
+    run_timeout_seconds: int | None = None
 
 
 @dataclass(frozen=True)
@@ -143,7 +144,7 @@ def run_scheduler_loop(
                 config_path=args.config,
                 write_db=args.write_db,
                 database_url=args.database_url,
-                timeout=job_timeout_seconds,
+                timeout=job.run_timeout_seconds or job_timeout_seconds,
                 queue_candidates=args.queue_candidates,
                 candidate_pool=candidate_pool,
             )
@@ -190,11 +191,94 @@ def parse_args() -> argparse.Namespace:
 def build_jobs(config: dict[str, Any]) -> list[ScheduleJob]:
     jobs: list[ScheduleJob] = []
     jobs.extend(build_reddit_jobs(config))
+    jobs.extend(build_reddit_reconciliation_jobs(config))
     jobs.extend(build_instagram_jobs(config))
     jobs.extend(build_facebook_jobs(config))
+    jobs.extend(build_facebook_reconciliation_jobs(config))
     jobs.extend(build_facebook_group_jobs(config))
     jobs.extend(build_operational_report_jobs(config))
     return jobs
+
+
+def build_reddit_reconciliation_jobs(config: dict[str, Any]) -> list[ScheduleJob]:
+    schedule_config = table(config, "scheduler", "reddit_reconciliation")
+    source_config = table(config, "reddit", "wts_computers")
+    if not source_config.get("enabled", True) or not schedule_config.get("enabled", False):
+        return []
+
+    cadence = max(3600, int_value(schedule_config.get("cadence_seconds"), 10_800))
+    initial_delay = max(0, int_value(schedule_config.get("initial_delay_seconds"), 210))
+    jitter = max(0, int_value(schedule_config.get("jitter_seconds"), 0))
+    window_days = max(1, int_value(schedule_config.get("window_days"), 3))
+    delay_seconds = max(0.0, float_value(schedule_config.get("delay_seconds"), 5.0))
+    timeout = max(5, int_value(schedule_config.get("timeout_seconds"), 30))
+    retries = max(1, int_value(schedule_config.get("retries"), 1))
+    run_timeout = max(300, int_value(schedule_config.get("job_timeout_seconds"), 600))
+    return [
+        ScheduleJob(
+            id="reddit:reconcile",
+            connector="reddit",
+            cadence_seconds=cadence,
+            args=(
+                "--window-days",
+                str(window_days),
+                "--delay-seconds",
+                str(delay_seconds),
+                "--timeout",
+                str(timeout),
+                "--retries",
+                str(retries),
+            ),
+            module="scraper.reddit.reconcile",
+            initial_delay_seconds=initial_delay,
+            jitter_seconds=jitter,
+            run_timeout_seconds=run_timeout,
+        )
+    ]
+
+
+def build_facebook_reconciliation_jobs(config: dict[str, Any]) -> list[ScheduleJob]:
+    schedule_config = table(config, "scheduler", "facebook_reconciliation")
+    source_config = table(config, "facebook", "marketplace")
+    if not source_config.get("enabled", True) or not schedule_config.get("enabled", False):
+        return []
+
+    cadence = max(3600, int_value(schedule_config.get("cadence_seconds"), 10_800))
+    limit = max(1, min(100, int_value(schedule_config.get("limit"), 50)))
+    jitter = max(0, int_value(schedule_config.get("jitter_seconds"), 0))
+    initial_delay = max(0, int_value(schedule_config.get("initial_delay_seconds"), 150))
+    delay_seconds = max(0.0, float_value(schedule_config.get("delay_seconds"), 2.0))
+    timeout = max(5, int_value(schedule_config.get("timeout_seconds"), 30))
+    wait_ms = max(0, int_value(schedule_config.get("wait_ms"), 0))
+    run_timeout = max(300, int_value(schedule_config.get("job_timeout_seconds"), 900))
+    browser = str(schedule_config.get("browser") or source_config.get("browser") or "chrome").strip()
+    headless = bool_value(schedule_config.get("headless"), default=True)
+    job_args = [
+        "--limit",
+        str(limit),
+        "--delay-seconds",
+        str(delay_seconds),
+        "--timeout",
+        str(timeout),
+        "--wait-ms",
+        str(wait_ms),
+        "--browser",
+        browser,
+    ]
+    if headless:
+        job_args.append("--headless")
+    return [
+        ScheduleJob(
+            id="facebook-marketplace:reconcile",
+            connector="facebook",
+            cadence_seconds=cadence,
+            args=tuple(job_args),
+            module="scraper.facebook.reconcile",
+            initial_delay_seconds=initial_delay,
+            jitter_seconds=jitter,
+            run_timeout_seconds=run_timeout,
+        )
+    ]
 
 
 def build_operational_report_jobs(config: dict[str, Any]) -> list[ScheduleJob]:
