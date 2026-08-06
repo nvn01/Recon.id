@@ -727,6 +727,9 @@ function ListingCard({
             />
           ) : null}
         </span>
+        {listing.status === "sold" ? (
+          <span className="listing-sold-badge">SOLD</span>
+        ) : null}
         {images.length > 1 ? (
           <span className="carousel-dots" aria-hidden="true">
             {images.map((image, index) => (

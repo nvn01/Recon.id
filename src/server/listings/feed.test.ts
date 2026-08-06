@@ -29,14 +29,29 @@ const baseListing = {
 };
 
 describe("getListingFeed", () => {
-  it("keeps available and unknown in one recency bucket and ranks only sold last", () => {
+  it("keeps every status in one recency bucket for the default newest sort", () => {
     const query = buildListingFeedQuery({ limit: 24 });
     const sql = query.strings.join("?");
 
-    expect(sql).toContain("WHEN 'sold' THEN 1");
-    expect(sql).toContain("ELSE 0");
+    expect(sql).toContain('0 AS "statusRank"');
+    expect(sql).not.toContain("WHEN 'sold'");
     expect(sql).not.toContain("WHEN 'available'");
     expect(sql).not.toContain("WHEN 'unknown'");
+  });
+
+  it("preserves explicit ready-stock and sold-out status sorting", () => {
+    const availableFirstSql = buildListingFeedQuery({
+      limit: 24,
+      sort: "available-first",
+    }).strings.join("?");
+    const soldFirstSql = buildListingFeedQuery({
+      limit: 24,
+      sort: "sold-first",
+    }).strings.join("?");
+
+    expect(availableFirstSql).toContain("WHEN 'available' THEN 0");
+    expect(availableFirstSql).toContain("WHEN 'unknown' THEN 1");
+    expect(soldFirstSql).toContain("WHEN 'sold' THEN 0");
   });
 
   it("filters hidden listings, content blocks, disabled platforms, and blocked Facebook seller names", () => {
@@ -71,7 +86,7 @@ describe("getListingFeed", () => {
       },
       {
         id: "listing-c",
-        statusRank: 1,
+        statusRank: 0,
         sortValue: 0,
         effectiveAt: new Date("2026-07-12T09:00:00Z"),
       },
@@ -83,6 +98,7 @@ describe("getListingFeed", () => {
         id: "listing-b",
         sourceUrl: "https://www.reddit.com/r/test/comments/b",
         title: "Listing B",
+        status: "SOLD",
       },
     ]);
     const db = { $queryRaw: queryRaw, listing: { findMany } };
@@ -93,6 +109,7 @@ describe("getListingFeed", () => {
       "listing-b",
       "listing-a",
     ]);
+    expect(result.items[0]?.status).toBe("sold");
     expect(result.hasNextPage).toBe(true);
     expect(result.nextCursor).not.toBeNull();
     expect(decodeListingCursor(result.nextCursor!)).toEqual({
@@ -124,7 +141,7 @@ describe("getListingFeed", () => {
 
     const cursor = encodeListingCursor({
       sort: "newest",
-      statusRank: 1,
+      statusRank: 0,
       sortValue: 0,
       effectiveAt: new Date("2026-07-12T09:00:00Z"),
       id: "cursor-id",
@@ -163,7 +180,7 @@ describe("getListingFeed", () => {
         "%100\\% RTX\\_4070%",
         1_000_000,
         10_000_000,
-        1,
+        0,
         new Date("2026-07-12T09:00:00Z"),
         "cursor-id",
         6,

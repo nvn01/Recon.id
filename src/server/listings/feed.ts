@@ -189,6 +189,10 @@ export function buildListingFeedQuery(
 }
 
 function statusRankExpression(sort: ListingSort): Prisma.Sql {
+  if (sort === "newest") {
+    return Prisma.sql`0`;
+  }
+
   if (sort === "available-first") {
     return Prisma.sql`CASE listing.status::text
       WHEN 'available' THEN 0
