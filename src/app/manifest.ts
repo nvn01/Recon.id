@@ -1,11 +1,12 @@
 import type { MetadataRoute } from "next";
 
+import { siteConfig } from "~/lib/site";
+
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "RECON - Temukan gear incaranmu",
+    name: siteConfig.title,
     short_name: "RECON",
-    description:
-      "Temukan listing komputer, komponen, dan gaming gear preloved dari berbagai platform dalam satu feed.",
+    description: siteConfig.description,
     start_url: "/collection/all",
     display: "standalone",
     background_color: "#f7f8f6",

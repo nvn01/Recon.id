@@ -4,6 +4,7 @@ import { Suspense } from "react";
 
 import { ReconFeedPage } from "~/components/recon-feed-page";
 import { collections } from "~/data/listings";
+import { siteConfig } from "~/lib/site";
 
 type CollectionPageProps = {
   params: Promise<{ collection: string }>;
@@ -24,15 +25,22 @@ export async function generateMetadata({
   const path = `/collection/${matched.slug}`;
   const description =
     matched.slug === "all"
-      ? "Lihat temuan terbaru komputer, komponen, dan gaming gear preloved dari berbagai platform."
+      ? siteConfig.description
       : `Temukan listing ${matched.label.toLowerCase()} preloved terbaru dari berbagai platform di RECON.`;
 
   return {
     title:
-      matched.slug === "all" ? "Temuan terbaru" : `${matched.label} preloved`,
+      matched.slug === "all"
+        ? { absolute: siteConfig.title }
+        : `${matched.label} secondhand`,
     description,
     alternates: { canonical: path },
-    openGraph: { title: `${matched.label} - RECON`, description, url: path },
+    openGraph: {
+      title:
+        matched.slug === "all" ? siteConfig.title : `${matched.label} - RECON`,
+      description,
+      url: path,
+    },
     robots: hasQueryParameters
       ? { index: false, follow: true }
       : { index: true, follow: true },

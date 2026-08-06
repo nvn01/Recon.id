@@ -1,9 +1,9 @@
 export const siteConfig = {
   name: "RECON",
   url: "https://recon.app-pixel.com",
-  title: "RECON - Temukan gear incaranmu",
+  title: "RECON - Cari Barang Secondhand dari Banyak Platform",
   description:
-    "Temukan listing komputer, komponen, dan gaming gear preloved dari berbagai platform dalam satu feed.",
+    "Cari laptop, GPU, komponen PC, gaming gear, dan ponsel secondhand dari berbagai platform jual-beli Indonesia dalam satu tempat.",
   email: "recon@app-pixel.com",
   github: "https://github.com/nvn01/Recon.id",
 } as const;

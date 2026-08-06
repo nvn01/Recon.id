@@ -1,6 +1,6 @@
 import { ImageResponse } from "next/og";
 
-export const alt = "RECON - Temukan gear incaranmu";
+export const alt = "RECON - Cari Barang Secondhand dari Banyak Platform";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
@@ -56,7 +56,7 @@ export default function OpenGraphImage() {
             maxWidth: 950,
           }}
         >
-          Gear bagus muncul sebentar.
+          Cari barang secondhand dari banyak platform.
         </div>
         <div
           style={{
@@ -66,8 +66,8 @@ export default function OpenGraphImage() {
             maxWidth: 900,
           }}
         >
-          Temukan listing komputer dan gaming gear preloved dari berbagai
-          platform dalam satu feed.
+          Komputer, komponen, gaming gear, dan ponsel dari Facebook, Instagram,
+          dan Reddit dalam satu feed.
         </div>
       </div>
       <div

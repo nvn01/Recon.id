@@ -134,9 +134,11 @@ function titleForScope(scope: FeedScope) {
     return `${platformMeta[scope.slug].label}, satu feed.`;
   }
 
-  if (scope.slug === "all") return "Barang bagus muncul sebentar.";
+  if (scope.slug === "all") {
+    return "Cari barang secondhand dari banyak platform.";
+  }
 
-  return `${collections.find((item) => item.slug === scope.slug)?.label ?? "Koleksi"} yang baru ditemukan.`;
+  return `${collections.find((item) => item.slug === scope.slug)?.label ?? "Koleksi"} secondhand terbaru.`;
 }
 
 type ListingFilterDraft = Omit<ListingFilters, "minPrice" | "maxPrice"> & {

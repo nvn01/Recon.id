@@ -40,6 +40,28 @@ function addScript(id: string, src: string) {
   document.head.appendChild(script);
 }
 
+function loadScript(id: string, src: string) {
+  return new Promise<void>((resolve, reject) => {
+    const existing = document.getElementById(id);
+    if (existing) {
+      resolve();
+      return;
+    }
+
+    const script = document.createElement("script");
+    script.id = id;
+    script.async = true;
+    script.src = src;
+    script.addEventListener("load", () => resolve(), { once: true });
+    script.addEventListener(
+      "error",
+      () => reject(new Error(`Unable to load analytics script: ${id}`)),
+      { once: true },
+    );
+    document.head.appendChild(script);
+  });
+}
+
 function removeAnalyticsCookies() {
   const cookieNames = document.cookie
     .split(";")
@@ -89,7 +111,7 @@ async function enableAnalytics() {
       allow_google_signals: false,
       allow_ad_personalization_signals: false,
     });
-    addScript(
+    await loadScript(
       "recon-google-analytics",
       `https://www.googletagmanager.com/gtag/js?id=${encodeURIComponent(googleMeasurementId)}`,
     );
@@ -162,6 +184,7 @@ export function AnalyticsConsent() {
   const pathname = usePathname();
   const [choice, setChoice] = useState<ConsentChoice | null>(null);
   const [isOpen, setIsOpen] = useState(false);
+  const [analyticsReady, setAnalyticsReady] = useState(false);
   const initialized = useRef(false);
 
   useEffect(() => {
@@ -194,11 +217,15 @@ export function AnalyticsConsent() {
   useEffect(() => {
     if (choice !== "granted" || initialized.current) return;
     initialized.current = true;
-    void enableAnalytics();
+    void enableAnalytics()
+      .then(() => setAnalyticsReady(true))
+      .catch(() => {
+        initialized.current = false;
+      });
   }, [choice]);
 
   useEffect(() => {
-    if (choice !== "granted") return;
+    if (choice !== "granted" || !analyticsReady) return;
     const pagePath = sanitizedPagePath(pathname);
     window.gtag?.("event", "page_view", {
       page_location: `${window.location.origin}${pagePath}`,
@@ -208,7 +235,7 @@ export function AnalyticsConsent() {
     window.posthog?.capture("$pageview", {
       $current_url: `${window.location.origin}${pagePath}`,
     });
-  }, [choice, pathname]);
+  }, [analyticsReady, choice, pathname]);
 
   function updateChoice(nextChoice: ConsentChoice) {
     writeConsentChoice(nextChoice);
@@ -216,6 +243,7 @@ export function AnalyticsConsent() {
     setIsOpen(false);
 
     if (nextChoice === "denied") {
+      setAnalyticsReady(false);
       disableAnalytics();
     }
 

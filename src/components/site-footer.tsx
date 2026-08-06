@@ -27,6 +27,9 @@ export function SiteFooter() {
         </div>
 
         <nav className="footer-links" aria-label="Informasi RECON">
+          <Link href="/collection/all">Temuan terbaru</Link>
+          <Link href="/collection">Koleksi barang</Link>
+          <Link href="/platform">Platform sumber</Link>
           <Link href="/about-us">About us</Link>
           <Link href="/terms">Terms</Link>
           <Link href="/cookies-policy">Cookies policy</Link>

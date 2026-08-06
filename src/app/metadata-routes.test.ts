@@ -1,9 +1,24 @@
 import { describe, expect, it } from "vitest";
 
+import manifest from "~/app/manifest";
 import robots from "~/app/robots";
 import sitemap from "~/app/sitemap";
+import { siteConfig } from "~/lib/site";
 
 describe("public indexing metadata routes", () => {
+  it("uses the descriptive search identity across site metadata", () => {
+    const webManifest = manifest();
+
+    expect(siteConfig.title).toBe(
+      "RECON - Cari Barang Secondhand dari Banyak Platform",
+    );
+    expect(siteConfig.description).toBe(
+      "Cari laptop, GPU, komponen PC, gaming gear, dan ponsel secondhand dari berbagai platform jual-beli Indonesia dalam satu tempat.",
+    );
+    expect(webManifest.name).toBe(siteConfig.title);
+    expect(webManifest.description).toBe(siteConfig.description);
+  });
+
   it("publishes only canonical HTTPS URLs without query parameters", () => {
     const entries = sitemap();
     const urls = entries.map((entry) => entry.url);
