@@ -11,10 +11,10 @@ import { TRPCReactProvider } from "~/trpc/react";
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteConfig.url),
-  applicationName: "RECON",
+  applicationName: siteConfig.name,
   title: {
     default: siteConfig.title,
-    template: "%s - RECON",
+    template: "%s - Recon Indonesia",
   },
   description: siteConfig.description,
   category: "technology",
@@ -26,9 +26,9 @@ export const metadata: Metadata = {
     "gaming gear",
     "Indonesia",
   ],
-  authors: [{ name: "RECON", url: siteConfig.url }],
-  creator: "RECON",
-  publisher: "RECON",
+  authors: [{ name: siteConfig.name, url: siteConfig.url }],
+  creator: siteConfig.name,
+  publisher: siteConfig.name,
   formatDetection: {
     email: false,
     address: false,
@@ -37,7 +37,7 @@ export const metadata: Metadata = {
   openGraph: {
     type: "website",
     locale: "id_ID",
-    siteName: "RECON",
+    siteName: siteConfig.name,
     title: siteConfig.title,
     description: siteConfig.description,
     url: "/collection/all",
@@ -113,7 +113,7 @@ export default async function RootLayout({
         "@id": `${siteConfig.url}/#website`,
         url: siteConfig.url,
         name: siteConfig.name,
-        alternateName: ["Recon", "recon.app-pixel.com"],
+    alternateName: ["RECON"],
         description: siteConfig.description,
         inLanguage: "id-ID",
         publisher: { "@id": `${siteConfig.url}/#organization` },

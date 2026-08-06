@@ -12,8 +12,9 @@ describe("public indexing metadata routes", () => {
     expect(siteConfig.title).toBe(
       "RECON - Cari Barang Secondhand dari Banyak Platform",
     );
+    expect(siteConfig.name).toBe("Recon Indonesia");
     expect(siteConfig.description).toBe(
-      "Cari laptop, GPU, komponen PC, gaming gear, dan ponsel secondhand dari berbagai platform jual-beli Indonesia dalam satu tempat.",
+      "Recon Indonesia, Temukan barang incaran dengan harga termurah dari berbagai platform jual-beli Indonesia dalam satu tempat.",
     );
     expect(webManifest.name).toBe(siteConfig.title);
     expect(webManifest.description).toBe(siteConfig.description);
