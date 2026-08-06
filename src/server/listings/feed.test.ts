@@ -39,11 +39,16 @@ describe("getListingFeed", () => {
     expect(sql).not.toContain("WHEN 'unknown'");
   });
 
-  it("filters hidden listings, disabled platforms, and blocked Facebook seller names", () => {
+  it("filters hidden listings, content blocks, disabled platforms, and blocked Facebook seller names", () => {
     const query = buildListingFeedQuery({ limit: 24 });
     const sql = query.strings.join("?");
 
     expect(sql).toContain("listing_moderation.hidden");
+    expect(sql).toContain("listing_content_blocks");
+    expect(sql).toContain("content_block.field::text = 'title'");
+    expect(sql).toContain("content_block.field::text = 'description'");
+    expect(sql).toContain("normalize_listing_content(listing.title)");
+    expect(sql).toContain("normalize_listing_content(listing.description)");
     expect(sql).toContain("platform_control.public_visible");
     expect(sql).toContain("facebook_seller_flags");
     expect(sql).toContain("normalize_seller_name");

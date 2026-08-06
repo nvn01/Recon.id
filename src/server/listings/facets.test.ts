@@ -58,9 +58,7 @@ describe("getListingFacets", () => {
     const categorySql = (
       queryRaw.mock.calls[0]?.[0] as { strings: string[] }
     ).strings.join("?");
-    expect(categorySql).toContain(
-      "cover.platform IN (",
-    );
+    expect(categorySql).toContain("cover.platform IN (");
     expect(categorySql).toContain("'instagram'::listing_platform");
     expect(categorySql).toContain("'reddit'::listing_platform");
     expect(categorySql).toContain("'facebook_group'::listing_platform");
@@ -68,6 +66,9 @@ describe("getListingFacets", () => {
     for (const [query] of queryRaw.mock.calls) {
       const sql = (query as { strings: string[] }).strings.join("?");
       expect(sql).toContain("facebook_seller_flags");
+      expect(sql).toContain("listing_content_blocks");
+      expect(sql).toContain("normalize_listing_content(listing.title)");
+      expect(sql).toContain("normalize_listing_content(listing.description)");
       expect(sql).toContain("platform_control.public_visible");
       expect(sql).toContain("listing_moderation.hidden");
     }

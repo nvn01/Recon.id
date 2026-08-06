@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   countUnseenListings,
+  createListingRefreshStore,
   hasNewListingRevision,
   listingVersionQueryOptions,
   manualListingRefreshQueryOptions,
@@ -43,5 +44,29 @@ describe("hasNewListingRevision", () => {
     expect(hasNewListingRevision(null, "revision-a")).toBe(false);
     expect(hasNewListingRevision("revision-a", "revision-a")).toBe(false);
     expect(hasNewListingRevision("revision-a", "revision-b")).toBe(true);
+  });
+});
+
+describe("createListingRefreshStore", () => {
+  it("keeps new global items pending when a filtered page is refreshed", () => {
+    const store = createListingRefreshStore();
+
+    store.observe({ revision: "revision-a", totalCount: 20 });
+    store.observe({ revision: "revision-b", totalCount: 23 });
+    expect(store.getSnapshot().unseenCount).toBe(3);
+
+    store.observe({ revision: "revision-b", totalCount: 23 });
+    expect(store.getSnapshot().unseenCount).toBe(3);
+  });
+
+  it("clears the pending global items only when the all-feed acknowledges them", () => {
+    const store = createListingRefreshStore();
+
+    store.observe({ revision: "revision-a", totalCount: 20 });
+    store.observe({ revision: "revision-b", totalCount: 23 });
+    store.acknowledge();
+
+    expect(store.getSnapshot().unseenCount).toBe(0);
+    expect(store.getSnapshot().acknowledged?.revision).toBe("revision-b");
   });
 });

@@ -10,6 +10,20 @@ export const publicListingModerationJoins = Prisma.sql`
 export const publicListingVisibilityFilter = Prisma.sql`
   AND COALESCE(platform_control.public_visible, TRUE)
   AND NOT COALESCE(listing_moderation.hidden, FALSE)
+  AND NOT EXISTS (
+    SELECT 1
+    FROM listing_content_blocks AS content_block
+    WHERE content_block.platform = listing.platform
+      AND content_block.field::text = 'title'
+      AND content_block.normalized_value = normalize_listing_content(listing.title)
+  )
+  AND NOT EXISTS (
+    SELECT 1
+    FROM listing_content_blocks AS content_block
+    WHERE content_block.platform = listing.platform
+      AND content_block.field::text = 'description'
+      AND content_block.normalized_value = normalize_listing_content(listing.description)
+  )
   AND NOT (
     listing.platform::text = 'facebook'
     AND EXISTS (

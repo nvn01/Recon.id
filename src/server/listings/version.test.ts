@@ -20,8 +20,13 @@ describe("getListingVersion", () => {
     expect(first.totalCount).toBe(42);
     expect(JSON.stringify(first)).not.toContain("2026-07-14");
 
-    const sql = (queryRaw.mock.calls[0]?.[0] as { strings: string[] }).strings.join("?");
+    const sql = (
+      queryRaw.mock.calls[0]?.[0] as { strings: string[] }
+    ).strings.join("?");
     expect(sql).toContain("facebook_seller_flags");
+    expect(sql).toContain("listing_content_blocks");
+    expect(sql).toContain("normalize_listing_content(listing.title)");
+    expect(sql).toContain("normalize_listing_content(listing.description)");
     expect(sql).toContain("listing_moderation.hidden");
   });
 

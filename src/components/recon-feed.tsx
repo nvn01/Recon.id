@@ -10,15 +10,15 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
 } from "react";
 
 import { ReconHeader } from "~/components/recon-header";
 import { RefreshArrowIcon } from "~/components/refresh-arrow-icon";
 import { stepCarouselIndex } from "~/data/carousel-navigation";
 import {
-  countUnseenListings,
-  hasNewListingRevision,
   listingVersionQueryOptions,
+  listingRefreshStore,
   manualListingRefreshQueryOptions,
 } from "~/data/listing-refresh";
 import {
@@ -1133,8 +1133,6 @@ export function ReconFeed({ scope }: ReconFeedProps) {
   const searchParams = useSearchParams();
   const utils = api.useUtils();
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [hasNewListings, setHasNewListings] = useState(false);
-  const [unseenListingCount, setUnseenListingCount] = useState(0);
   const [refreshAnnouncement, setRefreshAnnouncement] = useState("");
   const [selectedListing, setSelectedListing] = useState<Listing | null>(null);
   const query = (searchParams.get("q") ?? "").trim().slice(0, 80);
@@ -1167,38 +1165,30 @@ export function ReconFeed({ scope }: ReconFeedProps) {
     undefined,
     listingVersionQueryOptions,
   );
-  const seenListingRevision = useRef(versionQuery.data?.revision ?? null);
-  const seenListingCount = useRef<number | null>(
-    versionQuery.data?.totalCount ?? null,
+  const refreshState = useSyncExternalStore(
+    listingRefreshStore.subscribe,
+    listingRefreshStore.getSnapshot,
+    listingRefreshStore.getServerSnapshot,
   );
 
   useEffect(() => {
-    const currentRevision = versionQuery.data?.revision ?? null;
-    const currentCount = versionQuery.data?.totalCount;
-    if (!currentRevision || currentCount === undefined) return;
-
-    if (!seenListingRevision.current) {
-      seenListingRevision.current = currentRevision;
-      seenListingCount.current = currentCount;
-      return;
+    if (versionQuery.data) {
+      listingRefreshStore.observe(versionQuery.data);
     }
+  }, [versionQuery.data]);
 
-    if (!hasNewListingRevision(seenListingRevision.current, currentRevision)) {
-      return;
-    }
-
-    const unseenCount = countUnseenListings(
-      seenListingCount.current,
-      currentCount,
-    );
-    setUnseenListingCount(unseenCount);
-    setHasNewListings(unseenCount > 0);
-    if (unseenCount > 0) {
+  const announcedUnseenCount = useRef(0);
+  useEffect(() => {
+    if (
+      refreshState.unseenCount > 0 &&
+      refreshState.unseenCount !== announcedUnseenCount.current
+    ) {
       setRefreshAnnouncement(
-        `${unseenCount} item baru tersedia. Gunakan tombol di bagian atas untuk memuatnya.`,
+        `${refreshState.unseenCount} item baru tersedia. Gunakan tombol di bagian atas untuk memuatnya.`,
       );
     }
-  }, [versionQuery.data?.revision, versionQuery.data?.totalCount]);
+    announcedUnseenCount.current = refreshState.unseenCount;
+  }, [refreshState.unseenCount]);
 
   const listings = useMemo(() => {
     const uniqueListings = new Map<string, Listing>();
@@ -1225,6 +1215,12 @@ export function ReconFeed({ scope }: ReconFeedProps) {
   );
 
   const baseParams = new URLSearchParams(searchParams.toString());
+  const canAcknowledgeGlobalRefresh =
+    scope.type === "collection" &&
+    scope.slug === "all" &&
+    query === "" &&
+    sort === "newest" &&
+    countActiveFilterGroups(filters) === 0;
 
   useEffect(() => {
     trackAnalyticsEvent(
@@ -1295,17 +1291,21 @@ export function ReconFeed({ scope }: ReconFeedProps) {
 
     try {
       const revisionResult = await versionQuery.refetch();
+      if (revisionResult.data) {
+        listingRefreshStore.observe(revisionResult.data);
+      }
       await Promise.all([
         utils.listings.feed.reset(feedInput, { throwOnError: true }),
         utils.listings.facets.reset(undefined, { throwOnError: true }),
       ]);
-      if (revisionResult.data?.revision) {
-        seenListingRevision.current = revisionResult.data.revision;
-        seenListingCount.current = revisionResult.data.totalCount;
+      if (canAcknowledgeGlobalRefresh) {
+        listingRefreshStore.acknowledge(revisionResult.data);
       }
-      setHasNewListings(false);
-      setUnseenListingCount(0);
-      setRefreshAnnouncement("Temuan terbaru sudah dimuat.");
+      setRefreshAnnouncement(
+        canAcknowledgeGlobalRefresh
+          ? "Temuan terbaru sudah dimuat."
+          : "Halaman ini sudah diperbarui. Item baru dari halaman lain tetap menunggu di Semua.",
+      );
     } catch {
       setRefreshAnnouncement("Temuan belum berhasil diperbarui. Coba lagi.");
     } finally {
@@ -1317,8 +1317,8 @@ export function ReconFeed({ scope }: ReconFeedProps) {
     <div className="app-shell">
       <ReconHeader
         refreshControl={{
-          hasNewListings,
-          unseenCount: unseenListingCount,
+          hasNewListings: refreshState.unseenCount > 0,
+          unseenCount: refreshState.unseenCount,
           isRefreshing,
           onRefresh: () => void refreshFeed(),
         }}
