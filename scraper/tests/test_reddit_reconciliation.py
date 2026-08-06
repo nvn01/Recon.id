@@ -1,42 +1,73 @@
 from __future__ import annotations
 
 import unittest
+from argparse import Namespace
+from unittest.mock import patch
 
-from scraper.reddit.reconcile import SELECT_ROTATING_CANDIDATE_SQL, classify_flair, extract_current_flair, old_reddit_url
+from scraper.reddit.reconcile import (
+    SELECT_ROTATING_CANDIDATE_SQL,
+    ReconciliationCandidate,
+    build_sold_feed_url,
+    extract_feed_external_ids,
+    inspect_candidate,
+)
+
+
+SOLD_FEED = """<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <entry>
+    <id>t3_other</id>
+    <title>Other sold listing</title>
+    <link rel="alternate" href="https://www.reddit.com/r/jualbeliindonesia/comments/other/item/" />
+    <updated>2026-08-05T10:00:00+00:00</updated>
+  </entry>
+  <entry>
+    <id>t3_abc123</id>
+    <title>Target sold listing</title>
+    <link rel="alternate" href="https://www.reddit.com/r/jualbeliindonesia/comments/abc123/item/" />
+    <updated>2026-08-05T09:00:00+00:00</updated>
+  </entry>
+</feed>
+"""
 
 
 class RedditReconciliationTests(unittest.TestCase):
-    def test_current_shreddit_post_sold_out_flair_is_matched_by_id(self):
-        page = """
-        <shreddit-post id="t3_other" post-flair="WTS: Electronics"></shreddit-post>
-        <shreddit-post id="t3_abc123" post-flair="SOLD OUT"></shreddit-post>
-        """
+    def test_sold_feed_matches_only_the_selected_external_id(self):
+        self.assertEqual(extract_feed_external_ids(SOLD_FEED, 100), {"other", "abc123"})
 
-        evidence = classify_flair(extract_current_flair(page, "abc123"))
+    @patch("scraper.reddit.reconcile.fetch_text", return_value=SOLD_FEED)
+    def test_selected_post_in_sold_feed_is_marked_sold(self, fetch_text_mock):
+        evidence = inspect_candidate(self.candidate("abc123"), self.args())
 
         self.assertEqual(evidence.status, "sold")
-        self.assertEqual(evidence.signal, "sold_out_flair")
+        self.assertEqual(evidence.flair, "SOLD OUT")
+        self.assertEqual(evidence.signal, "sold_out_feed_match")
+        fetch_text_mock.assert_called_once()
 
-    def test_current_wts_flair_confirms_available(self):
-        page = '<shreddit-post id="t3_abc123" post-flair="WTS: Electronics"></shreddit-post>'
+    @patch("scraper.reddit.reconcile.fetch_text", return_value=SOLD_FEED)
+    def test_absence_from_sold_feed_preserves_existing_status(self, fetch_text_mock):
+        evidence = inspect_candidate(self.candidate("still_ready"), self.args())
 
-        evidence = classify_flair(extract_current_flair(page, "abc123"))
+        self.assertIsNone(evidence.status)
+        self.assertEqual(evidence.signal, "not_in_recent_sold_feed")
+        self.assertTrue(evidence.checked)
+        fetch_text_mock.assert_called_once()
 
-        self.assertEqual(evidence.status, "available")
+    @patch("scraper.reddit.reconcile.fetch_text", return_value="not xml")
+    def test_invalid_sold_feed_does_not_advance_the_listing(self, fetch_text_mock):
+        evidence = inspect_candidate(self.candidate("abc123"), self.args())
 
-    def test_old_reddit_flair_is_read_near_target_post(self):
-        page = """
-        <div id="thing_t3_abc123" class="thing linkflair">
-          <span class="linkflairlabel">SOLD OUT</span>
-        </div>
-        """
+        self.assertIsNone(evidence.status)
+        self.assertEqual(evidence.signal, "invalid_sold_feed")
+        self.assertFalse(evidence.checked)
+        fetch_text_mock.assert_called_once()
 
-        self.assertEqual(extract_current_flair(page, "abc123"), "SOLD OUT")
+    def test_sold_feed_url_uses_one_reddit_rss_search_request(self):
+        url = build_sold_feed_url(100, "jualbeliindonesia")
 
-    def test_related_post_flair_cannot_close_target(self):
-        page = '<shreddit-post id="t3_other" post-flair="SOLD OUT"></shreddit-post>'
-
-        self.assertIsNone(extract_current_flair(page, "abc123"))
+        self.assertIn("/r/jualbeliindonesia/search.rss?", url)
+        self.assertIn("flair%3A%22SOLD+OUT%22", url)
+        self.assertIn("limit=100", url)
 
     def test_query_rotates_one_item_inside_the_latest_window(self):
         self.assertIn("WITH latest_ready", SELECT_ROTATING_CANDIDATE_SQL)
@@ -44,10 +75,24 @@ class RedditReconciliationTests(unittest.TestCase):
         self.assertIn("ORDER BY last_fetched_at ASC", SELECT_ROTATING_CANDIDATE_SQL)
         self.assertTrue(SELECT_ROTATING_CANDIDATE_SQL.strip().endswith("LIMIT 1"))
 
-    def test_old_reddit_fallback_preserves_only_the_canonical_post_path(self):
-        self.assertEqual(
-            old_reddit_url("https://www.reddit.com/r/jualbeliindonesia/comments/abc123/item/?utm_source=test"),
-            "https://old.reddit.com/r/jualbeliindonesia/comments/abc123/item/",
+    @staticmethod
+    def candidate(external_id: str) -> ReconciliationCandidate:
+        return ReconciliationCandidate(
+            external_id=external_id,
+            source_url=f"https://www.reddit.com/r/jualbeliindonesia/comments/{external_id}/item/",
+            current_status="available",
+        )
+
+    @staticmethod
+    def args() -> Namespace:
+        return Namespace(
+            sold_feed_limit=100,
+            subreddit="jualbeliindonesia",
+            user_agent="test-agent",
+            retries=1,
+            retry_wait=1,
+            retry_jitter_seconds=0.0,
+            timeout=30,
         )
 
 

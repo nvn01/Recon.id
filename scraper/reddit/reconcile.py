@@ -3,21 +3,22 @@
 from __future__ import annotations
 
 import argparse
-import html
 import json
-import re
 import sys
 import urllib.error
+import xml.etree.ElementTree as ET
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from typing import Any, Iterable
-from urllib.parse import urlsplit, urlunsplit
 
 from scraper.reddit.reddit import (
     DEFAULT_USER_AGENT,
+    SUBREDDIT,
     RateLimitedError,
-    canonical_url,
+    build_rss_url,
+    extract_external_id,
     fetch_text,
+    parse_feed,
 )
 from scraper.storage.postgres import StorageError, require_database_url
 
@@ -51,6 +52,9 @@ WHERE source_url = %(source_url)s
   AND platform = 'reddit'::listing_platform
   AND status IN ('available'::listing_status, 'unknown'::listing_status)
 """
+
+SOLD_OUT_FLAIR = "SOLD OUT"
+DEFAULT_SOLD_FEED_LIMIT = 100
 
 
 @dataclass(frozen=True)
@@ -129,104 +133,50 @@ def persist_results(database_url: str, results: Iterable[tuple[ReconciliationCan
         raise StorageError(f"Reddit reconciliation write failed: {type(exc).__name__}") from exc
 
 
-def extract_current_flair(page_text: str, external_id: str) -> str | None:
-    decoded = html.unescape(page_text)
-    escaped_id = re.escape(external_id)
-
-    # Current Reddit renders the target as a shreddit-post custom element.
-    for tag in re.findall(r"<shreddit-post\b[^>]*>", decoded, flags=re.I):
-        if not re.search(rf"(?:t3_)?{escaped_id}\b", tag, flags=re.I):
-            continue
-        flair = attribute_value(tag, "post-flair")
-        if flair:
-            return clean_flair(flair)
-
-    # Old Reddit keeps the target thing id and its flair label close together.
-    target_match = re.search(rf"(?:thing_)?t3_{escaped_id}\b", decoded, flags=re.I)
-    if target_match:
-        nearby = decoded[target_match.start() : target_match.start() + 12_000]
-        label = re.search(
-            r"<span\b[^>]*class=[\"'][^\"']*linkflairlabel[^\"']*[\"'][^>]*>(.*?)</span>",
-            nearby,
-            flags=re.I | re.S,
-        )
-        if label:
-            return clean_flair(re.sub(r"<[^>]+>", "", label.group(1)))
-
-    # Embedded post data uses link_flair_text; restrict the scan to the target
-    # id neighborhood so recommendations cannot supply the status.
-    for match in re.finditer(escaped_id, decoded, flags=re.I):
-        nearby = decoded[max(0, match.start() - 2_000) : match.start() + 8_000]
-        flair_match = re.search(r'"link_flair_text"\s*:\s*"((?:\\.|[^"\\])*)"', nearby)
-        if flair_match:
-            return clean_flair(decode_json_string(flair_match.group(1)))
-    return None
+def build_sold_feed_url(limit: int, subreddit: str = SUBREDDIT) -> str:
+    return build_rss_url(limit, subreddit=subreddit, flair=SOLD_OUT_FLAIR)
 
 
-def attribute_value(tag: str, name: str) -> str | None:
-    match = re.search(rf"\b{re.escape(name)}\s*=\s*([\"'])(.*?)\1", tag, flags=re.I | re.S)
-    return match.group(2) if match else None
-
-
-def decode_json_string(value: str) -> str:
-    try:
-        return str(json.loads(f'"{value}"'))
-    except json.JSONDecodeError:
-        return value
-
-
-def clean_flair(value: str) -> str:
-    return re.sub(r"\s+", " ", html.unescape(value)).strip()
-
-
-def classify_flair(flair: str | None) -> FlairEvidence:
-    if not flair:
-        return FlairEvidence(flair=None, status=None, signal="flair_not_exposed")
-    normalized = clean_flair(flair).casefold()
-    if normalized == "sold out":
-        return FlairEvidence(flair=flair, status="sold", signal="sold_out_flair")
-    if normalized.startswith("wts:"):
-        return FlairEvidence(flair=flair, status="available", signal="wts_flair")
-    return FlairEvidence(flair=flair, status=None, signal="unrecognized_flair")
+def extract_feed_external_ids(xml_text: str, limit: int) -> set[str]:
+    external_ids: set[str] = set()
+    for post in parse_feed(xml_text, limit):
+        external_id = extract_external_id(str(post.get("url", "")), str(post.get("atom_id", "")))
+        if external_id:
+            external_ids.add(external_id.casefold())
+    return external_ids
 
 
 def inspect_candidate(candidate: ReconciliationCandidate, args: argparse.Namespace) -> FlairEvidence:
-    url = canonical_url(candidate.source_url)
-    if not url:
-        return FlairEvidence(flair=None, status=None, signal="invalid_source_url", checked=False)
-    page_text: str | None = None
-    for attempt_url in (url, old_reddit_url(url)):
-        try:
-            page_text = fetch_text(
-                attempt_url,
-                args.user_agent,
-                retries=args.retries,
-                retry_wait=args.retry_wait,
-                retry_jitter=args.retry_jitter_seconds,
-                timeout=args.timeout,
-                accept="text/html,application/xhtml+xml;q=0.9,*/*;q=0.8",
-            )
-            break
-        except RateLimitedError:
-            raise
-        except urllib.error.HTTPError as exc:
-            # The deployed network has historically received 403 from some
-            # Reddit surfaces. Try old Reddit once, then stop the whole batch.
-            if exc.code == 403 and attempt_url != old_reddit_url(url):
-                continue
-            print(f"Reddit reconciliation failed for {candidate.external_id}: HTTP {exc.code}", file=sys.stderr)
-            return FlairEvidence(flair=None, status=None, signal=f"http_{exc.code}", checked=False)
-        except (urllib.error.URLError, TimeoutError) as exc:
-            print(f"Reddit reconciliation failed for {candidate.external_id}: {type(exc).__name__}", file=sys.stderr)
-            return FlairEvidence(flair=None, status=None, signal=f"fetch_{type(exc).__name__}", checked=False)
-    if page_text is None:
-        return FlairEvidence(flair=None, status=None, signal="fetch_empty", checked=False)
-    return classify_flair(extract_current_flair(page_text, candidate.external_id))
+    url = build_sold_feed_url(args.sold_feed_limit, args.subreddit)
+    try:
+        xml_text = fetch_text(
+            url,
+            args.user_agent,
+            retries=args.retries,
+            retry_wait=args.retry_wait,
+            retry_jitter=args.retry_jitter_seconds,
+            timeout=args.timeout,
+            accept="application/atom+xml,application/xml;q=0.9,*/*;q=0.8",
+        )
+    except RateLimitedError:
+        raise
+    except urllib.error.HTTPError as exc:
+        print(f"Reddit reconciliation failed for {candidate.external_id}: HTTP {exc.code}", file=sys.stderr)
+        return FlairEvidence(flair=None, status=None, signal=f"http_{exc.code}", checked=False)
+    except (urllib.error.URLError, TimeoutError) as exc:
+        print(f"Reddit reconciliation failed for {candidate.external_id}: {type(exc).__name__}", file=sys.stderr)
+        return FlairEvidence(flair=None, status=None, signal=f"fetch_{type(exc).__name__}", checked=False)
 
-
-def old_reddit_url(value: str) -> str:
-    parsed = urlsplit(value)
-    return urlunsplit(("https", "old.reddit.com", parsed.path, "", ""))
+    try:
+        sold_ids = extract_feed_external_ids(xml_text, args.sold_feed_limit)
+    except ET.ParseError:
+        print(f"Reddit reconciliation failed for {candidate.external_id}: invalid SOLD OUT feed", file=sys.stderr)
+        return FlairEvidence(flair=None, status=None, signal="invalid_sold_feed", checked=False)
+    if candidate.external_id.casefold() in sold_ids:
+        return FlairEvidence(flair=SOLD_OUT_FLAIR, status="sold", signal="sold_out_feed_match")
+    # Search-feed absence never means available. Preserve the stored status and
+    # only advance the rotation timestamp after a usable SOLD OUT feed response.
+    return FlairEvidence(flair=None, status=None, signal="not_in_recent_sold_feed")
 
 
 def reconcile(database_url: str, args: argparse.Namespace) -> ReconciliationSummary:
@@ -285,6 +235,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--retries", type=int, default=1)
     parser.add_argument("--retry-wait", type=int, default=20)
     parser.add_argument("--retry-jitter-seconds", type=float, default=1.0)
+    parser.add_argument("--subreddit", default=SUBREDDIT)
+    parser.add_argument("--sold-feed-limit", type=int, default=DEFAULT_SOLD_FEED_LIMIT)
     parser.add_argument("--user-agent", default=DEFAULT_USER_AGENT)
     parser.add_argument("--database-url", default=None)
     parser.add_argument("--format", choices=("json", "text"), default="text")
@@ -295,6 +247,8 @@ def parse_args() -> argparse.Namespace:
         parser.error("--timeout must be at least 5 seconds.")
     if args.retries < 1 or args.retries > 3:
         parser.error("--retries must be between 1 and 3.")
+    if args.sold_feed_limit < 1 or args.sold_feed_limit > 100:
+        parser.error("--sold-feed-limit must be between 1 and 100.")
     return args
 
 
