@@ -14,7 +14,7 @@ export const metadata: Metadata = {
   applicationName: siteConfig.name,
   title: {
     default: siteConfig.title,
-    template: "%s - Recon Indonesia",
+    template: "%s - Recon App Indonesia",
   },
   description: siteConfig.description,
   category: "technology",
