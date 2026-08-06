@@ -22,6 +22,7 @@ describe("getListingVersion", () => {
 
     const sql = (queryRaw.mock.calls[0]?.[0] as { strings: string[] }).strings.join("?");
     expect(sql).toContain("facebook_seller_flags");
+    expect(sql).toContain("listing_content_blocks");
     expect(sql).toContain("listing_moderation.hidden");
   });
 

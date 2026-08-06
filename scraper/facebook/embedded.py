@@ -35,6 +35,35 @@ def extract_marketplace_records(script_texts: Iterable[str], *, limit: int) -> l
     return records
 
 
+def extract_marketplace_detail(script_texts: Iterable[str], *, item_id: str) -> dict[str, str]:
+    """Extract seller and description from a Marketplace item Relay payload."""
+    target_id = str(item_id or "").strip()
+    if not target_id:
+        return {}
+
+    best_record: dict[str, str] = {}
+    best_score = 0
+    for text in script_texts:
+        try:
+            payload = json.loads(text)
+        except (TypeError, json.JSONDecodeError):
+            continue
+
+        for value in walk_objects(payload):
+            if str(value.get("id") or "").strip() != target_id:
+                continue
+
+            record = detail_record(value)
+            score = sum(bool(record.get(field)) for field in ("sellerName", "description"))
+            if score > best_score:
+                best_record = record
+                best_score = score
+            if best_score == 2:
+                return best_record
+
+    return best_record
+
+
 def marketplace_feeds(payload: Any) -> Iterator[dict[str, Any]]:
     for value in walk_objects(payload):
         search = value.get("marketplace_search")
@@ -111,6 +140,26 @@ def discovery_record(listing: dict[str, Any]) -> dict[str, Any] | None:
         "isSold": optional_bool(listing.get("is_sold")),
         "isPending": optional_bool(listing.get("is_pending")),
         "isHidden": optional_bool(listing.get("is_hidden")),
+    }
+
+
+def detail_record(listing: dict[str, Any]) -> dict[str, str]:
+    seller = listing.get("marketplace_listing_seller")
+    seller_name = ""
+    if isinstance(seller, dict):
+        seller_name = str(seller.get("name") or seller.get("display_name") or "").strip()
+
+    description = listing.get("redacted_description")
+    if isinstance(description, dict):
+        description_text = str(description.get("text") or "").strip()
+    elif isinstance(description, str):
+        description_text = description.strip()
+    else:
+        description_text = ""
+
+    return {
+        "sellerName": seller_name,
+        "description": description_text,
     }
 
 

@@ -41,10 +41,10 @@ from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import sync_playwright
 
 try:
-    from scraper.facebook.embedded import extract_marketplace_records
+    from scraper.facebook.embedded import extract_marketplace_detail, extract_marketplace_records
 except ImportError:
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-    from scraper.facebook.embedded import extract_marketplace_records
+    from scraper.facebook.embedded import extract_marketplace_detail, extract_marketplace_records
 
 
 if hasattr(sys.stdout, "reconfigure"):
@@ -561,6 +561,11 @@ def extract_embedded_cards(page, limit: int) -> list[MarketplaceCard]:
     return [card_from_embedded_record(record) for record in extract_marketplace_records(script_texts, limit=limit)]
 
 
+def extract_embedded_detail(page, item_id: str) -> dict[str, str]:
+    script_texts = page.locator('script[type="application/json"]').all_text_contents()
+    return extract_marketplace_detail(script_texts, item_id=item_id)
+
+
 def extract_dom_cards(page, limit: int) -> list[MarketplaceCard]:
     raw_cards = page.evaluate(
         """
@@ -859,7 +864,15 @@ def scrape_detail(page, card: MarketplaceCard, args: argparse.Namespace) -> Mark
         return MarketplaceDetail(error="Invalid Facebook Marketplace item URL")
     try:
         open_marketplace(page, url, args.wait_ms, args.timeout * 1000)
-        return parse_detail_text(extract_page_text(page, max_chars=9000))
+        embedded = extract_embedded_detail(page, card.item_id)
+        visible = parse_detail_text(extract_page_text(page, max_chars=9000))
+        return MarketplaceDetail(
+            posted=visible.posted,
+            condition=visible.condition,
+            description=embedded.get("description") or visible.description,
+            approx_location=visible.approx_location,
+            seller=embedded.get("sellerName") or visible.seller,
+        )
     except PlaywrightError as exc:
         return MarketplaceDetail(error=str(exc))
 
@@ -1047,10 +1060,21 @@ def should_fetch_detail(card: MarketplaceCard, state: dict[str, Any], args: argp
     if args.no_state or args.detail_scope == "all":
         return True
 
-    seen_ids = set(str(value) for value in state.get("seen_external_ids", []) if value)
-    seen_urls = set(str(value) for value in state.get("seen_source_urls", []) if value)
+    seen_ids = set(str(value) for value in state.get("detail_attempted_external_ids", []) if value)
+    seen_urls = set(str(value) for value in state.get("detail_attempted_source_urls", []) if value)
     source_url = canonical_marketplace_url(card)
     return not ((card.item_id and card.item_id in seen_ids) or (source_url and source_url in seen_urls))
+
+
+def mark_detail_attempted(card: MarketplaceCard, state: dict[str, Any], max_seen: int) -> None:
+    state["detail_attempted_external_ids"] = unique_values(
+        [card.item_id, *state.get("detail_attempted_external_ids", [])],
+        max_seen,
+    )
+    state["detail_attempted_source_urls"] = unique_values(
+        [canonical_marketplace_url(card), *state.get("detail_attempted_source_urls", [])],
+        max_seen,
+    )
 
 
 def dedupe_cards(cards: Iterable[MarketplaceCard]) -> list[MarketplaceCard]:
@@ -1081,6 +1105,8 @@ def default_state() -> dict[str, Any]:
     return {
         "seen_external_ids": [],
         "seen_source_urls": [],
+        "detail_attempted_external_ids": [],
+        "detail_attempted_source_urls": [],
         "cooldown_until": None,
         "last_run_at": None,
         "last_success_at": None,
@@ -1527,6 +1553,8 @@ def run_browser_fetch(args: argparse.Namespace, state: dict[str, Any]) -> list[d
             listings: list[dict[str, Any]] = []
             for card in cards:
                 detail = scrape_detail(page, card, args) if should_fetch_detail(card, state, args) else None
+                if detail is not None and not args.no_state:
+                    mark_detail_attempted(card, state, args.max_seen)
                 if detail and detail.error:
                     print(f"Detail fetch failed for {card.item_id}: {detail.error}", file=sys.stderr)
                 listings.append(normalize_card(card, detail, fetched_at))

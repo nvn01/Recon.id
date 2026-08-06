@@ -46,6 +46,8 @@ describe("getListingFeed", () => {
     expect(sql).toContain("listing_moderation.hidden");
     expect(sql).toContain("platform_control.public_visible");
     expect(sql).toContain("facebook_seller_flags");
+    expect(sql).toContain("listing_content_blocks");
+    expect(sql).toContain("normalize_listing_content");
     expect(sql).toContain("normalize_seller_name");
     expect(sql).toContain("seller_name_override");
   });

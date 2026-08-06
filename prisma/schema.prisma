@@ -40,6 +40,13 @@ enum ModerationSource {
   @@map("moderation_source")
 }
 
+enum ListingBlockField {
+  TITLE       @map("title")
+  DESCRIPTION @map("description")
+
+  @@map("listing_block_field")
+}
+
 model Listing {
   id             String             @id @default(cuid())
   platform       ListingPlatform
@@ -100,6 +107,22 @@ model FacebookSellerFlag {
 
   @@index([status])
   @@map("facebook_seller_flags")
+}
+
+model ListingContentBlock {
+  id              String            @id
+  platform        ListingPlatform
+  field           ListingBlockField
+  contentHash     String            @map("content_hash")
+  normalizedValue String            @map("normalized_value")
+  displayValue    String            @map("display_value")
+  reason          String?
+  createdAt       DateTime          @default(now()) @map("created_at")
+  updatedAt       DateTime          @default(now()) @updatedAt @map("updated_at")
+
+  @@unique([platform, field, contentHash])
+  @@index([platform, field])
+  @@map("listing_content_blocks")
 }
 
 model PlatformControl {
