@@ -3,10 +3,21 @@ from __future__ import annotations
 import json
 import unittest
 
-from scraper.facebook.reconcile import SELECT_RECONCILIATION_CANDIDATES_SQL, extract_status_evidence, is_expected_detail_url
+from scraper.facebook.reconcile import (
+    UPDATE_RECONCILIATION_RESULT_SQL,
+    SELECT_RECONCILIATION_CANDIDATES_SQL,
+    extract_status_evidence,
+    is_expected_detail_url,
+)
 
 
-def detail_payload(*, item_id: str = "123", sold: bool, live: bool) -> str:
+def detail_payload(
+    *,
+    item_id: str = "123",
+    sold: bool,
+    live: bool,
+    seller_name: str = "Authenticated Seller",
+) -> str:
     return json.dumps(
         {
             "require": [
@@ -16,6 +27,10 @@ def detail_payload(*, item_id: str = "123", sold: bool, live: bool) -> str:
                             "id": item_id,
                             "is_sold": sold,
                             "is_live": live,
+                            "marketplace_listing_seller": {
+                                "id": "100012345678901",
+                                "name": seller_name,
+                            },
                         },
                         "related_listing": {
                             "id": "999",
@@ -41,6 +56,10 @@ class FacebookReconciliationTests(unittest.TestCase):
 
         self.assertEqual(evidence.status, "sold")
         self.assertEqual(evidence.signal, "structured_is_sold")
+        self.assertEqual(evidence.seller_name, "Authenticated Seller")
+
+    def test_reconciliation_only_backfills_a_missing_seller_name(self):
+        self.assertIn("seller_name = COALESCE(seller_name, %(seller_name)s)", UPDATE_RECONCILIATION_RESULT_SQL)
 
     def test_related_sold_listing_does_not_mark_target_sold(self):
         evidence = extract_status_evidence([detail_payload(item_id="456", sold=False, live=True)], "123", "Item")

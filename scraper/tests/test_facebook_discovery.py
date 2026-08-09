@@ -8,7 +8,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from scraper.facebook.embedded import extract_marketplace_records
+from scraper.facebook.embedded import extract_marketplace_detail, extract_marketplace_records
 from scraper.facebook.facebook_marketplace import (
     DEFAULT_TARGETS_FILE,
     ConnectorBlockedError,
@@ -62,6 +62,30 @@ def marketplace_payload(*, sold: bool = False) -> dict:
                                 }
                             ],
                             "page_info": {"has_next_page": True, "end_cursor": "opaque"},
+                        }
+                    }
+                }
+            }
+        ]
+    }
+
+
+def marketplace_detail_payload(*, item_id: str = "4471077899839221") -> dict:
+    return {
+        "require": [
+            {
+                "data": {
+                    "viewer": {
+                        "marketplace_product_details_page": {
+                            "marketplace_listing_renderable_target": {
+                                "id": item_id,
+                                "marketplace_listing_seller": {
+                                    "id": "100012345678901",
+                                    "user_id": "100012345678901",
+                                    "name": "Authenticated Seller",
+                                },
+                                "redacted_description": {"text": "Public listing description"},
+                            }
                         }
                     }
                 }
@@ -220,6 +244,24 @@ class FacebookDiscoveryTests(unittest.TestCase):
         records = extract_marketplace_records([payload, payload], limit=10)
 
         self.assertEqual([record["itemId"] for record in records], ["4471077899839221"])
+
+    def test_authenticated_detail_payload_exposes_seller_identity(self):
+        detail = extract_marketplace_detail(
+            ["not-json", json.dumps(marketplace_detail_payload())],
+            item_id="4471077899839221",
+        )
+
+        self.assertEqual(detail["sellerName"], "Authenticated Seller")
+        self.assertEqual(detail["sellerId"], "100012345678901")
+        self.assertEqual(detail["description"], "Public listing description")
+
+    def test_detail_payload_does_not_borrow_related_seller(self):
+        detail = extract_marketplace_detail(
+            [json.dumps(marketplace_detail_payload(item_id="999"))],
+            item_id="4471077899839221",
+        )
+
+        self.assertEqual(detail, {})
 
     def test_source_metadata_survives_ai_candidate_normalization(self):
         [record] = extract_marketplace_records([json.dumps(marketplace_payload(sold=True))], limit=10)
