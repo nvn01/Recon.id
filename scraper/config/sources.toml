@@ -63,10 +63,11 @@ enabled = true
 # This affects enrichment precedence only; collection and browser behavior stay unchanged.
 # Rotate reviewed hot targets one at a time instead of hammering all Marketplace
 # searches together. With the current hot target count this yields about one
-# browser-backed Marketplace search per minute, while each target repeats slower.
-cadence_seconds = 180
-target_cadence_seconds = 180
-target_stagger_seconds = 60
+# browser-backed Marketplace search every 100 seconds, while each target repeats
+# on a five-minute sequence.
+cadence_seconds = 300
+target_cadence_seconds = 300
+target_stagger_seconds = 100
 jitter_seconds = 30
 limit = 10
 headless = true
@@ -211,9 +212,8 @@ timeout_seconds = 30
 cooldown_seconds = 300
 headless = true
 browser = "chrome"
-# Reuse the protected profile volume so search Relay includes public seller names.
-# Refresh the session manually with the connector's --login command when needed.
-session_mode = "persistent"
+# Production discovery is anonymous: no cookies, login, or saved browser state.
+session_mode = "ephemeral"
 block_assets = true
 details = false
 

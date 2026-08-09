@@ -232,8 +232,8 @@ class SchedulerTests(unittest.TestCase):
             for job in build_jobs(config)
             if job.id.startswith("facebook:category-")
         ]
-        self.assertTrue(all(job.cadence_seconds == 180 for job in facebook_jobs))
-        self.assertEqual([job.initial_delay_seconds for job in facebook_jobs], [0, 60, 120])
+        self.assertTrue(all(job.cadence_seconds == 300 for job in facebook_jobs))
+        self.assertEqual([job.initial_delay_seconds for job in facebook_jobs], [0, 100, 200])
         self.assertTrue(all("--ai-parse" not in job.args for job in facebook_jobs))
 
         [reconciliation_job] = [job for job in build_jobs(config) if job.id == "facebook-marketplace:reconcile"]
@@ -374,7 +374,7 @@ class SchedulerTests(unittest.TestCase):
                     key=lambda job: (job.initial_delay_seconds, job.id),
                 )[:6]
             ],
-            [(0, False), (30, True), (45, False), (60, False), (62, True), (94, True)],
+            [(0, False), (30, True), (45, False), (62, True), (94, True), (100, False)],
         )
 
     def test_facebook_restart_catch_up_keeps_shared_ring_under_six_minutes(self):

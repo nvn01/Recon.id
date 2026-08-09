@@ -147,11 +147,8 @@ deduplication defect before records are changed.
 
 ### Facebook Marketplace
 
-- Use the dedicated persistent Chrome profile at
-  `scraper/facebook/.facebook-profile` so authenticated Relay search payloads
-  can expose the public seller display name. The scheduled browser remains
-  headless after a one-time manual login and the profile directory must stay in
-  the existing protected state volume.
+- Use a fresh logged-out headless Chrome context. Production Marketplace jobs
+  must not depend on login, cookies, authentication, or saved browser state.
 - Discover from the embedded Relay payload; DOM cards are fallback only.
 - Use the reviewed localized category URLs for:
   - cell phone accessories
@@ -163,13 +160,10 @@ deduplication defect before records are changed.
 - Treat a parsed Facebook candidate window with zero relevant matches as
   `no_new_data`; only missing Marketplace candidates or a real access/login
   failure may set the connector-wide cooldown.
-- Scheduled discovery must not export or replay cookies. If the saved Facebook
-  session expires, discovery may continue with missing seller names, but it
-  must preserve previously stored names and report the reduced seller-name
-  count until the profile is manually authenticated again.
-- Scheduled discovery does not require scrolling, detail-page fetches, or
-  seller actions. Search Relay is the primary seller-enrichment path; the
-  bounded reconciliation job may backfill a missing name from item Relay data.
+- Scheduled discovery does not require login, persistent profile state,
+  scrolling, detail-page fetches, or seller actions. Anonymous search Relay is
+  the primary seller-enrichment path; bounded anonymous reconciliation may
+  backfill a missing name from public item Relay data.
 - Scheduled Facebook jobs only queue raw candidates. The centralized AI manager
   includes them in the same mixed-platform trains as Reddit and Instagram.
   Collector fields such as card price, location, and sold flags are source
@@ -182,10 +176,10 @@ deduplication defect before records are changed.
   Two consecutive invalid model outputs open the same cooldown. Only an explicit
   guided-JSON request rejection may retry once without `nvext`; other failures
   must not create an immediate duplicate model request.
-- The three reviewed hot targets start 60 seconds apart and each repeat every
-  180 seconds.
-- `--login` is a manual session-setup command only; scheduled jobs reuse the
-  resulting persistent profile. Never commit `.facebook-profile*`.
+- The three reviewed hot targets start 100 seconds apart and each repeat every
+  300 seconds.
+- Persistent profile and login CLI modes are diagnostics only. Production
+  scheduling must stay ephemeral and never commit `.facebook-profile*`.
 
 ## Queue And AI Manager Guardrails
 

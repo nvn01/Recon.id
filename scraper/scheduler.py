@@ -267,7 +267,6 @@ def build_facebook_reconciliation_jobs(config: dict[str, Any]) -> list[ScheduleJ
     run_timeout = max(30, int_value(schedule_config.get("job_timeout_seconds"), 55))
     browser = str(schedule_config.get("browser") or source_config.get("browser") or "chrome").strip()
     headless = bool_value(schedule_config.get("headless"), default=True)
-    session_mode = str(source_config.get("session_mode") or "ephemeral").strip()
     job_args = [
         "--window-size",
         str(window_size),
@@ -277,8 +276,6 @@ def build_facebook_reconciliation_jobs(config: dict[str, Any]) -> list[ScheduleJ
         str(wait_ms),
         "--browser",
         browser,
-        "--session-mode",
-        session_mode,
     ]
     if headless:
         job_args.append("--headless")

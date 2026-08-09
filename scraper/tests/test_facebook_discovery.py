@@ -86,7 +86,7 @@ def marketplace_detail_payload(*, item_id: str = "4471077899839221") -> dict:
                                 "marketplace_listing_seller": {
                                     "id": "100012345678901",
                                     "user_id": "100012345678901",
-                                    "name": "Authenticated Seller",
+                                    "name": "Anonymous Detail Seller",
                                 },
                                 "redacted_description": {"text": "Public listing description"},
                             }
@@ -272,13 +272,13 @@ class FacebookDiscoveryTests(unittest.TestCase):
 
         self.assertEqual([record["itemId"] for record in records], ["4471077899839221"])
 
-    def test_authenticated_detail_payload_exposes_seller_identity(self):
+    def test_anonymous_detail_payload_exposes_public_seller_identity(self):
         detail = extract_marketplace_detail(
             ["not-json", json.dumps(marketplace_detail_payload())],
             item_id="4471077899839221",
         )
 
-        self.assertEqual(detail["sellerName"], "Authenticated Seller")
+        self.assertEqual(detail["sellerName"], "Anonymous Detail Seller")
         self.assertEqual(detail["sellerId"], "100012345678901")
         self.assertEqual(detail["description"], "Public listing description")
 
