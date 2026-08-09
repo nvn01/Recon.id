@@ -18,6 +18,7 @@ LISTING_KEYS = (
     "locationTexts",
     "conditionText",
     "sellerName",
+    "sellerExternalId",
     "status",
     "postedAt",
     "firstFetchedAt",
@@ -72,6 +73,7 @@ def validate_listing(value: dict[str, Any]) -> dict[str, Any]:
     cleaned["brand"] = string_or_none(cleaned["brand"])
     cleaned["conditionText"] = string_or_none(cleaned["conditionText"])
     cleaned["sellerName"] = string_or_none(cleaned["sellerName"])
+    cleaned["sellerExternalId"] = string_or_none(cleaned["sellerExternalId"])
     cleaned["postedAt"] = iso_datetime_or_none(cleaned["postedAt"], "postedAt", errors)
     cleaned["firstFetchedAt"] = iso_datetime_required(cleaned["firstFetchedAt"], "firstFetchedAt", errors)
     cleaned["lastFetchedAt"] = iso_datetime_required(cleaned["lastFetchedAt"], "lastFetchedAt", errors)

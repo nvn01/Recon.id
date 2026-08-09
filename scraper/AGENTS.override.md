@@ -147,7 +147,11 @@ deduplication defect before records are changed.
 
 ### Facebook Marketplace
 
-- Use a fresh logged-out headless Chrome context.
+- Use the dedicated persistent Chrome profile at
+  `scraper/facebook/.facebook-profile` so authenticated Relay search payloads
+  can expose the public seller display name. The scheduled browser remains
+  headless after a one-time manual login and the profile directory must stay in
+  the existing protected state volume.
 - Discover from the embedded Relay payload; DOM cards are fallback only.
 - Use the reviewed localized category URLs for:
   - cell phone accessories
@@ -159,8 +163,13 @@ deduplication defect before records are changed.
 - Treat a parsed Facebook candidate window with zero relevant matches as
   `no_new_data`; only missing Marketplace candidates or a real access/login
   failure may set the connector-wide cooldown.
-- Scheduled discovery does not require login, persistent profile state,
-  scrolling, detail-page fetches, or seller actions.
+- Scheduled discovery must not export or replay cookies. If the saved Facebook
+  session expires, discovery may continue with missing seller names, but it
+  must preserve previously stored names and report the reduced seller-name
+  count until the profile is manually authenticated again.
+- Scheduled discovery does not require scrolling, detail-page fetches, or
+  seller actions. Search Relay is the primary seller-enrichment path; the
+  bounded reconciliation job may backfill a missing name from item Relay data.
 - Scheduled Facebook jobs only queue raw candidates. The centralized AI manager
   includes them in the same mixed-platform trains as Reddit and Instagram.
   Collector fields such as card price, location, and sold flags are source
@@ -175,8 +184,8 @@ deduplication defect before records are changed.
   must not create an immediate duplicate model request.
 - The three reviewed hot targets start 60 seconds apart and each repeat every
   180 seconds.
-- Persistent profile and login CLI modes are diagnostics only. Never commit
-  `.facebook-profile*`.
+- `--login` is a manual session-setup command only; scheduled jobs reuse the
+  resulting persistent profile. Never commit `.facebook-profile*`.
 
 ## Queue And AI Manager Guardrails
 
@@ -239,13 +248,15 @@ All connectors emit the shared database-facing fields only:
 
 ```text
 platform, sourceUrl, externalId, title, description, category, brand,
-price, locationTexts, conditionText, sellerName, status, postedAt,
+price, locationTexts, conditionText, sellerName, sellerExternalId, status, postedAt,
 firstFetchedAt, lastFetchedAt, images
 ```
 
-Keep the seller's raw text in `description`. Images use `sourceUrl`, `position`,
-and `altText`. Do not add confidence scores, OCR notes, raw payloads, cookies,
-headers, or model-specific evidence to normal listing JSON.
+Keep the seller's raw text in `description`. `sellerExternalId` is private
+moderation identity and must never enter the public DTO or analytics. Images
+use `sourceUrl`, `position`, and `altText`. Do not add confidence scores, OCR
+notes, raw payloads, cookies, headers, or model-specific evidence to normal
+listing JSON.
 
 ## Safety And Access Rules
 

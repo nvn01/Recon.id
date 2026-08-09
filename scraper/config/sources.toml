@@ -211,7 +211,9 @@ timeout_seconds = 30
 cooldown_seconds = 300
 headless = true
 browser = "chrome"
-session_mode = "ephemeral"
+# Reuse the protected profile volume so search Relay includes public seller names.
+# Refresh the session manually with the connector's --login command when needed.
+session_mode = "persistent"
 block_assets = true
 details = false
 

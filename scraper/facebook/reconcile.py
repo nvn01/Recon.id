@@ -14,12 +14,14 @@ from playwright.sync_api import Error as PlaywrightError
 from playwright.sync_api import sync_playwright
 
 from scraper.facebook.facebook_marketplace import (
+    DEFAULT_PROFILE_DIR,
     configure_discovery_page,
     extract_page_text,
     launch_facebook_context,
     looks_login_blocked,
     open_marketplace,
 )
+from scraper.facebook.embedded import extract_marketplace_detail
 from scraper.storage.postgres import StorageError, require_database_url
 
 
@@ -44,9 +46,14 @@ LIMIT 1
 UPDATE_RECONCILIATION_RESULT_SQL = """
 UPDATE listings
 SET status = COALESCE(%(status)s::listing_status, status),
+    seller_name = COALESCE(seller_name, %(seller_name)s),
+    seller_external_id = COALESCE(seller_external_id, %(seller_external_id)s),
     last_fetched_at = %(checked_at)s,
     updated_at = CASE
-        WHEN %(status)s::text IS NOT NULL AND status::text <> %(status)s::text THEN CURRENT_TIMESTAMP
+        WHEN (%(status)s::text IS NOT NULL AND status::text <> %(status)s::text)
+          OR (seller_name IS NULL AND %(seller_name)s::text IS NOT NULL)
+          OR (seller_external_id IS NULL AND %(seller_external_id)s::text IS NOT NULL)
+        THEN CURRENT_TIMESTAMP
         ELSE updated_at
     END
 WHERE source_url = %(source_url)s
@@ -81,6 +88,8 @@ class StatusEvidence:
     status: str | None
     signal: str
     checked: bool = True
+    seller_name: str | None = None
+    seller_id: str | None = None
 
 
 @dataclass
@@ -135,6 +144,8 @@ def persist_results(database_url: str, results: Iterable[tuple[ReconciliationCan
                             UPDATE_RECONCILIATION_RESULT_SQL,
                             {
                                 "status": evidence.status,
+                                "seller_name": evidence.seller_name,
+                                "seller_external_id": evidence.seller_id,
                                 "checked_at": checked_at,
                                 "source_url": candidate.source_url,
                             },
@@ -145,9 +156,18 @@ def persist_results(database_url: str, results: Iterable[tuple[ReconciliationCan
 
 
 def extract_status_evidence(script_texts: Iterable[str], external_id: str, visible_text: str) -> StatusEvidence:
-    structured = extract_structured_status(script_texts, external_id)
+    scripts = list(script_texts)
+    detail = extract_marketplace_detail(scripts, item_id=external_id)
+    seller_name = detail.get("sellerName") or None
+    seller_id = detail.get("sellerId") or None
+    structured = extract_structured_status(scripts, external_id)
     if structured is not None:
-        return structured
+        return StatusEvidence(
+            status=structured.status,
+            signal=structured.signal,
+            seller_name=seller_name,
+            seller_id=seller_id,
+        )
 
     primary_text = primary_listing_text(visible_text)
     lines = [normalize_text(line) for line in primary_text.splitlines() if normalize_text(line)]
@@ -155,11 +175,26 @@ def extract_status_evidence(script_texts: Iterable[str], external_id: str, visib
         re.search(r"(?:^|[·|])\s*habis$", line) for line in lines[:6]
     )
     if has_visible_sold_label or any(phrase in normalize_text(primary_text) for phrase in SOLD_PHRASES):
-        return StatusEvidence(status="sold", signal="visible_sold_marker")
+        return StatusEvidence(
+            status="sold",
+            signal="visible_sold_marker",
+            seller_name=seller_name,
+            seller_id=seller_id,
+        )
     if any(phrase in normalize_text(primary_text) for phrase in UNAVAILABLE_PHRASES):
         # Removed, hidden, and deleted listings are not automatically equivalent to sold.
-        return StatusEvidence(status=None, signal="unavailable_without_sold_evidence")
-    return StatusEvidence(status=None, signal="page_checked_without_status_signal")
+        return StatusEvidence(
+            status=None,
+            signal="unavailable_without_sold_evidence",
+            seller_name=seller_name,
+            seller_id=seller_id,
+        )
+    return StatusEvidence(
+        status=None,
+        signal="page_checked_without_status_signal",
+        seller_name=seller_name,
+        seller_id=seller_id,
+    )
 
 
 def extract_structured_status(script_texts: Iterable[str], external_id: str) -> StatusEvidence | None:
@@ -289,7 +324,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--headless", action="store_true")
     parser.add_argument("--format", choices=("json", "text"), default="text")
     parser.add_argument("--database-url", default=None)
-    parser.add_argument("--profile-dir", default="scraper/.facebook-profile")
+    parser.add_argument("--profile-dir", default=str(DEFAULT_PROFILE_DIR))
     parser.add_argument("--session-mode", choices=("ephemeral", "persistent"), default="ephemeral")
     parser.add_argument("--proxy-url", default=None)
     parser.add_argument("--load-assets", action="store_true")

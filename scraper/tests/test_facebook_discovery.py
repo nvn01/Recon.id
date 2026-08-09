@@ -21,6 +21,7 @@ from scraper.facebook.facebook_marketplace import (
     normalize_card,
     run_once,
     scrape_detail,
+    should_fetch_detail,
     source_target_from_record,
     uses_persistent_profile,
 )
@@ -51,7 +52,10 @@ def marketplace_payload(*, sold: bool = False) -> dict:
                                             "primary_listing_photo": {
                                                 "image": {"uri": "https://cdn.example/facebook.jpg"}
                                             },
-                                            "marketplace_listing_seller": {"name": "Public Seller"},
+                                            "marketplace_listing_seller": {
+                                                "id": "100012345678901",
+                                                "name": "Public Seller",
+                                            },
                                             "if_gk_just_listed_tag_on_search_feed": True,
                                             "is_live": not sold,
                                             "is_sold": sold,
@@ -212,6 +216,7 @@ class FacebookDiscoveryTests(unittest.TestCase):
 
         with (
             patch("scraper.facebook.facebook_marketplace.open_marketplace") as open_marketplace,
+            patch("scraper.facebook.facebook_marketplace.extract_embedded_detail", return_value={}),
             patch("scraper.facebook.facebook_marketplace.extract_page_text", return_value=""),
         ):
             scrape_detail(object(), card, args)
@@ -225,6 +230,28 @@ class FacebookDiscoveryTests(unittest.TestCase):
         self.assertFalse(uses_persistent_profile(SimpleNamespace(login=False, session_mode="ephemeral")))
         self.assertTrue(uses_persistent_profile(SimpleNamespace(login=True, session_mode="ephemeral")))
         self.assertTrue(uses_persistent_profile(SimpleNamespace(login=False, session_mode="persistent")))
+
+    def test_detail_attempts_are_independent_from_discovery_seen_state(self):
+        card = MarketplaceCard(
+            item_id="123",
+            url="https://www.facebook.com/marketplace/item/123/",
+            price="",
+            title="GPU",
+            location="",
+            is_newly_listed=False,
+            image_url="",
+            image_alt="",
+            raw_text="GPU",
+        )
+        state = {
+            "seen_external_ids": ["123"],
+            "seen_source_urls": ["https://www.facebook.com/marketplace/item/123/"],
+            "detail_attempted_external_ids": [],
+            "detail_attempted_source_urls": [],
+        }
+        args = SimpleNamespace(details=True, no_state=False, detail_scope="new")
+
+        self.assertTrue(should_fetch_detail(card, state, args))
 
     def test_embedded_marketplace_payload_exposes_complete_discovery_record(self):
         records = extract_marketplace_records(["not-json", json.dumps(marketplace_payload())], limit=10)
@@ -272,6 +299,7 @@ class FacebookDiscoveryTests(unittest.TestCase):
         self.assertIsNone(listing["price"])
         self.assertEqual(listing["status"], "SOLD")
         self.assertEqual(listing["sellerName"], "Public Seller")
+        self.assertEqual(listing["sellerExternalId"], "100012345678901")
         self.assertEqual(listing["images"][0]["sourceUrl"], "https://cdn.example/facebook.jpg")
 
 if __name__ == "__main__":

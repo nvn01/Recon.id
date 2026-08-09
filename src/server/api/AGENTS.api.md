@@ -21,8 +21,10 @@ Read this file with the root `AGENTS.md` when changing the Next.js/tRPC API.
   not refetch visible feed data until the user activates the new-items control.
 - Feed, facet, and version queries share the same moderation boundary: exclude
   individually hidden listings, platforms with `public_visible = false`, and
-  Facebook listings whose effective seller name has a `blocked` flag. The
-  effective seller name is `listing_moderation.seller_name_override` first,
+  Facebook listings whose stable seller identity or effective seller name has
+  a `blocked` flag. Stable identity is checked first when the scraper captured
+  `seller_external_id`; name matching remains the fallback for historical rows.
+  The effective seller name is `listing_moderation.seller_name_override` first,
   then the scraper-owned `listings.seller_name`.
 - Do not add total counts to the cursor feed. They add a second changing query
   and are not needed for infinite scrolling.

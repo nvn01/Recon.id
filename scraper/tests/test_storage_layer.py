@@ -9,6 +9,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from scraper.storage.postgres import (
+    UPSERT_LISTING_SQL,
     StorageError,
     deduplicate_listings,
     image_rows,
@@ -32,6 +33,7 @@ def sample_listing(**overrides):
         "locationTexts": ["Jakarta", "Tangerang"],
         "conditionText": "Bekas",
         "sellerName": "seller",
+        "sellerExternalId": "facebook-seller-123",
         "status": "AVAILABLE",
         "postedAt": "2026-07-07T10:30:00+07:00",
         "firstFetchedAt": "2026-07-07T04:00:00+00:00",
@@ -47,6 +49,16 @@ def sample_listing(**overrides):
 
 
 class StorageLayerTests(unittest.TestCase):
+    def test_listing_refresh_does_not_erase_a_known_seller_name(self):
+        self.assertIn(
+            "seller_name = COALESCE(EXCLUDED.seller_name, listings.seller_name)",
+            UPSERT_LISTING_SQL,
+        )
+        self.assertIn(
+            "seller_external_id = COALESCE(EXCLUDED.seller_external_id, listings.seller_external_id)",
+            UPSERT_LISTING_SQL,
+        )
+
     def test_require_database_url_prefers_scraper_database_url(self):
         with patch.dict(
             os.environ,
@@ -98,6 +110,7 @@ class StorageLayerTests(unittest.TestCase):
         self.assertEqual(row["platform"], "reddit")
         self.assertEqual(row["source_url"], "https://example.test/listing/1")
         self.assertEqual(row["external_id"], "abc123")
+        self.assertEqual(row["seller_external_id"], "facebook-seller-123")
         self.assertEqual(row["location_texts"], ["Jakarta", "Tangerang"])
         self.assertEqual(row["status"], "available")
         self.assertIsNone(row["posted_at"].tzinfo)
