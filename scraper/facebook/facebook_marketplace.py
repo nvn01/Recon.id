@@ -41,10 +41,10 @@ from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import sync_playwright
 
 try:
-    from scraper.facebook.embedded import extract_marketplace_detail, extract_marketplace_records
+    from scraper.facebook.embedded import extract_marketplace_records
 except ImportError:
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-    from scraper.facebook.embedded import extract_marketplace_detail, extract_marketplace_records
+    from scraper.facebook.embedded import extract_marketplace_records
 
 
 if hasattr(sys.stdout, "reconfigure"):
@@ -155,7 +155,6 @@ class MarketplaceCard:
     raw_text: str
     price_amount: int | None = None
     seller_name: str = ""
-    seller_id: str = ""
     is_live: bool | None = None
     is_sold: bool | None = None
     is_pending: bool | None = None
@@ -169,7 +168,6 @@ class MarketplaceDetail:
     description: str = ""
     approx_location: str = ""
     seller: str = ""
-    seller_id: str = ""
     error: str = ""
 
 
@@ -551,7 +549,6 @@ def card_from_embedded_record(raw: dict[str, Any]) -> MarketplaceCard:
         raw_text=clean_text(str(raw.get("text") or "")),
         price_amount=raw.get("priceAmount") if isinstance(raw.get("priceAmount"), int) else None,
         seller_name=str(raw.get("sellerName") or ""),
-        seller_id=str(raw.get("sellerId") or ""),
         is_live=raw.get("isLive") if isinstance(raw.get("isLive"), bool) else None,
         is_sold=raw.get("isSold") if isinstance(raw.get("isSold"), bool) else None,
         is_pending=raw.get("isPending") if isinstance(raw.get("isPending"), bool) else None,
@@ -562,11 +559,6 @@ def card_from_embedded_record(raw: dict[str, Any]) -> MarketplaceCard:
 def extract_embedded_cards(page, limit: int) -> list[MarketplaceCard]:
     script_texts = page.locator('script[type="application/json"]').all_text_contents()
     return [card_from_embedded_record(record) for record in extract_marketplace_records(script_texts, limit=limit)]
-
-
-def extract_embedded_detail(page, item_id: str) -> dict[str, str]:
-    script_texts = page.locator('script[type="application/json"]').all_text_contents()
-    return extract_marketplace_detail(script_texts, item_id=item_id)
 
 
 def extract_dom_cards(page, limit: int) -> list[MarketplaceCard]:
@@ -867,16 +859,7 @@ def scrape_detail(page, card: MarketplaceCard, args: argparse.Namespace) -> Mark
         return MarketplaceDetail(error="Invalid Facebook Marketplace item URL")
     try:
         open_marketplace(page, url, args.wait_ms, args.timeout * 1000)
-        embedded = extract_embedded_detail(page, card.item_id)
-        visible = parse_detail_text(extract_page_text(page, max_chars=9000))
-        return MarketplaceDetail(
-            posted=visible.posted,
-            condition=visible.condition,
-            description=embedded.get("description") or visible.description,
-            approx_location=visible.approx_location,
-            seller=embedded.get("sellerName") or visible.seller,
-            seller_id=embedded.get("sellerId") or card.seller_id,
-        )
+        return parse_detail_text(extract_page_text(page, max_chars=9000))
     except PlaywrightError as exc:
         return MarketplaceDetail(error=str(exc))
 
@@ -916,7 +899,6 @@ def normalize_card(
         "locationTexts": [],
         "conditionText": None,
         "sellerName": detail.seller or card.seller_name or None,
-        "sellerExternalId": detail.seller_id or card.seller_id or None,
         "status": marketplace_source_status(card),
         "postedAt": parse_posted_at(detail.posted, fetched_at),
         "firstFetchedAt": fetched_at.isoformat(),
@@ -928,7 +910,6 @@ def normalize_card(
             "location": card.location,
             "condition": detail.condition,
             "approxLocation": detail.approx_location,
-            "sellerId": detail.seller_id or card.seller_id or None,
             "isLive": card.is_live,
             "isSold": card.is_sold,
             "isPending": card.is_pending,
@@ -1066,21 +1047,10 @@ def should_fetch_detail(card: MarketplaceCard, state: dict[str, Any], args: argp
     if args.no_state or args.detail_scope == "all":
         return True
 
-    seen_ids = set(str(value) for value in state.get("detail_attempted_external_ids", []) if value)
-    seen_urls = set(str(value) for value in state.get("detail_attempted_source_urls", []) if value)
+    seen_ids = set(str(value) for value in state.get("seen_external_ids", []) if value)
+    seen_urls = set(str(value) for value in state.get("seen_source_urls", []) if value)
     source_url = canonical_marketplace_url(card)
     return not ((card.item_id and card.item_id in seen_ids) or (source_url and source_url in seen_urls))
-
-
-def mark_detail_attempted(card: MarketplaceCard, state: dict[str, Any], max_seen: int) -> None:
-    state["detail_attempted_external_ids"] = unique_prefix(
-        [card.item_id, *state.get("detail_attempted_external_ids", [])],
-        max_seen,
-    )
-    state["detail_attempted_source_urls"] = unique_prefix(
-        [canonical_marketplace_url(card), *state.get("detail_attempted_source_urls", [])],
-        max_seen,
-    )
 
 
 def dedupe_cards(cards: Iterable[MarketplaceCard]) -> list[MarketplaceCard]:
@@ -1111,8 +1081,6 @@ def default_state() -> dict[str, Any]:
     return {
         "seen_external_ids": [],
         "seen_source_urls": [],
-        "detail_attempted_external_ids": [],
-        "detail_attempted_source_urls": [],
         "cooldown_until": None,
         "last_run_at": None,
         "last_success_at": None,
@@ -1490,7 +1458,6 @@ def run_once(
                 "status": "success" if listings else "no_new_data",
                 "normalized": len(listings),
                 "new": len(new_listings),
-                "seller_names": sum(bool(listing.get("sellerName")) for listing in listings),
                 "details": bool(args.details),
                 "headless": bool(args.headless),
             },
@@ -1560,8 +1527,6 @@ def run_browser_fetch(args: argparse.Namespace, state: dict[str, Any]) -> list[d
             listings: list[dict[str, Any]] = []
             for card in cards:
                 detail = scrape_detail(page, card, args) if should_fetch_detail(card, state, args) else None
-                if detail is not None and not args.no_state:
-                    mark_detail_attempted(card, state, args.max_seen)
                 if detail and detail.error:
                     print(f"Detail fetch failed for {card.item_id}: {detail.error}", file=sys.stderr)
                 listings.append(normalize_card(card, detail, fetched_at))

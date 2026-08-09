@@ -26,21 +26,13 @@ export const publicListingVisibilityFilter = Prisma.sql`
   )
   AND NOT (
     listing.platform::text = 'facebook'
-    AND (
-      EXISTS (
-        SELECT 1
-        FROM facebook_seller_identity_flags AS seller_identity_flag
-        WHERE seller_identity_flag.status::text = 'blocked'
-          AND seller_identity_flag.seller_external_id = listing.seller_external_id
-      )
-      OR EXISTS (
-        SELECT 1
-        FROM facebook_seller_flags AS seller_flag
-        WHERE seller_flag.status::text = 'blocked'
-          AND seller_flag.normalized_seller_name = normalize_seller_name(
-            COALESCE(listing_moderation.seller_name_override, listing.seller_name)
-          )
-      )
+    AND EXISTS (
+      SELECT 1
+      FROM facebook_seller_flags AS seller_flag
+      WHERE seller_flag.status::text = 'blocked'
+        AND seller_flag.normalized_seller_name = normalize_seller_name(
+          COALESCE(listing_moderation.seller_name_override, listing.seller_name)
+        )
     )
   )
 `;

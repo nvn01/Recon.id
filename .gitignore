@@ -6,7 +6,7 @@
 skills-lock.json
 **/AGENTS.override.md
 !AGENTS.md
-.github/tdd/
+!scraper/AGENTS.override.md
 
 # dependencies
 node_modules/
@@ -22,9 +22,6 @@ __pycache__/
 docker-compose.staging.yml
 docker-compose.production.yml
 /admin-panel/
-
-# private scraper verification suite
-/scraper/tests/
 
 # generated/build output
 .next/

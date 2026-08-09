@@ -1,0 +1,20 @@
+{
+  "props": {
+    "polaris_ordered_timeline_connection": {
+      "edges": [
+        {
+          "node": {
+            "code": "IGFIXTURE1",
+            "pk": "1900000001",
+            "taken_at": 1783652400,
+            "caption": {
+              "text": "SOLD OUT\nCORSAIR K100 RGB\nHarga Rp2.500.000\nLokasi Tangerang\nKondisi mulus"
+            },
+            "display_uri": "https://cdn.example/instagram-fixture.jpg",
+            "media_type": 1
+          }
+        }
+      ]
+    }
+  }
+}

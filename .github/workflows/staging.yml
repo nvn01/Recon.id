@@ -85,6 +85,9 @@ jobs:
       - name: Install Python verification tools
         run: python -m pip install ruff==0.15.22 -r scraper/requirements.txt
 
+      - name: Run scraper unit tests
+        run: python -m unittest discover scraper.tests
+
       - name: Lint scraper
         run: python -m ruff check scraper
 

@@ -41,27 +41,26 @@ enum ModerationSource {
 }
 
 model Listing {
-  id               String             @id @default(cuid())
-  platform         ListingPlatform
-  sourceUrl        String             @unique @map("source_url")
-  externalId       String?            @map("external_id")
-  title            String
-  description      String
-  category         String?
-  brand            String?
-  price            Int?
-  locationTexts    String[]           @default([]) @map("location_texts")
-  conditionText    String?            @map("condition_text")
-  sellerName       String?            @map("seller_name")
-  sellerExternalId String?            @map("seller_external_id")
-  status           ListingStatus      @default(UNKNOWN)
-  postedAt         DateTime?          @map("posted_at")
-  firstFetchedAt   DateTime           @default(now()) @map("first_fetched_at")
-  lastFetchedAt    DateTime           @default(now()) @map("last_fetched_at")
-  createdAt        DateTime           @default(now()) @map("created_at")
-  updatedAt        DateTime           @default(now()) @updatedAt @map("updated_at")
-  images           ListingImage[]
-  moderation       ListingModeration?
+  id             String             @id @default(cuid())
+  platform       ListingPlatform
+  sourceUrl      String             @unique @map("source_url")
+  externalId     String?            @map("external_id")
+  title          String
+  description    String
+  category       String?
+  brand          String?
+  price          Int?
+  locationTexts  String[]           @default([]) @map("location_texts")
+  conditionText  String?            @map("condition_text")
+  sellerName     String?            @map("seller_name")
+  status         ListingStatus      @default(UNKNOWN)
+  postedAt       DateTime?          @map("posted_at")
+  firstFetchedAt DateTime           @default(now()) @map("first_fetched_at")
+  lastFetchedAt  DateTime           @default(now()) @map("last_fetched_at")
+  createdAt      DateTime           @default(now()) @map("created_at")
+  updatedAt      DateTime           @default(now()) @updatedAt @map("updated_at")
+  images         ListingImage[]
+  moderation     ListingModeration?
 
   @@index([platform])
   @@index([status])
@@ -69,7 +68,6 @@ model Listing {
   @@index([brand])
   @@index([lastFetchedAt])
   @@index([price])
-  @@index([platform, sellerExternalId])
   @@map("listings")
 }
 
@@ -86,40 +84,22 @@ model ListingModeration {
 }
 
 model FacebookSellerFlag {
-  id                    String                       @id @default(cuid())
-  sellerName            String                       @map("seller_name")
-  normalizedSellerName  String                       @unique @map("normalized_seller_name")
+  id                    String                 @id @default(cuid())
+  sellerName            String                 @map("seller_name")
+  normalizedSellerName  String                 @unique @map("normalized_seller_name")
   status                SellerModerationStatus
   source                ModerationSource
   reason                String?
-  recentListingCount    Int?                         @map("recent_listing_count")
-  duplicateListingCount Int?                         @map("duplicate_listing_count")
-  duplicateRatio        Float?                       @map("duplicate_ratio")
-  firstFlaggedAt        DateTime                     @default(now()) @map("first_flagged_at")
-  lastEvaluatedAt       DateTime?                    @map("last_evaluated_at")
-  createdAt             DateTime                     @default(now()) @map("created_at")
-  updatedAt             DateTime                     @default(now()) @updatedAt @map("updated_at")
-  identities            FacebookSellerIdentityFlag[]
+  recentListingCount    Int?                   @map("recent_listing_count")
+  duplicateListingCount Int?                   @map("duplicate_listing_count")
+  duplicateRatio        Float?                 @map("duplicate_ratio")
+  firstFlaggedAt        DateTime               @default(now()) @map("first_flagged_at")
+  lastEvaluatedAt       DateTime?              @map("last_evaluated_at")
+  createdAt             DateTime               @default(now()) @map("created_at")
+  updatedAt             DateTime               @default(now()) @updatedAt @map("updated_at")
 
   @@index([status])
   @@map("facebook_seller_flags")
-}
-
-model FacebookSellerIdentityFlag {
-  id               String                 @id @default(cuid())
-  sellerExternalId String                 @unique @map("seller_external_id")
-  sellerName       String                 @map("seller_name")
-  nameFlagId       String                 @map("name_flag_id")
-  status           SellerModerationStatus
-  source           ModerationSource
-  reason           String?
-  createdAt        DateTime               @default(now()) @map("created_at")
-  updatedAt        DateTime               @default(now()) @updatedAt @map("updated_at")
-  nameFlag         FacebookSellerFlag     @relation(fields: [nameFlagId], references: [id], onDelete: Cascade)
-
-  @@index([status])
-  @@index([nameFlagId])
-  @@map("facebook_seller_identity_flags")
 }
 
 model PlatformControl {
