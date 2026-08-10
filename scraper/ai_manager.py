@@ -21,7 +21,7 @@ from scraper.shared.runtime import (
     configure_urllib_egress,
     resolve_egress_config,
 )
-from scraper.storage.postgres import require_database_url, upsert_listings
+from scraper.storage.postgres import require_database_url, upsert_ai_rejections, upsert_listings
 from scraper.storage.run_log import write_run_log
 
 
@@ -69,19 +69,35 @@ def process_batch(
     write_db: bool,
     enrich_fn: Callable[[list[dict[str, Any]]], list[dict[str, Any]]] = enrich_listings_with_nvidia,
     upsert_fn: Callable[..., Any] = upsert_listings,
+    rejection_upsert_fn: Callable[..., Any] = upsert_ai_rejections,
     retry_seconds: int = 300,
     now: datetime | None = None,
 ) -> dict[str, Any]:
     candidate_ids = [candidate.id for candidate in candidates]
     platforms = sorted({candidate.platform for candidate in candidates})
     try:
-        parsed = enrich_fn([candidate.payload for candidate in candidates])
+        enriched = enrich_fn([candidate.payload for candidate in candidates])
+        rejected = []
+        parsed = []
+        for item in enriched:
+            if item.get("_aiRejected") is True:
+                rejection = dict(item)
+                rejection["rejectionReason"] = rejection.pop("_aiRejectionReason", "OTHER")
+                rejection.pop("_aiRejected", None)
+                rejection.pop("_sourceFacts", None)
+                rejected.append(rejection)
+            else:
+                parsed.append(item)
         valid, invalid = validate_listings(parsed)
         if invalid:
             raise ValueError(f"AI manager produced {len(invalid)} invalid listings")
         storage_summary = None
-        if write_db and valid:
+        rejection_storage_summary = None
+        if write_db and (valid or rejected):
             resolved_url = require_database_url(database_url)
+            if rejected:
+                rejection_storage_summary = rejection_upsert_fn(resolved_url, rejected).as_dict()
+        if write_db and valid:
             storage_summary = upsert_fn(resolved_url, valid).as_dict()
         pool.complete(candidate_ids, now=now)
         return {
@@ -89,8 +105,10 @@ def process_batch(
             "items": len(candidates),
             "parsed": len(parsed),
             "validated": len(valid),
+            "rejected": len(rejected),
             "platforms": platforms,
             "storage": storage_summary,
+            "rejectionStorage": rejection_storage_summary,
             "error": None,
         }
     except Exception as exc:
@@ -101,8 +119,10 @@ def process_batch(
             "items": len(candidates),
             "parsed": 0,
             "validated": 0,
+            "rejected": 0,
             "platforms": platforms,
             "storage": None,
+            "rejectionStorage": None,
             "error": safe_error,
         }
 
@@ -177,6 +197,7 @@ def run_manager(args: argparse.Namespace) -> int:
                     batch_size=len(listings),
                     rate_limit_seconds=0.0,
                     timeout=request_timeout,
+                    include_rejections=True,
                 ),
                 retry_seconds=retry_seconds,
             )

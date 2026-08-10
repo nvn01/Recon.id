@@ -83,6 +83,24 @@ model ListingModeration {
   @@map("listing_moderation")
 }
 
+model AiListingRejection {
+  id              String          @id @default(cuid())
+  platform        ListingPlatform
+  sourceUrl       String          @unique @map("source_url")
+  externalId      String?         @map("external_id")
+  title           String
+  description     String
+  sellerName      String?         @map("seller_name")
+  reasonCode      String          @map("reason_code")
+  firstRejectedAt DateTime        @default(now()) @map("first_rejected_at")
+  lastRejectedAt  DateTime        @default(now()) @map("last_rejected_at")
+  rejectionCount  Int             @default(1) @map("rejection_count")
+
+  @@index([lastRejectedAt])
+  @@index([platform])
+  @@map("ai_listing_rejections")
+}
+
 model FacebookSellerFlag {
   id                    String                 @id @default(cuid())
   sellerName            String                 @map("seller_name")

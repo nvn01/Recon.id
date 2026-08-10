@@ -16,6 +16,14 @@ DEFAULT_STATE_FILE = Path(__file__).resolve().parents[1] / ".state" / "nvidia_ai
 DEFAULT_COOLDOWN_SECONDS = 300
 INVALID_OUTPUT_FAILURE_THRESHOLD = 2
 MAX_OUTPUT_TOKENS = 8192
+AI_REJECTION_REASONS = {
+    "NOT_A_LISTING",
+    "OUT_OF_SCOPE",
+    "MARKETPLACE_STORE_OR_PROMOTION",
+    "MARKETPLACE_CONTACT_OR_STORE_INFO",
+    "WANTED_OR_SERVICE",
+    "OTHER",
+}
 
 SYSTEM_PROMPT = """
 You are RECON's strict semantic parser for Indonesian second-hand technology listings.
@@ -34,6 +42,10 @@ Output discipline:
   block into conditionText, locationTexts, category, or brand.
 - isListing is true only when the item is actually offering a product for sale. It is false for
   memes, announcements, reviews, promotions without a specific offered item, and wanted-to-buy posts.
+- rejectionReason must be null when isListing is true. When isListing is false, choose exactly one:
+  NOT_A_LISTING, OUT_OF_SCOPE, MARKETPLACE_STORE_OR_PROMOTION,
+  MARKETPLACE_CONTACT_OR_STORE_INFO, WANTED_OR_SERVICE, or OTHER. Choose the most specific reason;
+  this code is stored only in RECON's private moderation audit ledger.
 - title is a concise product title derived from the seller text. Do not use a caption paragraph,
   promotional slogan, price, location, or contact instruction as the title.
 - For Instagram, title must name the offered product from the caption. Never return the Instagram shortcode or externalId
@@ -192,6 +204,18 @@ PARSE_SCHEMA: dict[str, Any] = {
                 "properties": {
                     "externalId": {"type": "string"},
                     "isListing": {"type": "boolean"},
+                    "rejectionReason": {
+                        "type": ["string", "null"],
+                        "enum": [
+                            "NOT_A_LISTING",
+                            "OUT_OF_SCOPE",
+                            "MARKETPLACE_STORE_OR_PROMOTION",
+                            "MARKETPLACE_CONTACT_OR_STORE_INFO",
+                            "WANTED_OR_SERVICE",
+                            "OTHER",
+                            None,
+                        ],
+                    },
                     "title": {"type": "string"},
                     "price": {"type": ["integer", "null"]},
                     "locationTexts": {
@@ -220,6 +244,7 @@ PARSE_SCHEMA: dict[str, Any] = {
                 "required": [
                     "externalId",
                     "isListing",
+                    "rejectionReason",
                     "title",
                     "price",
                     "locationTexts",
@@ -249,6 +274,7 @@ def enrich_listings_with_nvidia(
     batch_size: int = 5,
     rate_limit_seconds: float = 2.0,
     timeout: int = 45,
+    include_rejections: bool = False,
 ) -> list[dict[str, Any]]:
     load_dotenv_if_present()
     api_key = os.environ.get("NVIDIA_API_KEY", "").strip()
@@ -265,7 +291,7 @@ def enrich_listings_with_nvidia(
         if index:
             time.sleep(max(0.0, rate_limit_seconds))
         analyses = client.parse_batch(batch)
-        enriched.extend(merge_ai_results(batch, analyses))
+        enriched.extend(merge_ai_results(batch, analyses, include_rejections=include_rejections))
     return enriched
 
 
@@ -544,6 +570,8 @@ def build_prompt(listings: list[dict[str, Any]]) -> str:
 def merge_ai_results(
     listings: list[dict[str, Any]],
     analyses: list[dict[str, Any]],
+    *,
+    include_rejections: bool = False,
 ) -> list[dict[str, Any]]:
     by_id = {
         str(item.get("externalId") or ""): item
@@ -560,6 +588,11 @@ def merge_ai_results(
         analysis = by_id.get(str(item.get("externalId") or ""))
         if analysis:
             if analysis.get("isListing") is not True:
+                if include_rejections:
+                    item["_aiRejected"] = True
+                    reason = str(analysis.get("rejectionReason") or "OTHER").strip().upper()
+                    item["_aiRejectionReason"] = reason if reason in AI_REJECTION_REASONS else "OTHER"
+                    merged.append(item)
                 continue
             validate_instagram_ai_title(item, analysis)
             source_facts = item.get("_sourceFacts") if isinstance(item.get("_sourceFacts"), dict) else {}

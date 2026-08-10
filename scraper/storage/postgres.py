@@ -12,6 +12,14 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 VALID_PLATFORMS = {"REDDIT", "INSTAGRAM", "FACEBOOK", "FACEBOOK_GROUP"}
 VALID_STATUSES = {"AVAILABLE", "SOLD", "UNKNOWN"}
+VALID_AI_REJECTION_REASONS = {
+    "NOT_A_LISTING",
+    "OUT_OF_SCOPE",
+    "MARKETPLACE_STORE_OR_PROMOTION",
+    "MARKETPLACE_CONTACT_OR_STORE_INFO",
+    "WANTED_OR_SERVICE",
+    "OTHER",
+}
 SENSITIVE_QUERY_KEYS = frozenset(
     {
         "access_token",
@@ -47,6 +55,15 @@ class UpsertSummary:
     updated: int = 0
     imagesDeleted: int = 0
     imagesInserted: int = 0
+
+    def as_dict(self) -> dict[str, int]:
+        return asdict(self)
+
+
+@dataclass
+class AiRejectionUpsertSummary:
+    requested: int = 0
+    upserted: int = 0
 
     def as_dict(self) -> dict[str, int]:
         return asdict(self)
@@ -145,6 +162,28 @@ VALUES (
 )
 """
 
+UPSERT_AI_REJECTION_SQL = """
+INSERT INTO ai_listing_rejections (
+    id, platform, source_url, external_id, title, description, seller_name, reason_code
+)
+VALUES (
+    %(id)s, %(platform)s::listing_platform, %(source_url)s, %(external_id)s,
+    %(title)s, %(description)s, %(seller_name)s, %(reason_code)s
+)
+ON CONFLICT (source_url)
+DO UPDATE SET
+    platform = EXCLUDED.platform,
+    external_id = EXCLUDED.external_id,
+    title = EXCLUDED.title,
+    description = EXCLUDED.description,
+    seller_name = EXCLUDED.seller_name,
+    reason_code = EXCLUDED.reason_code,
+    last_rejected_at = CURRENT_TIMESTAMP,
+    rejection_count = ai_listing_rejections.rejection_count + 1
+"""
+
+DELETE_AI_REJECTION_SQL = "DELETE FROM ai_listing_rejections WHERE source_url = %s"
+
 
 def require_database_url(explicit_url: str | None) -> str:
     value = explicit_url or os.environ.get("SCRAPER_DATABASE_URL") or os.environ.get("DATABASE_URL")
@@ -225,6 +264,25 @@ def listing_to_db_row(listing: dict[str, Any], listing_id: str | None = None) ->
     }
 
 
+def ai_rejection_to_db_row(
+    rejection: dict[str, Any],
+    rejection_id: str | None = None,
+) -> dict[str, Any]:
+    reason = required_string(rejection.get("rejectionReason"), "rejectionReason").upper()
+    if reason not in VALID_AI_REJECTION_REASONS:
+        raise StorageError("rejectionReason is not a supported audit reason.")
+    return {
+        "id": rejection_id or new_record_id(),
+        "platform": enum_to_db_value(rejection.get("platform"), VALID_PLATFORMS, "platform"),
+        "source_url": required_string(rejection.get("sourceUrl"), "sourceUrl"),
+        "external_id": optional_string(rejection.get("externalId")),
+        "title": required_string(rejection.get("title"), "title"),
+        "description": required_string(rejection.get("description"), "description"),
+        "seller_name": optional_string(rejection.get("sellerName")),
+        "reason_code": reason,
+    }
+
+
 def image_rows(
     listing_id: str,
     images: list[dict[str, Any]],
@@ -289,6 +347,29 @@ def upsert_listings(database_url: str | None, listings: list[dict[str, Any]]) ->
         raise StorageError(f"Database write failed: {type(exc).__name__}") from exc
 
 
+def upsert_ai_rejections(
+    database_url: str | None,
+    rejections: list[dict[str, Any]],
+) -> AiRejectionUpsertSummary:
+    url = require_database_url(database_url)
+    summary = AiRejectionUpsertSummary(requested=len(rejections))
+    try:
+        import psycopg
+    except ImportError as exc:  # pragma: no cover - covered by runtime verification.
+        raise StorageError("Install scraper database dependencies with: python -m pip install -r scraper/requirements.txt") from exc
+
+    try:
+        with psycopg.connect(url, connect_timeout=15) as connection:
+            with connection.transaction():
+                with connection.cursor() as cursor:
+                    for rejection in rejections:
+                        cursor.execute(UPSERT_AI_REJECTION_SQL, ai_rejection_to_db_row(rejection))
+                        summary.upserted += 1
+        return summary
+    except psycopg.Error as exc:
+        raise StorageError(f"AI rejection audit write failed: {type(exc).__name__}") from exc
+
+
 def upsert_listings_with_connection(connection: Any, listings: list[dict[str, Any]]) -> UpsertSummary:
     deduplicated = deduplicate_listings(listings)
     summary = UpsertSummary(
@@ -311,6 +392,8 @@ def upsert_listings_with_connection(connection: Any, listings: list[dict[str, An
                     summary.inserted += 1
                 else:
                     summary.updated += 1
+
+                cursor.execute(DELETE_AI_REJECTION_SQL, (row["source_url"],))
 
                 cursor.execute(SELECT_IMAGES_SQL, (listing_id,))
                 existing_images = cursor.fetchall()
