@@ -23,6 +23,9 @@ docker-compose.staging.yml
 docker-compose.production.yml
 /admin-panel/
 
+# private scraper verification suite
+/scraper/tests/
+
 # generated/build output
 .next/
 out/

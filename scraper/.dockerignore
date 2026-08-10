@@ -3,5 +3,6 @@
 __pycache__
 *.pyc
 .ruff_cache
+tests
 facebook/.facebook-profile
 facebook/.facebook-profile*

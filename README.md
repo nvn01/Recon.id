@@ -37,7 +37,6 @@ RECON currently discovers public listings from Facebook Marketplace, Facebook Gr
 npm install
 npm run db:generate
 npm run db:smoke
-python -m unittest discover scraper.tests
 npm run check
 npm run build
 ```

@@ -50,6 +50,54 @@ Output discipline:
 Facebook Marketplace rules:
 - Facebook card text is compact and may combine price, title, and location. Separate those concepts;
   never treat the entire card line as one extracted field.
+- For Facebook Marketplace, isListing is also a store-inventory quality gate. Return isListing false
+  when the card is primarily a merchant or reseller inventory advertisement instead of a clearly
+  personal one-off sale. Apply this gate most carefully to laptops, PlayStation or other console
+  hardware, and desktop/fullset computers; these product types are still allowed when the evidence
+  describes a genuine one-off owner sale.
+- Strong merchant-inventory evidence includes any of these patterns:
+  1. A generic catalog or banner title such as only "Laptop", only "PlayStation", or a multi-product
+     title such as "PS2/PS3/PS4", with no single identifiable unit being offered.
+  2. An obvious teaser card price such as Rp0, Rp1, Rp19, or Rp123 when it appears with a generic
+     title, multiple product generations, or commercial fulfillment language. Do not reinterpret
+     that combination as a real asking price.
+  3. Combined store language such as ready stock, promo, warranty, Grade A, credit, installment,
+     delivery, free shipping, bayar di tempat, or stock availability; Indonesian equivalents include
+     ready stok, garansi, bergaransi, kredit, cicilan, siap antar, and gratis ongkir.
+  4. Refurbished inventory copy built from a polished specification matrix or inventory code plus
+     phrases such as fullset, siap pakai, or tinggal pakai, especially with "second likenew",
+     "ex kantor", multiple available models, or impersonal sales slogans.
+- Marketplace-only instant rejection: Return isListing false whenever the title, description, or
+  source facts expose a direct off-platform contact route or explicit store identity.
+  One direct contact or store signal is sufficient; this overrides the personal one-off allowance.
+  Instant-reject evidence includes:
+  1. An Indonesian mobile phone number, including numbers written with spaces, dots, hyphens, +62,
+     62, or a leading 08.
+  2. WhatsApp, WA, wa.me, phone, telephone, telp, call, contact, kontak, hubungi, nomor WA/HP, DM,
+     PM, chat admin, customer service, or another instruction to contact someone outside the normal
+     Marketplace interaction.
+  3. A named contact person when the name is attached to a contact cue, for example "hubungi Budi",
+     "WA Andi", "contact Rina", or "admin Dika". A person's name by itself is not enough.
+  4. Explicit store information such as toko, store, shop, showroom, outlet, branch, cabang, gudang,
+     alamat toko, lokasi toko, shop address, store hours, a store map, or an invitation to visit or
+     check the item at a store.
+  5. An external merchant account, link, or storefront such as a WhatsApp link, Instagram handle,
+     Shopee, Tokopedia, Bukalapak, or another shop URL or username.
+  This instant rule is deliberately specific to anonymous Facebook Marketplace discovery.
+  It does not apply to Facebook Groups, Reddit, or Instagram, whose source models differ.
+- Use the complete pattern, not a laptop/console/desktop keyword alone. One weak phrase such as COD,
+  mulus, fullset, a specification list, or a realistic price is not sufficient by itself. But return
+  isListing false even for a named model and realistic price when the overall card clearly reads as
+  repeatable dealer stock, a catalog promotion, or a fulfillment offer rather than one owned unit.
+- Urgency wording is not store evidence by itself. "jual cepat", "BU", or "jual cepat BU" alone can
+  appear in an ordinary user-to-user sale and must not cause rejection without stronger evidence.
+- Do not reject an item merely because it is a laptop, PlayStation, game console, desktop, or
+  fullset computer. Keep a clearly personal one-off sale when the evidence is unit-specific, such as
+  ownership or usage history, a reason for selling, an actual defect, the exact included personal
+  accessories, or a seller-specific meetup/negotiation statement without broader inventory signals.
+  Do not require sellerName: make this decision from the title, description, and source facts that
+  are actually present. Clean photos, good lighting, or a shop-like background are not available to
+  this text parser and must not be invented as evidence.
 
 Facebook Group rules:
 - Items whose sourceFacts.sourceType is facebook_group come from loosely moderated buy/sell groups.
