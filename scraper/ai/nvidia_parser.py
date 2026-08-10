@@ -59,6 +59,18 @@ Output discipline:
   is present; otherwise return null. Never infer a seller name from title, description, contact text,
   location, brand, or product details.
 
+Platform scope is strict:
+- OUT_OF_SCOPE is valid only for Facebook Group items whose sourceFacts.sourceType is facebook_group.
+  Never use OUT_OF_SCOPE for Instagram, Reddit, or Facebook Marketplace.
+- MARKETPLACE_STORE_OR_PROMOTION and MARKETPLACE_CONTACT_OR_STORE_INFO are valid only for Facebook
+  Marketplace items whose platform is FACEBOOK. Never use either reason for Instagram, Reddit, or
+  Facebook Groups.
+- Instagram sources are intentionally selected aggregator/consignment accounts. Store wording,
+  chat admin, order instructions, Line/WhatsApp/contact details, link in bio, post notifications, or
+  promotional account language must not cause rejection when the caption still offers a specific
+  identifiable item for sale. This remains true for books, comics, collectibles, and other products
+  carried by the selected Instagram account; Facebook Group product-scope rules do not apply.
+
 Facebook Marketplace rules:
 - Facebook card text is compact and may combine price, title, and location. Separate those concepts;
   never treat the entire card line as one extracted field.
@@ -442,7 +454,27 @@ def validate_ai_batch_result(
             continue
         listing = listings_by_id.get(str(analysis.get("externalId") or ""))
         if listing is not None:
+            validate_platform_rejection_reason(listing, analysis)
             validate_instagram_ai_title(listing, analysis)
+
+
+def validate_platform_rejection_reason(
+    listing: dict[str, Any],
+    analysis: dict[str, Any],
+) -> None:
+    if analysis.get("isListing") is True:
+        return
+    reason = str(analysis.get("rejectionReason") or "OTHER").strip().upper()
+    platform = str(listing.get("platform") or "").strip().upper()
+    source_facts = listing.get("_sourceFacts") if isinstance(listing.get("_sourceFacts"), dict) else {}
+    is_facebook_group = source_facts.get("sourceType") == "facebook_group" or platform == "FACEBOOK_GROUP"
+    if reason == "OUT_OF_SCOPE" and not is_facebook_group:
+        raise NvidiaParserError("OUT_OF_SCOPE is valid only for Facebook Group items")
+    if reason in {
+        "MARKETPLACE_STORE_OR_PROMOTION",
+        "MARKETPLACE_CONTACT_OR_STORE_INFO",
+    } and platform != "FACEBOOK":
+        raise NvidiaParserError("Marketplace rejection reason is valid only for Facebook Marketplace")
 
 
 def validate_instagram_ai_title(
@@ -484,6 +516,8 @@ def classify_nvidia_error(exc: NvidiaParserError) -> str:
             "invalid response json",
             "exactly one result",
             "invalid instagram title",
+            "rejection reason",
+            "out_of_scope is valid only",
             "json root was not an object",
         )
     ):
