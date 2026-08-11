@@ -9,9 +9,16 @@ vi.mock("next/navigation", () => ({
 }));
 
 import LegacyHowItWorksPage from "~/app/cara-kerja/page";
+import Home from "~/app/page";
 import LegacyPrivacyPage from "~/app/privacy/page";
 
 describe("legacy public route redirects", () => {
+  it("redirects the root domain to the canonical all-collection page", () => {
+    Home();
+
+    expect(permanentRedirectMock).toHaveBeenCalledWith("/collection/all");
+  });
+
   it("redirects the old privacy URL to the current policy", () => {
     LegacyPrivacyPage();
 

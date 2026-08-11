@@ -135,7 +135,7 @@ function titleForScope(scope: FeedScope) {
   }
 
   if (scope.slug === "all") {
-    return "Cari barang secondhand dari banyak platform.";
+    return "RECON - Cari Barang Secondhand dari Banyak Platform";
   }
 
   return `${collections.find((item) => item.slug === scope.slug)?.label ?? "Koleksi"} secondhand terbaru.`;

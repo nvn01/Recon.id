@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 
 import { AnalyticsPreferencesButton } from "~/components/analytics-consent";
 import { EditorialPage } from "~/components/editorial-page";
+import { utilityPageRobots } from "~/lib/site";
 
 export const metadata: Metadata = {
   title: "Cookies Policy",
@@ -9,6 +10,7 @@ export const metadata: Metadata = {
     "How RECON uses necessary storage and optional analytics cookies.",
   alternates: { canonical: "/cookies-policy" },
   openGraph: { url: "/cookies-policy" },
+  robots: utilityPageRobots,
 };
 
 export default function CookiesPolicyPage() {

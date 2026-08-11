@@ -14,7 +14,7 @@ export function SiteFooter() {
               width={24}
               height={24}
             />
-            <span>RECON</span>
+            <span>Recon App Indonesia</span>
           </Link>
           <p className="footer-description">
             Open source secondhand discovery. Temukan barang incaranmu dalam

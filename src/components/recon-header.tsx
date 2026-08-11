@@ -95,10 +95,13 @@ export function ReconHeader({
         <Link
           className="wordmark"
           href="/collection/all"
-          aria-label="RECON home"
+          aria-label="Recon App Indonesia home"
         >
           <ReconMark />
-          <span>RECON</span>
+          <span className="wordmark-copy">
+            <span className="wordmark-name">RECON</span>
+            <span className="wordmark-context">App Indonesia</span>
+          </span>
         </Link>
 
         <form className="search-box" role="search" onSubmit={submitSearch}>

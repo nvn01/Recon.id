@@ -8,10 +8,6 @@ export default function sitemap(): MetadataRoute.Sitemap {
     { path: "/collection/all", priority: 1 },
     { path: "/collection", priority: 0.8 },
     { path: "/platform", priority: 0.7 },
-    { path: "/about-us", priority: 0.5 },
-    { path: "/terms", priority: 0.4 },
-    { path: "/cookies-policy", priority: 0.4 },
-    { path: "/privacy-policy", priority: 0.4 },
   ];
   const collectionPages = collections
     .filter((collection) => collection.slug !== "all")

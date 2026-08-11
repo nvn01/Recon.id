@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 
 import { EditorialPage } from "~/components/editorial-page";
+import { utilityPageRobots } from "~/lib/site";
 
 export const metadata: Metadata = {
   title: "About Us",
@@ -8,6 +9,7 @@ export const metadata: Metadata = {
     "Why RECON exists and how its open source secondhand discovery feed works.",
   alternates: { canonical: "/about-us" },
   openGraph: { url: "/about-us" },
+  robots: utilityPageRobots,
 };
 
 export default function AboutUsPage() {

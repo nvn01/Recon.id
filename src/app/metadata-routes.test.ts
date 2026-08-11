@@ -3,7 +3,11 @@ import { describe, expect, it } from "vitest";
 import manifest from "~/app/manifest";
 import robots from "~/app/robots";
 import sitemap from "~/app/sitemap";
-import { siteConfig } from "~/lib/site";
+import {
+  siteConfig,
+  siteIdentityStructuredData,
+  utilityPageRobots,
+} from "~/lib/site";
 
 describe("public indexing metadata routes", () => {
   it("uses the descriptive search identity across site metadata", () => {
@@ -16,8 +20,18 @@ describe("public indexing metadata routes", () => {
     expect(siteConfig.description).toBe(
       "Recon App Indonesia, Temukan barang incaran dengan harga termurah dari berbagai platform jual-beli Indonesia dalam satu tempat.",
     );
-    expect(webManifest.name).toBe(siteConfig.title);
+    expect(webManifest.name).toBe(siteConfig.name);
     expect(webManifest.description).toBe(siteConfig.description);
+    expect(webManifest.start_url).toBe(siteConfig.homePath);
+
+    expect(siteIdentityStructuredData["@graph"]).toContainEqual(
+      expect.objectContaining({
+        "@type": "WebSite",
+        name: "Recon App Indonesia",
+        alternateName: ["RECON"],
+        url: "https://recon.app-pixel.com/collection/all",
+      }),
+    );
   });
 
   it("publishes only canonical HTTPS URLs without query parameters", () => {
@@ -25,10 +39,10 @@ describe("public indexing metadata routes", () => {
     const urls = entries.map((entry) => entry.url);
 
     expect(urls).toContain("https://recon.app-pixel.com/collection/all");
-    expect(urls).toContain("https://recon.app-pixel.com/about-us");
-    expect(urls).toContain("https://recon.app-pixel.com/terms");
-    expect(urls).toContain("https://recon.app-pixel.com/cookies-policy");
-    expect(urls).toContain("https://recon.app-pixel.com/privacy-policy");
+    expect(urls).not.toContain("https://recon.app-pixel.com/about-us");
+    expect(urls).not.toContain("https://recon.app-pixel.com/terms");
+    expect(urls).not.toContain("https://recon.app-pixel.com/cookies-policy");
+    expect(urls).not.toContain("https://recon.app-pixel.com/privacy-policy");
     expect(urls).not.toContain("https://recon.app-pixel.com/privacy");
     expect(urls).not.toContain("https://recon.app-pixel.com/cara-kerja");
     expect(urls.every((url) => url.startsWith("https://"))).toBe(true);
@@ -46,5 +60,9 @@ describe("public indexing metadata routes", () => {
       sitemap: "https://recon.app-pixel.com/sitemap.xml",
       host: "https://recon.app-pixel.com/",
     });
+  });
+
+  it("keeps utility information pages crawlable but out of search results", () => {
+    expect(utilityPageRobots).toEqual({ index: false, follow: true });
   });
 });

@@ -127,6 +127,25 @@ img {
   letter-spacing: -0.045em;
 }
 
+.wordmark-copy {
+  display: grid;
+  line-height: 1;
+}
+
+.wordmark-name {
+  font-size: 23px;
+}
+
+.wordmark-context {
+  margin-top: 3px;
+  color: var(--muted);
+  font-family: var(--font-geist-sans), sans-serif;
+  font-size: 9px;
+  font-weight: 650;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
 .recon-mark {
   display: inline-grid;
   width: 36px;

@@ -4,10 +4,10 @@ import { siteConfig } from "~/lib/site";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: siteConfig.title,
+    name: siteConfig.name,
     short_name: "RECON",
     description: siteConfig.description,
-    start_url: "/collection/all",
+    start_url: siteConfig.homePath,
     display: "standalone",
     background_color: "#f7f8f6",
     theme_color: "#0b2f20",

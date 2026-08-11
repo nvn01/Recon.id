@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 
 import { EditorialPage } from "~/components/editorial-page";
+import { utilityPageRobots } from "~/lib/site";
 
 export const metadata: Metadata = {
   title: "Privacy Policy",
@@ -8,6 +9,7 @@ export const metadata: Metadata = {
     "How RECON processes listing information, technical data, and privacy requests.",
   alternates: { canonical: "/privacy-policy" },
   openGraph: { url: "/privacy-policy" },
+  robots: utilityPageRobots,
 };
 
 export default function PrivacyPolicyPage() {

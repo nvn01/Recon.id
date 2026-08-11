@@ -1,12 +1,14 @@
 import type { Metadata } from "next";
 
 import { EditorialPage } from "~/components/editorial-page";
+import { utilityPageRobots } from "~/lib/site";
 
 export const metadata: Metadata = {
   title: "Terms",
   description: "The terms that apply when you access and use RECON.",
   alternates: { canonical: "/terms" },
   openGraph: { url: "/terms" },
+  robots: utilityPageRobots,
 };
 
 export default function TermsPage() {

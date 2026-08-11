@@ -6,7 +6,7 @@ import { headers } from "next/headers";
 
 import { AnalyticsConsent } from "~/components/analytics-consent";
 import { SiteFooter } from "~/components/site-footer";
-import { siteConfig } from "~/lib/site";
+import { siteConfig, siteIdentityStructuredData } from "~/lib/site";
 import { TRPCReactProvider } from "~/trpc/react";
 
 export const metadata: Metadata = {
@@ -40,7 +40,7 @@ export const metadata: Metadata = {
     siteName: siteConfig.name,
     title: siteConfig.title,
     description: siteConfig.description,
-    url: "/collection/all",
+    url: siteConfig.homePath,
     images: [
       {
         url: "/opengraph-image",
@@ -97,30 +97,6 @@ export default async function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   const nonce = (await headers()).get("x-nonce") ?? undefined;
-  const structuredData = {
-    "@context": "https://schema.org",
-    "@graph": [
-      {
-        "@type": "Organization",
-        "@id": `${siteConfig.url}/#organization`,
-        name: siteConfig.name,
-        url: siteConfig.url,
-        email: siteConfig.email,
-        sameAs: [siteConfig.github],
-      },
-      {
-        "@type": "WebSite",
-        "@id": `${siteConfig.url}/#website`,
-        url: siteConfig.url,
-        name: siteConfig.name,
-    alternateName: ["RECON"],
-        description: siteConfig.description,
-        inLanguage: "id-ID",
-        publisher: { "@id": `${siteConfig.url}/#organization` },
-      },
-    ],
-  };
-
   return (
     <html
       lang="id"
@@ -131,7 +107,10 @@ export default async function RootLayout({
           nonce={nonce}
           type="application/ld+json"
           dangerouslySetInnerHTML={{
-            __html: JSON.stringify(structuredData).replace(/</g, "\\u003c"),
+            __html: JSON.stringify(siteIdentityStructuredData).replace(
+              /</g,
+              "\\u003c",
+            ),
           }}
         />
         <TRPCReactProvider>
