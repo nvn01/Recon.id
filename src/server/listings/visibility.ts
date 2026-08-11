@@ -25,7 +25,7 @@ export const publicListingVisibilityFilter = Prisma.sql`
       AND content_block.normalized_value = normalize_listing_content(listing.description)
   )
   AND NOT (
-    listing.platform::text = 'facebook'
+    listing.platform::text IN ('facebook', 'facebook_group')
     AND EXISTS (
       SELECT 1
       FROM facebook_seller_flags AS seller_flag
