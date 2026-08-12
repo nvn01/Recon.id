@@ -127,23 +127,8 @@ img {
   letter-spacing: -0.045em;
 }
 
-.wordmark-copy {
-  display: grid;
-  line-height: 1;
-}
-
 .wordmark-name {
   font-size: 23px;
-}
-
-.wordmark-context {
-  margin-top: 3px;
-  color: var(--muted);
-  font-family: var(--font-geist-sans), sans-serif;
-  font-size: 9px;
-  font-weight: 650;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
 }
 
 .recon-mark {
@@ -2299,11 +2284,10 @@ img {
 
 .site-footer-inner {
   display: grid;
-  grid-template-columns: minmax(300px, 1.45fr) minmax(180px, 0.75fr) minmax(
-      180px,
-      0.55fr
-    );
-  gap: clamp(36px, 6vw, 108px);
+  grid-template-columns:
+    minmax(300px, 1.45fr) minmax(150px, 0.55fr)
+    minmax(150px, 0.55fr) minmax(180px, 0.55fr);
+  gap: clamp(30px, 4.5vw, 82px);
   padding: 46px 0 42px;
 }
 
@@ -2377,6 +2361,7 @@ img {
   margin-top: 9px;
 }
 
+.social-link,
 .social-placeholder {
   display: grid;
   width: 38px;
@@ -2384,10 +2369,32 @@ img {
   place-items: center;
   border: 1px solid var(--line);
   border-radius: 50%;
+}
+
+.footer-contact .social-link {
+  padding: 0;
   color: var(--forest);
+  text-decoration: none;
+  transition:
+    border-color 150ms ease,
+    background-color 150ms ease,
+    color 150ms ease;
+}
+
+.footer-contact .social-link:hover,
+.footer-contact .social-link:focus-visible {
+  border-color: var(--forest);
+  background: var(--forest);
+  color: var(--surface);
+  text-decoration: none;
+}
+
+.social-placeholder {
+  color: var(--muted);
   cursor: help;
 }
 
+.social-link svg,
 .social-placeholder svg {
   width: 16px;
   height: 16px;
@@ -2893,7 +2900,7 @@ img {
 
 @media (max-width: 1100px) {
   .site-footer-inner {
-    grid-template-columns: minmax(280px, 1.2fr) repeat(2, minmax(160px, 0.7fr));
+    grid-template-columns: minmax(280px, 1.2fr) repeat(3, minmax(130px, 0.7fr));
     gap: 38px;
   }
 

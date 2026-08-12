@@ -54,6 +54,7 @@ import {
   resultCountBucket,
   trackAnalyticsEvent,
 } from "~/lib/analytics";
+import { allListingsPath, collectionPath } from "~/lib/routes";
 import { api } from "~/trpc/react";
 
 type ReconFeedProps = {
@@ -1243,7 +1244,7 @@ export function ReconFeed({ scope }: ReconFeedProps) {
       next.append("platform", scope.slug);
     }
 
-    return withQuery(`/collection/${slug}`, next);
+    return withQuery(collectionPath(slug), next);
   }
 
   function changeFilters(nextFilters: ListingFilters) {
@@ -1251,7 +1252,7 @@ export function ReconFeed({ scope }: ReconFeedProps) {
       new URLSearchParams(searchParams.toString()),
       nextFilters,
     );
-    const targetPath = scope.type === "platform" ? "/collection/all" : pathname;
+    const targetPath = scope.type === "platform" ? allListingsPath : pathname;
 
     trackAnalyticsEvent("filter_applied", {
       active_filter_groups: countActiveFilterGroups(nextFilters),
@@ -1413,7 +1414,7 @@ export function ReconFeed({ scope }: ReconFeedProps) {
               <section className="empty-state">
                 <h2>Belum ada listing yang cocok.</h2>
                 <p>Coba longgarkan filter atau hapus pencarian.</p>
-                <Link href="/collection/all">Kembali ke semua listing</Link>
+                <Link href={allListingsPath}>Kembali ke semua listing</Link>
               </section>
             )}
 

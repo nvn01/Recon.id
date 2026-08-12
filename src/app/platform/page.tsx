@@ -8,6 +8,7 @@ import {
   platformMeta,
   type ListingPlatform,
 } from "~/data/listings";
+import { allListingsPath } from "~/lib/routes";
 
 export const metadata: Metadata = {
   title: "Platform",
@@ -52,7 +53,7 @@ export default function PlatformDirectoryPage() {
             );
           })}
         </div>
-        <Link className="back-to-feed" href="/collection/all">
+        <Link className="back-to-feed" href={allListingsPath}>
           ← Kembali ke semua listing
         </Link>
       </main>

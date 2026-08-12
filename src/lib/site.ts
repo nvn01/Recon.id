@@ -1,12 +1,13 @@
 export const siteConfig = {
   name: "Recon App Indonesia",
   url: "https://recon.app-pixel.com",
-  homePath: "/collection/all",
+  homePath: "/",
   title: "RECON - Cari Barang Secondhand dari Banyak Platform",
   description:
     "Recon App Indonesia, Temukan barang incaran dengan harga termurah dari berbagai platform jual-beli Indonesia dalam satu tempat.",
   email: "recon@app-pixel.com",
   github: "https://github.com/nvn01/Recon.id",
+  x: "https://x.com/ofpSoftware",
 } as const;
 
 export const siteIdentityStructuredData = {
@@ -18,7 +19,7 @@ export const siteIdentityStructuredData = {
       name: siteConfig.name,
       url: siteConfig.url,
       email: siteConfig.email,
-      sameAs: [siteConfig.github],
+      sameAs: [siteConfig.github, siteConfig.x],
     },
     {
       "@type": "WebSite",
