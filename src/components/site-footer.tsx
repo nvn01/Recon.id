@@ -1,13 +1,16 @@
-import { DiscordLogo, XLogo } from "@phosphor-icons/react/dist/ssr";
+import { InstagramLogo, XLogo } from "@phosphor-icons/react/dist/ssr";
 import Image from "next/image";
 import Link from "next/link";
+
+import { allListingsPath } from "~/lib/routes";
+import { siteConfig } from "~/lib/site";
 
 export function SiteFooter() {
   return (
     <footer className="site-footer">
       <div className="site-footer-inner">
         <div className="footer-brand">
-          <Link href="/collection/all" className="footer-wordmark">
+          <Link href={allListingsPath} className="footer-wordmark">
             <Image
               src="/brand/recon-mark-forest.svg"
               alt=""
@@ -26,10 +29,13 @@ export function SiteFooter() {
           </p>
         </div>
 
-        <nav className="footer-links" aria-label="Informasi RECON">
-          <Link href="/collection/all">Temuan terbaru</Link>
+        <nav className="footer-links" aria-label="Jelajahi RECON">
+          <Link href={allListingsPath}>Temuan terbaru</Link>
           <Link href="/collection">Koleksi barang</Link>
           <Link href="/platform">Platform sumber</Link>
+        </nav>
+
+        <nav className="footer-links" aria-label="Informasi RECON">
           <Link href="/about-us">About us</Link>
           <Link href="/terms">Terms</Link>
           <Link href="/cookies-policy">Cookies policy</Link>
@@ -45,25 +51,24 @@ export function SiteFooter() {
           >
             Kontribusi di GitHub ↗
           </a>
-          <div
-            className="footer-socials"
-            aria-label="Media sosial segera hadir"
-          >
-            <span
-              className="social-placeholder"
-              role="img"
-              aria-label="X, akun segera hadir"
-              title="X, segera hadir"
+          <div className="footer-socials" aria-label="Media sosial RECON">
+            <a
+              className="social-link"
+              href={siteConfig.x}
+              target="_blank"
+              rel="noreferrer"
+              aria-label="RECON di X"
+              title="X"
             >
               <XLogo aria-hidden="true" weight="fill" />
-            </span>
+            </a>
             <span
               className="social-placeholder"
               role="img"
-              aria-label="Discord, komunitas segera hadir"
-              title="Discord, segera hadir"
+              aria-label="Instagram, akun segera hadir"
+              title="Instagram, segera hadir"
             >
-              <DiscordLogo aria-hidden="true" weight="fill" />
+              <InstagramLogo aria-hidden="true" weight="fill" />
             </span>
           </div>
         </div>

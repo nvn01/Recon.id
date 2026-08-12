@@ -26,9 +26,7 @@ describe("content security policy", () => {
   });
 
   it("sets an enforcing response policy with a fresh nonce", () => {
-    const request = new NextRequest(
-      "https://recon.app-pixel.com/collection/all",
-    );
+    const request = new NextRequest("https://recon.app-pixel.com/");
     const firstPolicy = middleware(request).headers.get(
       "Content-Security-Policy",
     );

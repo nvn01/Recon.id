@@ -7,6 +7,7 @@ import { type ReactNode } from "react";
 
 import { RefreshArrowIcon } from "~/components/refresh-arrow-icon";
 import { queryLengthBucket, trackAnalyticsEvent } from "~/lib/analytics";
+import { allListingsPath } from "~/lib/routes";
 
 function SearchIcon() {
   return (
@@ -59,7 +60,7 @@ export function ReconHeader({
 
   function searchPath() {
     return pathname === "/platform" || pathname === "/collection"
-      ? "/collection/all"
+      ? allListingsPath
       : pathname;
   }
 
@@ -94,14 +95,11 @@ export function ReconHeader({
       <div className="header-inner">
         <Link
           className="wordmark"
-          href="/collection/all"
+          href={allListingsPath}
           aria-label="Recon App Indonesia home"
         >
           <ReconMark />
-          <span className="wordmark-copy">
-            <span className="wordmark-name">RECON</span>
-            <span className="wordmark-context">App Indonesia</span>
-          </span>
+          <span className="wordmark-name">RECON</span>
         </Link>
 
         <form className="search-box" role="search" onSubmit={submitSearch}>

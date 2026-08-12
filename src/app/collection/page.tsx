@@ -5,6 +5,7 @@ import { Suspense } from "react";
 
 import { ReconHeader } from "~/components/recon-header";
 import { collections, formatRupiah } from "~/data/listings";
+import { allListingsPath } from "~/lib/routes";
 import { api } from "~/trpc/server";
 
 export const metadata: Metadata = {
@@ -96,7 +97,7 @@ export default async function CollectionDirectoryPage() {
               Pilih kategori untuk membuka listing terbaru dari semua sumber.
             </p>
           </div>
-          <Link className="collection-all-link" href="/collection/all">
+          <Link className="collection-all-link" href={allListingsPath}>
             Lihat semua listing
           </Link>
         </section>
