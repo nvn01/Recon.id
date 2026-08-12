@@ -1,7 +1,26 @@
-import { permanentRedirect } from "next/navigation";
+import type { Metadata } from "next";
+import { Suspense } from "react";
 
-import { siteConfig } from "~/lib/site";
+import { ReconFeedPage } from "~/components/recon-feed-page";
+import { buildHomeMetadata } from "~/lib/home-metadata";
 
-export default function Home() {
-  permanentRedirect(siteConfig.homePath);
+type HomePageProps = {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+};
+
+export async function generateMetadata({
+  searchParams,
+}: HomePageProps): Promise<Metadata> {
+  return buildHomeMetadata(await searchParams);
+}
+
+export default function Home({ searchParams }: HomePageProps) {
+  return (
+    <Suspense fallback={<div className="page-loading">Menyusun temuan…</div>}>
+      <ReconFeedPage
+        scope={{ type: "collection", slug: "all" }}
+        searchParams={searchParams}
+      />
+    </Suspense>
+  );
 }

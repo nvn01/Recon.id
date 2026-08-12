@@ -30,6 +30,15 @@ const securityHeaders = [
 /** @type {import("next").NextConfig} */
 const config = {
   poweredByHeader: false,
+  async redirects() {
+    return [
+      {
+        source: "/collection/all",
+        destination: "/",
+        permanent: true,
+      },
+    ];
+  },
   async headers() {
     return [
       {

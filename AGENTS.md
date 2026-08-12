@@ -394,7 +394,7 @@ docker inspect -f '{{.Name}} restarts={{.RestartCount}} status={{.State.Status}}
 Production verification requires all of the following:
 
 - `https://recon.app-pixel.com` reaches HTTP 200 after its expected redirect to
-  `/collection/all`, with valid TLS.
+  `/`, with valid TLS.
 - PostgreSQL and web are healthy, `migrate` exits `0`, and cloudflared remains
   connected.
 - Collector, AI manager, and media worker are running with restart count `0`.

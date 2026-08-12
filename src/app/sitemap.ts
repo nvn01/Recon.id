@@ -5,7 +5,7 @@ import { absoluteUrl } from "~/lib/site";
 
 export default function sitemap(): MetadataRoute.Sitemap {
   const staticPages = [
-    { path: "/collection/all", priority: 1 },
+    { path: "/", priority: 1 },
     { path: "/collection", priority: 0.8 },
     { path: "/platform", priority: 0.7 },
   ];
@@ -23,11 +23,12 @@ export default function sitemap(): MetadataRoute.Sitemap {
   return [...staticPages, ...collectionPages, ...platformPages].map(
     ({ path, priority }) => ({
       url: absoluteUrl(path),
-      changeFrequency: path.startsWith("/collection/")
-        ? ("hourly" as const)
-        : path.startsWith("/platform/")
+      changeFrequency:
+        path === "/" || path.startsWith("/collection/")
           ? ("hourly" as const)
-          : ("weekly" as const),
+          : path.startsWith("/platform/")
+            ? ("hourly" as const)
+            : ("weekly" as const),
       priority,
     }),
   );

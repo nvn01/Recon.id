@@ -20,6 +20,8 @@ describe("public indexing metadata routes", () => {
     expect(siteConfig.description).toBe(
       "Recon App Indonesia, Temukan barang incaran dengan harga termurah dari berbagai platform jual-beli Indonesia dalam satu tempat.",
     );
+    expect(siteConfig.homePath).toBe("/");
+    expect(siteConfig.x).toBe("https://x.com/ofpSoftware");
     expect(webManifest.name).toBe(siteConfig.name);
     expect(webManifest.description).toBe(siteConfig.description);
     expect(webManifest.start_url).toBe(siteConfig.homePath);
@@ -29,7 +31,14 @@ describe("public indexing metadata routes", () => {
         "@type": "WebSite",
         name: "Recon App Indonesia",
         alternateName: ["RECON"],
-        url: "https://recon.app-pixel.com/collection/all",
+        url: "https://recon.app-pixel.com/",
+      }),
+    );
+
+    expect(siteIdentityStructuredData["@graph"]).toContainEqual(
+      expect.objectContaining({
+        "@type": "Organization",
+        sameAs: [siteConfig.github, siteConfig.x],
       }),
     );
   });
@@ -38,7 +47,8 @@ describe("public indexing metadata routes", () => {
     const entries = sitemap();
     const urls = entries.map((entry) => entry.url);
 
-    expect(urls).toContain("https://recon.app-pixel.com/collection/all");
+    expect(urls).toContain("https://recon.app-pixel.com/");
+    expect(urls).not.toContain("https://recon.app-pixel.com/collection/all");
     expect(urls).not.toContain("https://recon.app-pixel.com/about-us");
     expect(urls).not.toContain("https://recon.app-pixel.com/terms");
     expect(urls).not.toContain("https://recon.app-pixel.com/cookies-policy");
