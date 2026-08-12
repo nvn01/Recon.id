@@ -21,17 +21,19 @@ from scraper.facebook.facebook_marketplace import (
     open_marketplace,
 )
 from scraper.storage.postgres import StorageError, require_database_url
+from scraper.storage.reconciliation_visibility import FACEBOOK_RECONCILIATION_VISIBILITY_SQL
 
 
-SELECT_RECONCILIATION_CANDIDATES_SQL = """
+SELECT_RECONCILIATION_CANDIDATES_SQL = f"""
 WITH latest_ready AS (
-    SELECT id, external_id, source_url, status, last_fetched_at,
-           COALESCE(posted_at, first_fetched_at) AS listed_at
-    FROM listings
-    WHERE platform = 'facebook'::listing_platform
-      AND status IN ('available'::listing_status, 'unknown'::listing_status)
-      AND external_id ~ '^[0-9]+$'
-      AND source_url ~ '^https://www\\.facebook\\.com/marketplace/item/[0-9]+/?$'
+    SELECT listing.id, listing.external_id, listing.source_url, listing.status, listing.last_fetched_at,
+           COALESCE(listing.posted_at, listing.first_fetched_at) AS listed_at
+    FROM listings AS listing
+    WHERE listing.platform = 'facebook'::listing_platform
+      AND listing.status IN ('available'::listing_status, 'unknown'::listing_status)
+      AND listing.external_id ~ '^[0-9]+$'
+      AND listing.source_url ~ '^https://www\\.facebook\\.com/marketplace/item/[0-9]+/?$'
+      {FACEBOOK_RECONCILIATION_VISIBILITY_SQL}
     ORDER BY COALESCE(posted_at, first_fetched_at) DESC, id DESC
     LIMIT %s
 )
@@ -41,17 +43,18 @@ ORDER BY last_fetched_at ASC NULLS FIRST, listed_at DESC, id
 LIMIT 1
 """
 
-UPDATE_RECONCILIATION_RESULT_SQL = """
-UPDATE listings
-SET status = COALESCE(%(status)s::listing_status, status),
+UPDATE_RECONCILIATION_RESULT_SQL = f"""
+UPDATE listings AS listing
+SET status = COALESCE(%(status)s::listing_status, listing.status),
     last_fetched_at = %(checked_at)s,
     updated_at = CASE
-        WHEN %(status)s::text IS NOT NULL AND status::text <> %(status)s::text THEN CURRENT_TIMESTAMP
-        ELSE updated_at
+        WHEN %(status)s::text IS NOT NULL AND listing.status::text <> %(status)s::text THEN CURRENT_TIMESTAMP
+        ELSE listing.updated_at
     END
-WHERE source_url = %(source_url)s
-  AND platform = 'facebook'::listing_platform
-  AND status IN ('available'::listing_status, 'unknown'::listing_status)
+WHERE listing.source_url = %(source_url)s
+  AND listing.platform = 'facebook'::listing_platform
+  AND listing.status IN ('available'::listing_status, 'unknown'::listing_status)
+  {FACEBOOK_RECONCILIATION_VISIBILITY_SQL}
 """
 
 SOLD_LINES = frozenset({"habis", "sold", "sold out", "terjual", "sudah terjual"})

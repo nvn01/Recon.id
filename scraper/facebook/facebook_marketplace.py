@@ -20,6 +20,7 @@ Minute-level diagnostic watcher:
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import os
 import random
@@ -59,6 +60,7 @@ DEFAULT_CATEGORY_ID = "479353692612078"  # Facebook Marketplace Electronics cate
 SCRIPT_DIR = Path(__file__).resolve().parent
 SCRAPER_DIR = SCRIPT_DIR.parent
 DEFAULT_PROFILE_DIR = SCRIPT_DIR / ".facebook-profile"
+DEFAULT_SELLER_TOOLS_DIR = DEFAULT_PROFILE_DIR / "seller_name_tools"
 DEFAULT_STATE_DIR = SCRAPER_DIR / ".state"
 DEFAULT_LOG_DIR = SCRAPER_DIR / ".logs"
 DEFAULT_STATE_FILE = DEFAULT_STATE_DIR / "facebook_marketplace.json"
@@ -1085,6 +1087,7 @@ def default_state() -> dict[str, Any]:
         "last_run_at": None,
         "last_success_at": None,
         "last_error": None,
+        "seller_enrichment_misses": {},
     }
 
 
@@ -1530,11 +1533,133 @@ def run_browser_fetch(args: argparse.Namespace, state: dict[str, Any]) -> list[d
                 if detail and detail.error:
                     print(f"Detail fetch failed for {card.item_id}: {detail.error}", file=sys.stderr)
                 listings.append(normalize_card(card, detail, fetched_at))
-            return listings
         finally:
             context.close()
             if browser_instance is not None:
                 browser_instance.close()
+
+    return enrich_with_optional_seller_tools(listings, args, state)
+
+
+def enrich_with_optional_seller_tools(
+    listings: list[dict[str, Any]],
+    args: argparse.Namespace,
+    state: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
+    """Apply the private seller-name adapter when its ignored folder is installed."""
+    tools_dir = Path(os.environ.get("RECON_FACEBOOK_SELLER_TOOLS_DIR") or DEFAULT_SELLER_TOOLS_DIR)
+    adapter_path = tools_dir / "adapter.py"
+    if not adapter_path.is_file():
+        return listings
+
+    current_time = now_utc()
+    misses = seller_enrichment_misses(state)
+    candidates = [
+        {
+            "externalId": str(listing.get("externalId") or ""),
+            "sourceUrl": str(listing.get("sourceUrl") or ""),
+        }
+        for listing in listings
+        if not optional_seller_name(listing.get("sellerName"))
+        and str(listing.get("externalId") or "")
+        and str(listing.get("sourceUrl") or "")
+        and not seller_miss_is_active(misses, str(listing.get("externalId") or ""), current_time)
+    ]
+    if not candidates:
+        return listings
+
+    try:
+        spec = importlib.util.spec_from_file_location("recon_private_facebook_seller_adapter", adapter_path)
+        if spec is None or spec.loader is None:
+            raise ImportError("private seller adapter could not be loaded")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        collect_seller_names = getattr(module, "collect_seller_names", None)
+        if not callable(collect_seller_names):
+            raise AttributeError("private seller adapter must define collect_seller_names")
+
+        found = collect_seller_names(
+            candidates,
+            runtime={
+                "browser": str(getattr(args, "browser", "chrome")),
+                "headless": True,
+                "timeout_seconds": int(getattr(args, "timeout", 30)),
+                "wait_ms": int(getattr(args, "wait_ms", 3000)),
+                "tools_dir": str(tools_dir),
+                "profile_dir": str(tools_dir / "browser_profile"),
+                "block_assets": True,
+                "concurrency": 2,
+            },
+        )
+        if not isinstance(found, dict):
+            raise TypeError("private seller adapter returned a non-object result")
+    except Exception as exc:
+        print(
+            "Optional Facebook seller-name enrichment failed; continuing without seller names "
+            f"({type(exc).__name__}).",
+            file=sys.stderr,
+        )
+        return listings
+
+    allowed_ids = {candidate["externalId"] for candidate in candidates}
+    seller_names = {
+        str(external_id): seller_name
+        for external_id, value in found.items()
+        if str(external_id) in allowed_ids and (seller_name := optional_seller_name(value))
+    }
+    if state is not None:
+        retry_seconds = max(300, int(getattr(args, "seller_miss_retry_seconds", 21_600)))
+        retry_at = (current_time + timedelta(seconds=retry_seconds)).isoformat()
+        for candidate in candidates:
+            external_id = candidate["externalId"]
+            if external_id in seller_names:
+                misses.pop(external_id, None)
+            else:
+                misses[external_id] = retry_at
+        state["seller_enrichment_misses"] = prune_seller_enrichment_misses(misses)
+    if not seller_names:
+        return listings
+
+    enriched: list[dict[str, Any]] = []
+    for listing in listings:
+        external_id = str(listing.get("externalId") or "")
+        seller_name = seller_names.get(external_id)
+        if seller_name and not optional_seller_name(listing.get("sellerName")):
+            enriched.append({**listing, "sellerName": seller_name})
+        else:
+            enriched.append(listing)
+    print(f"Authenticated Facebook seller enrichment populated {len(seller_names)} listing(s).", file=sys.stderr)
+    return enriched
+
+
+def optional_seller_name(value: object) -> str | None:
+    if value is None:
+        return None
+    cleaned = normalize_spaces(str(value).replace("\x00", ""))[:160].strip()
+    return cleaned or None
+
+
+def seller_enrichment_misses(state: dict[str, Any] | None) -> dict[str, str]:
+    if state is None:
+        return {}
+    raw = state.get("seller_enrichment_misses")
+    if not isinstance(raw, dict):
+        return {}
+    return {
+        str(external_id): str(retry_at)
+        for external_id, retry_at in raw.items()
+        if str(external_id) and parse_iso_datetime(str(retry_at)) is not None
+    }
+
+
+def seller_miss_is_active(misses: dict[str, str], external_id: str, current_time: datetime) -> bool:
+    retry_at = parse_iso_datetime(misses.get(external_id))
+    return bool(retry_at and retry_at > current_time)
+
+
+def prune_seller_enrichment_misses(misses: dict[str, str], max_entries: int = 1000) -> dict[str, str]:
+    ordered = sorted(misses.items(), key=lambda item: item[1], reverse=True)
+    return dict(ordered[:max_entries])
 
 
 def collect_target_cards(results: list[MarketplaceTargetResult]) -> list[MarketplaceCard]:
@@ -1828,6 +1953,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--log-file", default=str(DEFAULT_LOG_FILE), help="JSONL run log path.")
     parser.add_argument("--max-seen", type=int, default=500, help="Maximum seen IDs retained in state.")
     parser.add_argument("--cooldown-seconds", type=int, default=300, help="Cooldown after login gate, block, or empty fetch.")
+    parser.add_argument(
+        "--seller-miss-retry-seconds",
+        type=int,
+        default=21_600,
+        help="Delay before retrying a listing whose seller name was unavailable.",
+    )
     parser.add_argument("--ignore-cooldown", action="store_true", help="Ignore active cooldown state.")
     parser.add_argument("--no-state", action="store_true", help="Do not read/write state, lock, or run logs.")
     parser.add_argument("--lock-stale-seconds", type=int, default=900, help="Remove lock files older than this many seconds.")
@@ -1849,6 +1980,8 @@ def parse_args() -> argparse.Namespace:
         parser.error("--ai-batch-size must be between 1 and 10.")
     if args.timeout < 5:
         parser.error("--timeout must be at least 5 seconds.")
+    if args.seller_miss_retry_seconds < 300:
+        parser.error("--seller-miss-retry-seconds must be at least 300 seconds.")
     if args.wait_ms < 0:
         parser.error("--wait-ms must be zero or greater.")
     if args.max_scrolls < 0 or args.max_scrolls > 10:

@@ -694,6 +694,7 @@ def run_facebook(args: argparse.Namespace, config: dict[str, Any], egress: Egres
         log_file=str(facebook.DEFAULT_LOG_FILE),
         max_seen=500,
         cooldown_seconds=int_value(facebook_config.get("cooldown_seconds"), 300),
+        seller_miss_retry_seconds=int_value(facebook_config.get("seller_miss_retry_seconds"), 21_600),
         ignore_cooldown=args.ignore_cooldown,
         no_state=args.no_state,
         lock_stale_seconds=int_value(facebook_config.get("lock_stale_seconds"), int_value(run_config.get("lock_stale_seconds"), 900)),
