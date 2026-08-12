@@ -120,6 +120,28 @@ model FacebookSellerFlag {
   @@map("facebook_seller_flags")
 }
 
+model FacebookSellerPlatformFlag {
+  id                    String                 @id @default(cuid())
+  platform              ListingPlatform
+  sellerName            String                 @map("seller_name")
+  normalizedSellerName  String                 @map("normalized_seller_name")
+  status                SellerModerationStatus
+  source                ModerationSource
+  reason                String?
+  recentListingCount    Int?                   @map("recent_listing_count")
+  duplicateListingCount Int?                   @map("duplicate_listing_count")
+  duplicateRatio        Float?                 @map("duplicate_ratio")
+  firstFlaggedAt        DateTime               @default(now()) @map("first_flagged_at")
+  lastEvaluatedAt       DateTime?              @map("last_evaluated_at")
+  createdAt             DateTime               @default(now()) @map("created_at")
+  updatedAt             DateTime               @default(now()) @updatedAt @map("updated_at")
+
+  @@unique([platform, normalizedSellerName])
+  @@index([status])
+  @@index([platform, status])
+  @@map("facebook_seller_platform_flags")
+}
+
 model PlatformControl {
   platform      ListingPlatform @id
   publicVisible Boolean         @default(true) @map("public_visible")

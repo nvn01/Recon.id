@@ -84,6 +84,8 @@ interpolate a raw search pattern or apply client-only filtering to one page.
 - Keep CORS same-origin. Public edge rate limiting belongs in Traefik or another
   shared gateway, not an in-memory Next.js counter.
 - Seller-name matching uses the migration-defined `normalize_seller_name`
+  within the listing's exact Facebook platform. Marketplace and Facebook Group
+  seller identities and blocks must never be merged by name alone.
   function. It is intentionally exact after case and whitespace normalization;
   do not add fuzzy public-query matching or apply Facebook seller flags to other
   platforms.
