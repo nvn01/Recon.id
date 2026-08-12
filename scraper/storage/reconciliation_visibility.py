@@ -13,8 +13,9 @@ def reconciliation_visibility_filter(listing_alias: str, *, include_facebook_sel
         seller_filter = f"""
   AND NOT EXISTS (
       SELECT 1
-      FROM facebook_seller_flags AS seller_flag
+      FROM facebook_seller_platform_flags AS seller_flag
       WHERE seller_flag.status::text = 'blocked'
+        AND seller_flag.platform = {listing_alias}.platform
         AND seller_flag.normalized_seller_name = normalize_seller_name(
           COALESCE(
             (SELECT moderation.seller_name_override

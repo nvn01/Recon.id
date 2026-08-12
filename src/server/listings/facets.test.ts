@@ -65,8 +65,9 @@ describe("getListingFacets", () => {
 
     for (const [query] of queryRaw.mock.calls) {
       const sql = (query as { strings: string[] }).strings.join("?");
-      expect(sql).toContain("facebook_seller_flags");
+      expect(sql).toContain("facebook_seller_platform_flags");
       expect(sql).toContain("listing.platform::text IN ('facebook', 'facebook_group')");
+      expect(sql).toContain("seller_flag.platform = listing.platform");
       expect(sql).toContain("listing_content_blocks");
       expect(sql).toContain("normalize_listing_content(listing.title)");
       expect(sql).toContain("normalize_listing_content(listing.description)");

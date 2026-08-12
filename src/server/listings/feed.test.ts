@@ -54,7 +54,7 @@ describe("getListingFeed", () => {
     expect(soldFirstSql).toContain("WHEN 'sold' THEN 0");
   });
 
-  it("filters hidden listings, content blocks, disabled platforms, and blocked seller names across Facebook sources", () => {
+  it("filters hidden listings, content blocks, disabled platforms, and platform-scoped Facebook seller blocks", () => {
     const query = buildListingFeedQuery({ limit: 24 });
     const sql = query.strings.join("?");
 
@@ -65,8 +65,9 @@ describe("getListingFeed", () => {
     expect(sql).toContain("normalize_listing_content(listing.title)");
     expect(sql).toContain("normalize_listing_content(listing.description)");
     expect(sql).toContain("platform_control.public_visible");
-    expect(sql).toContain("facebook_seller_flags");
+    expect(sql).toContain("facebook_seller_platform_flags");
     expect(sql).toContain("listing.platform::text IN ('facebook', 'facebook_group')");
+    expect(sql).toContain("seller_flag.platform = listing.platform");
     expect(sql).toContain("normalize_seller_name");
     expect(sql).toContain("seller_name_override");
   });

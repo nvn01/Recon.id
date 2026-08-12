@@ -28,8 +28,9 @@ export const publicListingVisibilityFilter = Prisma.sql`
     listing.platform::text IN ('facebook', 'facebook_group')
     AND EXISTS (
       SELECT 1
-      FROM facebook_seller_flags AS seller_flag
+      FROM facebook_seller_platform_flags AS seller_flag
       WHERE seller_flag.status::text = 'blocked'
+        AND seller_flag.platform = listing.platform
         AND seller_flag.normalized_seller_name = normalize_seller_name(
           COALESCE(listing_moderation.seller_name_override, listing.seller_name)
         )

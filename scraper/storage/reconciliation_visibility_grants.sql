@@ -6,5 +6,5 @@ GRANT SELECT (listing_id, hidden, seller_name_override)
   ON TABLE public.listing_moderation TO :"scraper_user";
 GRANT SELECT (platform, field, normalized_value)
   ON TABLE public.listing_content_blocks TO :"scraper_user";
-GRANT SELECT (normalized_seller_name, status)
-  ON TABLE public.facebook_seller_flags TO :"scraper_user";
+GRANT SELECT (platform, normalized_seller_name, status)
+  ON TABLE public.facebook_seller_platform_flags TO :"scraper_user";
