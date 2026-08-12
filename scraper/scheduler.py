@@ -46,6 +46,7 @@ class ScheduleJob:
     jitter_seconds: int = 0
     run_timeout_seconds: int | None = None
     fixed_rate: bool = False
+    failure_backoff_seconds: tuple[int, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -230,6 +231,7 @@ def build_reddit_reconciliation_jobs(config: dict[str, Any]) -> list[ScheduleJob
     timeout = max(5, int_value(schedule_config.get("timeout_seconds"), 30))
     retries = max(1, int_value(schedule_config.get("retries"), 1))
     run_timeout = max(30, int_value(schedule_config.get("job_timeout_seconds"), 45))
+    failure_backoff = reconciliation_failure_backoff(schedule_config)
     return [
         ScheduleJob(
             id="reddit:reconcile",
@@ -248,6 +250,7 @@ def build_reddit_reconciliation_jobs(config: dict[str, Any]) -> list[ScheduleJob
             jitter_seconds=jitter,
             run_timeout_seconds=run_timeout,
             fixed_rate=True,
+            failure_backoff_seconds=failure_backoff,
         )
     ]
 
@@ -265,6 +268,7 @@ def build_facebook_reconciliation_jobs(config: dict[str, Any]) -> list[ScheduleJ
     timeout = max(5, int_value(schedule_config.get("timeout_seconds"), 30))
     wait_ms = max(0, int_value(schedule_config.get("wait_ms"), 0))
     run_timeout = max(30, int_value(schedule_config.get("job_timeout_seconds"), 55))
+    failure_backoff = reconciliation_failure_backoff(schedule_config)
     browser = str(schedule_config.get("browser") or source_config.get("browser") or "chrome").strip()
     headless = bool_value(schedule_config.get("headless"), default=True)
     job_args = [
@@ -290,6 +294,7 @@ def build_facebook_reconciliation_jobs(config: dict[str, Any]) -> list[ScheduleJ
             jitter_seconds=jitter,
             run_timeout_seconds=run_timeout,
             fixed_rate=True,
+            failure_backoff_seconds=failure_backoff,
         )
     ]
 
@@ -643,6 +648,21 @@ def optional_int(value: Any) -> int | None:
         return None
 
 
+def reconciliation_failure_backoff(config: dict[str, Any]) -> tuple[int, ...]:
+    raw = config.get("failure_backoff_seconds")
+    if not isinstance(raw, list):
+        raw = [300, 900, 1800]
+    values: list[int] = []
+    for value in raw:
+        try:
+            parsed = int(value)
+        except (TypeError, ValueError):
+            continue
+        if parsed > 0:
+            values.append(min(parsed, 86_400))
+    return tuple(values or (300, 900, 1800))
+
+
 def filter_jobs(jobs: list[ScheduleJob], include: list[str] | None, exclude: list[str] | None) -> list[ScheduleJob]:
     include_set = set(include or [])
     exclude_set = set(exclude or [])
@@ -764,7 +784,15 @@ def coalesce_due_jobs(
 def record_job_state(state: dict[str, Any], job: ScheduleJob, run: JobRun, now: datetime) -> None:
     jitter = random.randint(0, job.jitter_seconds) if job.jitter_seconds > 0 else 0
     cadence_base = parse_iso_datetime(run.started_at) if job.fixed_rate else now
-    next_due = (cadence_base or now) + timedelta(seconds=job.cadence_seconds + jitter)
+    previous = get_job_state(state, job)
+    consecutive_failures = int(previous.get("consecutiveFailures") or 0)
+    delay_seconds = job.cadence_seconds
+    if run.status == "degraded" and job.failure_backoff_seconds:
+        consecutive_failures += 1
+        delay_seconds = job.failure_backoff_seconds[min(consecutive_failures - 1, len(job.failure_backoff_seconds) - 1)]
+    elif run.status != "degraded":
+        consecutive_failures = 0
+    next_due = (cadence_base or now) + timedelta(seconds=delay_seconds + jitter)
     if next_due < now:
         next_due = now
     state.setdefault("jobs", {})[job.id] = {
@@ -774,6 +802,7 @@ def record_job_state(state: dict[str, Any], job: ScheduleJob, run: JobRun, now: 
         "lastStatus": run.status,
         "lastExitCode": run.exit_code,
         "nextDueAt": next_due.isoformat(),
+        "consecutiveFailures": consecutive_failures,
     }
 
 

@@ -217,6 +217,19 @@ def cache_pending_batch(
         )
 
 
+def next_media_worker_delay(
+    result: MediaWorkerBatch,
+    *,
+    batch_size: int,
+    poll_seconds: float,
+) -> tuple[str, float]:
+    """Advance bounded scans, but pause when a full batch made no progress."""
+    if result.selected >= batch_size:
+        delay = 0.0 if result.updated > 0 else poll_seconds
+        return result.next_cursor, delay
+    return "", poll_seconds
+
+
 def run_worker(
     args: argparse.Namespace,
     *,
@@ -270,12 +283,18 @@ def run_worker(
         if args.once:
             return 0 if record["ok"] else 1
 
-        if result is not None and result.selected >= batch_size:
-            cursor_id = result.next_cursor
+        if result is None:
+            cursor_id = ""
+            sleep_fn(poll_seconds)
             continue
 
-        cursor_id = ""
-        sleep_fn(poll_seconds)
+        cursor_id, delay_seconds = next_media_worker_delay(
+            result,
+            batch_size=batch_size,
+            poll_seconds=poll_seconds,
+        )
+        if delay_seconds > 0:
+            sleep_fn(delay_seconds)
 
 
 def parse_args() -> argparse.Namespace:

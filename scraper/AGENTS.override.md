@@ -205,6 +205,23 @@ deduplication defect before records are changed.
 - This queue is scraper-local operational state. It does not add a PostgreSQL
   schema migration or make the public web application responsible for scraping.
 
+## Reconciliation Safety
+
+- Facebook Marketplace and Reddit reconciliation must apply the same platform,
+  listing, exact-content, and Facebook seller visibility boundaries as the
+  public feed before making a network request. Recheck that boundary in the
+  update query so an item hidden while a request is running is not changed.
+- Keep the scraper database role least-privileged. Before releasing a scraper
+  image containing these visibility checks, apply
+  `storage/reconciliation_visibility_grants.sql` through the owner-controlled
+  `role-grants` step. Do not replace its column-level reads with broad table or
+  schema grants.
+- Failed reconciliation runs use bounded increasing delays; a successful run
+  resets the failure count and returns to the configured healthy cadence.
+- The optional authenticated Facebook seller adapter remains ignored/private.
+  Cache unresolved seller lookups for a bounded interval, block unused visual
+  assets, and keep its page concurrency below the anonymous discovery worker.
+
 ## Social R2 Media Path
 
 - R2 caching covers Instagram, Reddit, and Facebook Groups. Facebook Marketplace
@@ -231,7 +248,8 @@ deduplication defect before records are changed.
   `ubserver1:/docker/recon-scraper/.env.media-worker`. The collector and AI
   manager must not receive them. The NVIDIA key lives only in `.env.ai-manager`.
 - The production media worker polls every 60 seconds and processes up to 25
-  images per batch. A full batch may continue immediately to drain a backlog.
+  images per batch. A full batch may continue immediately only when at least
+  one image progressed; an all-failed batch must pause before scanning onward.
 
 ## Normalized Listing Contract
 

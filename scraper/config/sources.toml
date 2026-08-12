@@ -28,18 +28,20 @@ lock_stale_seconds = 7200
 
 [scheduler.reddit]
 enabled = true
-# Four flairs repeat every four minutes, with one RSS request starting each minute.
-cadence_seconds = 240
-stagger_seconds = 60
+# Four flairs repeat every five minutes, with one RSS request starting every
+# 75 seconds to reduce background fetch pressure.
+cadence_seconds = 300
+stagger_seconds = 75
 jitter_seconds = 10
 limit = 15
 
 [scheduler.reddit_reconciliation]
 enabled = true
-# Revisit one of the newest ready/unknown Reddit listings each minute. The
-# least recently fetched item inside this rolling window is selected, so up to
-# 60 current posts are covered in about one hour without a request burst.
-cadence_seconds = 60
+# Revisit one of the newest ready/unknown Reddit listings every three minutes.
+# The least recently fetched item inside this rolling window is selected, so up
+# to 60 current posts are covered in about three hours without a request burst.
+cadence_seconds = 180
+failure_backoff_seconds = [300, 900, 1800]
 initial_delay_seconds = 30
 jitter_seconds = 0
 window_size = 60
@@ -49,10 +51,10 @@ job_timeout_seconds = 45
 
 [scheduler.instagram]
 enabled = true
-# Seven public profiles start 45 seconds apart. The first sweep completes in
-# 4m30s and each profile repeats every 5m15s.
-cadence_seconds = 315
-stagger_seconds = 45
+# Seven public profiles start one minute apart. The first sweep completes in
+# about seven minutes and each profile repeats every seven minutes.
+cadence_seconds = 420
+stagger_seconds = 60
 jitter_seconds = 10
 limit = 10
 per_account = true
@@ -62,11 +64,12 @@ enabled = true
 # Let the stricter Facebook AI reviewer correct populated-but-wrong rule values.
 # This affects enrichment precedence only; collection and browser behavior stay unchanged.
 # Rotate reviewed hot targets one at a time instead of hammering all Marketplace
-# searches together. With the current hot target count this yields about one
-# browser-backed Marketplace search per minute, while each target repeats slower.
-cadence_seconds = 180
-target_cadence_seconds = 180
-target_stagger_seconds = 60
+# searches together. With the current hot target count this yields one
+# browser-backed Marketplace search every 80 seconds, while each target repeats
+# every four minutes.
+cadence_seconds = 240
+target_cadence_seconds = 240
+target_stagger_seconds = 80
 jitter_seconds = 30
 limit = 10
 headless = true
@@ -76,10 +79,12 @@ target_groups = ["hot"]
 
 [scheduler.facebook_reconciliation]
 enabled = true
-# Revisit one of the newest ready/unknown Marketplace listings each minute.
-# This rotates through up to 60 current posts in about one hour and avoids the
-# login gate caused by opening many detail pages in one browser session.
-cadence_seconds = 60
+# Revisit one of the newest ready/unknown Marketplace listings every three
+# minutes. This rotates through up to 60 current posts in about three hours and
+# avoids the login gate caused by opening many detail pages in one browser
+# session.
+cadence_seconds = 180
+failure_backoff_seconds = [300, 900, 1800]
 initial_delay_seconds = 45
 jitter_seconds = 0
 window_size = 60
@@ -209,6 +214,7 @@ max_scrolls = 0
 wait_ms = 0
 timeout_seconds = 30
 cooldown_seconds = 300
+seller_miss_retry_seconds = 21600
 headless = true
 browser = "chrome"
 session_mode = "ephemeral"

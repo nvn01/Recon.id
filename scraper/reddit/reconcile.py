@@ -21,16 +21,18 @@ from scraper.reddit.reddit import (
     parse_feed,
 )
 from scraper.storage.postgres import StorageError, require_database_url
+from scraper.storage.reconciliation_visibility import REDDIT_RECONCILIATION_VISIBILITY_SQL
 
 
-SELECT_ROTATING_CANDIDATE_SQL = """
+SELECT_ROTATING_CANDIDATE_SQL = f"""
 WITH latest_ready AS (
-    SELECT id, external_id, source_url, status, last_fetched_at,
-           COALESCE(posted_at, first_fetched_at) AS listed_at
-    FROM listings
-    WHERE platform = 'reddit'::listing_platform
-      AND status IN ('available'::listing_status, 'unknown'::listing_status)
-      AND external_id ~ '^[A-Za-z0-9]+$'
+    SELECT listing.id, listing.external_id, listing.source_url, listing.status, listing.last_fetched_at,
+           COALESCE(listing.posted_at, listing.first_fetched_at) AS listed_at
+    FROM listings AS listing
+    WHERE listing.platform = 'reddit'::listing_platform
+      AND listing.status IN ('available'::listing_status, 'unknown'::listing_status)
+      AND listing.external_id ~ '^[A-Za-z0-9]+$'
+      {REDDIT_RECONCILIATION_VISIBILITY_SQL}
     ORDER BY COALESCE(posted_at, first_fetched_at) DESC, id DESC
     LIMIT %s
 )
@@ -40,17 +42,18 @@ ORDER BY last_fetched_at ASC NULLS FIRST, listed_at DESC, id
 LIMIT 1
 """
 
-UPDATE_RECONCILIATION_RESULT_SQL = """
-UPDATE listings
-SET status = COALESCE(%(status)s::listing_status, status),
+UPDATE_RECONCILIATION_RESULT_SQL = f"""
+UPDATE listings AS listing
+SET status = COALESCE(%(status)s::listing_status, listing.status),
     last_fetched_at = %(checked_at)s,
     updated_at = CASE
-        WHEN %(status)s::text IS NOT NULL AND status::text <> %(status)s::text THEN CURRENT_TIMESTAMP
-        ELSE updated_at
+        WHEN %(status)s::text IS NOT NULL AND listing.status::text <> %(status)s::text THEN CURRENT_TIMESTAMP
+        ELSE listing.updated_at
     END
-WHERE source_url = %(source_url)s
-  AND platform = 'reddit'::listing_platform
-  AND status IN ('available'::listing_status, 'unknown'::listing_status)
+WHERE listing.source_url = %(source_url)s
+  AND listing.platform = 'reddit'::listing_platform
+  AND listing.status IN ('available'::listing_status, 'unknown'::listing_status)
+  {REDDIT_RECONCILIATION_VISIBILITY_SQL}
 """
 
 SOLD_OUT_FLAIR = "SOLD OUT"
