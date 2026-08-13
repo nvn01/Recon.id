@@ -30,7 +30,7 @@ describe("public indexing metadata routes", () => {
       expect.objectContaining({
         "@type": "WebSite",
         name: "Recon App Indonesia",
-        alternateName: ["RECON"],
+        alternateName: ["RECON", "recon.app-pixel.com"],
         url: "https://recon.app-pixel.com/",
       }),
     );

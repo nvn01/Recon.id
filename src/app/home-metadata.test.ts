@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { buildHomeMetadata } from "~/lib/home-metadata";
+import { siteConfig } from "~/lib/site";
 
 describe("root feed metadata", () => {
   it("makes the unfiltered root feed canonical and indexable", async () => {
@@ -8,7 +9,12 @@ describe("root feed metadata", () => {
 
     expect(metadata.alternates).toEqual({ canonical: "/" });
     expect(metadata.robots).toEqual({ index: true, follow: true });
-    expect(metadata.openGraph).toEqual(expect.objectContaining({ url: "/" }));
+    expect(metadata.openGraph).toEqual(
+      expect.objectContaining({
+        siteName: siteConfig.name,
+        url: "/",
+      }),
+    );
   });
 
   it("keeps filtered root URLs crawlable but out of the index", async () => {

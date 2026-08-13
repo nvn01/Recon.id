@@ -14,6 +14,7 @@ export function buildHomeMetadata(searchParams: SearchParamRecord): Metadata {
     description: siteConfig.description,
     alternates: { canonical: siteConfig.homePath },
     openGraph: {
+      siteName: siteConfig.name,
       title: siteConfig.title,
       description: siteConfig.description,
       url: siteConfig.homePath,
