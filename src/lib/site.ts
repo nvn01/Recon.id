@@ -26,7 +26,7 @@ export const siteIdentityStructuredData = {
       "@id": `${siteConfig.url}/#website`,
       url: new URL(siteConfig.homePath, siteConfig.url).toString(),
       name: siteConfig.name,
-      alternateName: ["RECON"],
+      alternateName: ["RECON", new URL(siteConfig.url).hostname],
       description: siteConfig.description,
       inLanguage: "id-ID",
       publisher: { "@id": `${siteConfig.url}/#organization` },
