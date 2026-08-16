@@ -42,6 +42,10 @@ WHERE (
     listing.platform = 'instagram'::listing_platform
     OR listing.platform = 'reddit'::listing_platform
     OR listing.platform = 'facebook_group'::listing_platform
+    OR (
+      listing.platform = 'facebook'::listing_platform
+      AND listing.first_fetched_at >= NOW() - INTERVAL '24 hours'
+    )
   )
   AND image.cached_url IS NULL
   AND image.id > %s
@@ -299,7 +303,7 @@ def run_worker(
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Cache accepted Instagram, Reddit, and Facebook Group images in Cloudflare R2."
+        description="Cache accepted social listing images in Cloudflare R2."
     )
     parser.add_argument("--config", default=str(DEFAULT_CONFIG_PATH))
     parser.add_argument("--database-url", default=None)

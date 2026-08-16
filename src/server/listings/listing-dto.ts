@@ -120,7 +120,9 @@ export function isSafeCachedMediaUrl(
         ? "reddit"
         : platform === "FACEBOOK_GROUP"
           ? "facebook-groups"
-          : null;
+          : platform === "FACEBOOK"
+            ? "facebook"
+            : null;
   if (!platformPath) {
     return false;
   }

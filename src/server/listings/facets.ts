@@ -1,8 +1,8 @@
 import { Prisma } from "../../../generated/prisma";
 
 import {
+  isSafeCachedMediaUrl,
   isSafeHttpsUrl,
-  isSafeInstagramCachedUrl,
   normalizePublicPrice,
   sanitizePublicLocation,
 } from "./listing-dto";
@@ -17,6 +17,7 @@ interface CategoryFacetRow {
   minPrice: number | null;
   coverImageUrl: string | null;
   coverImageCached: boolean;
+  coverPlatform: string | null;
   coverAltText: string | null;
 }
 
@@ -39,6 +40,7 @@ export async function getListingFacets(db: ListingFacetsDatabase) {
   const categories = (categoryResult as CategoryFacetRow[]).flatMap((row) => {
     const value = sanitizeFacetText(row.value, 64);
     if (!value) return [];
+    const cachedPlatform = toDatabasePlatform(row.coverPlatform);
 
     return [
       {
@@ -48,7 +50,8 @@ export async function getListingFacets(db: ListingFacetsDatabase) {
         coverImageUrl:
           row.coverImageUrl &&
           (row.coverImageCached
-            ? isSafeInstagramCachedUrl(row.coverImageUrl)
+            ? cachedPlatform !== null &&
+              isSafeCachedMediaUrl(row.coverImageUrl, cachedPlatform)
             : isSafeHttpsUrl(row.coverImageUrl))
             ? row.coverImageUrl
             : null,
@@ -84,6 +87,23 @@ function isPlausibleConditionFacet(value: string): boolean {
   return /^(?:Baru(?:\s*\/\s*BNIB)?|BNIB|Like New|Second|Bekas(?:\s*-\s*(?:baik|normal|minus))?)$/i.test(
     value,
   );
+}
+
+function toDatabasePlatform(
+  value: string | null,
+): Parameters<typeof isSafeCachedMediaUrl>[1] | null {
+  switch (value) {
+    case "instagram":
+      return "INSTAGRAM";
+    case "reddit":
+      return "REDDIT";
+    case "facebook":
+      return "FACEBOOK";
+    case "facebook_group":
+      return "FACEBOOK_GROUP";
+    default:
+      return null;
+  }
 }
 
 const categoryFacetQuery = Prisma.sql`
@@ -128,6 +148,7 @@ const categoryFacetQuery = Prisma.sql`
       WHEN cover.platform IN (
         'instagram'::listing_platform,
         'reddit'::listing_platform,
+        'facebook'::listing_platform,
         'facebook_group'::listing_platform
       )
         THEN COALESCE(image.cached_url, image.source_url)
@@ -137,10 +158,12 @@ const categoryFacetQuery = Prisma.sql`
       cover.platform IN (
         'instagram'::listing_platform,
         'reddit'::listing_platform,
+        'facebook'::listing_platform,
         'facebook_group'::listing_platform
       )
       AND image.cached_url IS NOT NULL
     ) AS "coverImageCached",
+    cover.platform::text AS "coverPlatform",
     image.alt_text AS "coverAltText"
   FROM category_stats AS stats
   LEFT JOIN ranked_covers AS cover

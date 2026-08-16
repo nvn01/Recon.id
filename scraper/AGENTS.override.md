@@ -39,7 +39,7 @@ old probe scripts or historical access experiments.
   retry delay. Candidates arriving while a request is running wait for the next
   departure; never restore per-platform or concurrent NVIDIA parsers.
 - `scraper.media.worker` is independent of AI completion. It polls PostgreSQL
-  for uncached Instagram, Reddit, and Facebook Group image rows only after listings have been committed,
+  for uncached Instagram, Reddit, Facebook Marketplace, and Facebook Group image rows only after listings have been committed,
   downloads and uploads them to Cloudflare R2, then updates cache metadata. An
   image failure must never requeue AI work or delay a listing insert.
 - `scraper.main` orchestrates individual connectors and is read-only unless
@@ -224,12 +224,14 @@ deduplication defect before records are changed.
 
 ## Social R2 Media Path
 
-- R2 caching covers Instagram, Reddit, and Facebook Groups. Facebook Marketplace
-  keeps its original image URLs.
+- R2 caching covers Instagram, Reddit, Facebook Marketplace, and Facebook Groups.
+  Marketplace onboarding is deliberately bounded to uncached listings first
+  fetched within the last 24 hours so expired historical CDN links cannot form
+  an unproductive 19k-row retry backlog.
 - Bucket: `recon-media-production`; public custom domain:
   `https://media.app-pixel.com`; object prefix: `production`.
 - AI parse and PostgreSQL upsert finish first. The independent media worker then
-  finds Instagram, Reddit, or Facebook Group `listing_images` rows whose `cached_url` is null, downloads
+  finds eligible social `listing_images` rows whose `cached_url` is null, downloads
   the source, uploads immutable content-addressed objects, and updates only the
   cache metadata.
 - Store each cached platform under a separate
