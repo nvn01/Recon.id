@@ -13,6 +13,7 @@ describe("getListingFacets", () => {
           minPrice: 1_500_000,
           coverImageUrl: "https://example.com/laptop.jpg",
           coverImageCached: false,
+          coverPlatform: "facebook",
           coverAltText: "Laptop",
         },
         {
@@ -21,7 +22,18 @@ describe("getListingFacets", () => {
           minPrice: 123_456,
           coverImageUrl: "javascript:alert(1)",
           coverImageCached: false,
+          coverPlatform: "facebook",
           coverAltText: null,
+        },
+        {
+          value: "Console",
+          count: 3,
+          minPrice: 5_000_000,
+          coverImageUrl:
+            "https://media.app-pixel.com/production/facebook/aa/console.jpg",
+          coverImageCached: true,
+          coverPlatform: "facebook",
+          coverAltText: "Console",
         },
       ])
       .mockResolvedValueOnce([
@@ -49,6 +61,14 @@ describe("getListingFacets", () => {
           minPrice: null,
           coverImageUrl: null,
           coverAltText: null,
+        },
+        {
+          value: "Console",
+          count: 3,
+          minPrice: 5_000_000,
+          coverImageUrl:
+            "https://media.app-pixel.com/production/facebook/aa/console.jpg",
+          coverAltText: "Console",
         },
       ],
       locations: [{ value: "Bandung", count: 8 }],

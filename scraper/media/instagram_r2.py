@@ -1,4 +1,4 @@
-"""Bounded Instagram and Reddit image download and Cloudflare R2 upload boundary."""
+"""Bounded social image download and Cloudflare R2 upload boundary."""
 
 from __future__ import annotations
 
@@ -14,8 +14,9 @@ from urllib.parse import quote, urljoin, urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 
-SUPPORTED_MEDIA_PLATFORMS = frozenset({"instagram", "reddit"})
+SUPPORTED_MEDIA_PLATFORMS = frozenset({"instagram", "reddit", "facebook"})
 ALLOWED_INSTAGRAM_SOURCE_SUFFIXES = (".cdninstagram.com", ".fbcdn.net")
+ALLOWED_FACEBOOK_SOURCE_SUFFIXES = (".fbcdn.net",)
 ALLOWED_REDDIT_SOURCE_HOSTS = frozenset(
     {
         "i.redd.it",
@@ -240,7 +241,11 @@ def download_media_image(
                 "Referer": (
                     "https://www.instagram.com/"
                     if platform == "instagram"
-                    else "https://www.reddit.com/"
+                    else (
+                        "https://www.facebook.com/"
+                        if platform == "facebook"
+                        else "https://www.reddit.com/"
+                    )
                 ),
                 "User-Agent": (
                     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
@@ -318,7 +323,7 @@ def read_bounded(response: Any, max_bytes: int) -> bytes:
 def normalize_media_platform(value: str) -> str:
     platform = str(value or "").strip().lower()
     if platform not in SUPPORTED_MEDIA_PLATFORMS:
-        raise MediaCacheError("Media platform must be Instagram or Reddit.")
+        raise MediaCacheError("Unsupported media platform.")
     return platform
 
 
@@ -332,6 +337,11 @@ def validate_source_url(value: str, *, platform: str = "instagram") -> None:
         allowed = any(
             hostname == suffix[1:] or hostname.endswith(suffix)
             for suffix in ALLOWED_INSTAGRAM_SOURCE_SUFFIXES
+        )
+    elif platform == "facebook":
+        allowed = any(
+            hostname == suffix[1:] or hostname.endswith(suffix)
+            for suffix in ALLOWED_FACEBOOK_SOURCE_SUFFIXES
         )
     else:
         allowed = hostname in ALLOWED_REDDIT_SOURCE_HOSTS
